@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Thank You | GLEE-APP</title>
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css"
+          integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+
+<div class="d-flex justify-content-center ">
+
+</div>
+
+<div class="conatiner mx-auto" style="max-width: 640px;">
+    <div class="headerSec">
+        <img src="cid:logo" class="logo mx-auto d-block py-4 ">
+    </div>
+    <div class="sectionOne px-3 py-3">
+        <h3 class="text-center">Order Summery</h3>
+        <h5 class="text-center pb-4">{{purchasedOn}}</h5>
+        <div class="row">
+            <div class="col-4 product-left-side">
+                <div style="background-image: url({{productImage}})" class="productImg">
+                </div>
+            </div>
+            <div class="col-8 product-right-side">
+                <div class="productDetailSec">
+                    <div class="row">
+                        <div class="col-4 product-inner-left">
+                            <p>Order Type </p>
+                            <h4 style="margin-bottom: 1rem;line-height: 22px;">Product Title</h4>
+                            <p>Product ID</p>
+                            <p>User Name </p>
+                            <p>User Email </p>
+                        </div>
+                        <div class="col-8 product-inner-right text-right">
+                            <p>{{orderType}}</p>
+                            <p>{{productTitle}}</p>
+                            <p>{{productId}}</p>
+                            <p>{{userName}}</p>
+                            <p>{{userEmail}}</p>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="sectionTwo px-3 py-3">
+        <h3 class="text-center">Order Total</h3>
+        <div class="row">
+            <div class="col-6">
+                <p>Subtotal price</p>
+                <p>No of Item</p>
+            </div>
+            <div class="col-6 text-right">
+                <p>{{subTotal}}</p>
+                <p>{{noOfItems}}</p>
+            </div>
+            <div class="col-12">
+                <hr class="fancyLine">
+            </div>
+            <div class="col-6">
+                <p><strong>Total Price:</strong></p>
+            </div>
+            <div class="col-6 text-right">
+                <p><strong>{{total}}</strong></p>
+            </div>
+        </div>
+        ...
+    </div>
+    <div class="footerBottom text-center ">
+        <p class="pt-2">© copyright 2022</p>
+    </div>
+</div>
+
+<script src="/script/script.js"></script>
+
+
+</body>
+</html>

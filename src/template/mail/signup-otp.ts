@@ -1,0 +1,73 @@
+export default (app_url, user, config) => {
+  return `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+    <html xmlns="http://www.w3.org/1999/xhtml" xmlns:o="urn:schemas-microsoft-com:office:office">
+     <head> 
+      <meta charset="UTF-8"> 
+      <meta content="width=device-width, initial-scale=1" name="viewport"> 
+      <meta name="x-apple-disable-message-reformatting"> 
+      <meta http-equiv="X-UA-Compatible" content="IE=edge"> 
+      <meta content="telephone=no" name="format-detection">
+      <title>VTL News OTP</title>
+     </head> 
+    
+     <body style="width: 1200px; margin: 0px auto;" >
+     
+    <table cellpadding="0" cellspacing="0" border="0" style="border-bottom:3px solid #0a579b!important;padding:13px 0px 3px;width:630px;    margin: auto;">
+        <tbody><tr>
+            <td valign="middle">
+                <a href="/" title="" target="_blank" data-saferedirecturl="https://www.google.com/url?q=https://www.craftivestudio.com/&amp;source=gmail&amp;ust=1622122055947000&amp;usg=AFQjCNFMSDftH1FzzAL4oCeTlqCjtgF4yQ"><img src="${app_url}images/logo-color.png" alt="vtl news logo"  class="CToWUd"></a>
+            </td>
+            <td valign="top" style="text-align:right">
+                <table width="100%" cellpadding="1" cellspacing="0" style="text-align:right">
+                    <tbody><tr>
+                        <td>
+                            <a style="background:#0a579b!important;width:230px;padding:5px 12px 5px;margin-top:4px;font-size:14px;display:inline-block;text-decoration:none" href="mailto:${
+                              config.MAIL_FROM_ADDRESS
+                            }" target="_blank"><img src="https://ci4.googleusercontent.com/proxy/IZsKXK4STZY9gUeeElfwjR0QX20B7nK2CGkzpAKkw395d8T4jdhgdciJUId5_Qhkj3G8lChJhAdvB0tt6wmNlrIpSNYn69zzA_L0X7yk=s0-d-e1-ft#https://www.craftivestudio.com/assets/images/icon_email.png" width="13" height="9" class="CToWUd"><span style="color:#fff;margin-left:8px;font-weight:700">
+                                ${config.MAIL_FROM_ADDRESS}
+                            </span></a>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>
+                            <a style="background:#0a579b!important;width:230px;padding:5px 12px 5px;margin-top:4px;font-size:14px;display:inline-block;text-decoration:none" href="tel:${
+                              config.PHONE_NUMBER
+                            }" target="_blank"><img src="https://ci5.googleusercontent.com/proxy/ESqEs3v7oBaTA1AvRtWcutKPbFIbv5QqTpi6rm3vbQoGkSR90mAl5NTpAUaHUfYgFvgiAj6PweGmXDlFUo7HdIUVJQE8KsqLRgA-t6ng=s0-d-e1-ft#https://www.craftivestudio.com/assets/images/icon_phone.png" width="11" height="13" class="CToWUd"><span style="color:#fff;margin-left:8px;font-weight:700">
+                                ${config.PHONE_NUMBER}&nbsp;&nbsp;&nbsp;
+                            </span></a>
+                        </td>
+                    </tr>
+                </tbody></table>
+            </td>
+        </tr>
+    </tbody></table>
+    <table style="margin:0px;padding:0px;font-size:12px;color:#000;font-family:Arial;line-height:20px;width:630px;margin: auto;">
+        <tbody><tr>
+            <td>
+                <p style="margin-top:20px"><b>Hi ${user.name},</b></p>
+                <p>Please use below mention pint to complete your ${
+                  config.APP_NAME
+                } Account Registeration.</p>
+                <p style="font-size:20px"><b>${user.otp}</b></p>
+                <p>Enter this code to complete the reset.</p>
+                <p><strong>Thanks for helping us keep your account secure.</strong>
+                <br>The ${config.APP_NAME} Team</p>
+            </td>
+        </tr>
+    </tbody></table>
+    
+    <font color="#888888">
+        </font><font color="#888888">
+    </font><table style="background:#0a579b!important;text-align:center;padding:15px 0px 14px;margin-top:20px;color:#fff;width:630px;margin: auto;">
+     <tbody><tr> 
+         <td>
+                <p style="margin:0px">© ${new Date().getFullYear()} ${
+    config.APP_NAME
+  }. All Rights Reserved.</p>
+            </td>
+        </tr>    
+        </tbody></table><font color="#888888">
+    </font></div>
+     </body>
+    </html>`;
+};

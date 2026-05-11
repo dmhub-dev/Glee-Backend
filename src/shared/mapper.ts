@@ -1,0 +1,70 @@
+export const UserMapper = (user) => {
+  const {
+    name,
+    email,
+    phone,
+    state,
+    role,
+    country,
+    hasPackage,
+    packagePurchasedDate,
+    packageExpireDate,
+    packageDetails,
+    _id,
+    profileImage,
+    notificationIds,
+    hasNewsLetter,
+    notificationStatus,
+  } = user;
+  return {
+    _id,
+    name,
+    email,
+    phone,
+    state,
+    role,
+    country,
+    hasPackage,
+    packagePurchasedDate,
+    packageExpireDate,
+    packageDetails,
+    profileImage,
+    notificationIds,
+    hasNewsLetter,
+    notificationStatus,
+  };
+};
+
+export const LoginUserMapper = (user, token) => {
+  const {
+    _id,
+    name,
+    email,
+    phone,
+    state,
+    role,
+    country,
+    hasPackage,
+    packagePurchasedDate,
+    packageExpireDate,
+    packageDetails,
+    profileImage,
+    hasNewsLetter,
+  } = user;
+  return {
+    _id,
+    name,
+    email,
+    phone,
+    state,
+    role,
+    token,
+    country,
+    hasPackage,
+    packagePurchasedDate,
+    packageExpireDate,
+    packageDetails,
+    profileImage,
+    hasNewsLetter,
+  };
+};

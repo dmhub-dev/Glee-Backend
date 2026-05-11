@@ -1,0 +1,27 @@
+image: node:20
+
+pipelines:
+  branches:
+    release/production:
+      - step:
+          deployment: Production
+          caches:
+            - node
+          script:
+            - apt-get update && apt-get install -y rsync
+            - ssh ubuntu@13.201.108.208 'mkdir -p /var/www/glee-be-prod'
+            - wget -O - https://raw.githubusercontent.com/shahzaib-sheikh/replace-env-vars/master/replace-env-vars.sh | bash -s .env.example production.env GLEE
+            - rsync -avz ./production.env -e ssh ubuntu@13.201.108.208:/var/www/glee-be-prod
+            # - export NODE_OPTIONS="--max_old_space_size=4096"
+            # - yarn config set registry https://registry.npmjs.org
+            # - apt-get update && apt-get install -y libvips
+            # - yarn install --verbose
+            # - yarn build
+            - rsync -r -avz -e ssh . ubuntu@13.201.108.208:/var/www/glee-be-prod --delete-before --exclude '.git' --exclude 'src/public' --exclude 'node_modules'
+            # - ssh ubuntu@13.201.108.208 'cd /var/www/glee-be-prod && nvm use v16.20.2 && node -v  && yarn install --ignore-engines && yarn add zip-local'
+            # - rsync -avz ./production.env -e ssh ubuntu@13.201.108.208:/var/www/glee-be-prod
+            # - ssh ubuntu@13.201.108.208 'cd /var/www/glee-be-prod && sudo docker-compose up  -d'
+            # - ssh ubuntu@13.201.108.208 'cd /var/www/glee-be-prod && source ~/.nvm/nvm.sh && yarn'
+            # - ssh ubuntu@13.201.108.208 'cd /var/www/glee-be-prod && yarn build'
+            # - ssh ubuntu@13.201.108.208 'cd /var/www/glee-be-prod/ && pm2 start npm --name "GLEE-API" -- run start && pm2 delete "GLEE-API" && pm2 start npm --name "GLEE-API" -- run start'
+            - ssh ubuntu@13.201.108.208 'cd /var/www/glee-be-prod/ && yarn build && pm2 restart "GLEE-API"'
