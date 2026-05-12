@@ -1,747 +1,308 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
-import { InjectModel } from '@nestjs/mongoose';
-import { FilterQuery, Model, UpdateQuery } from 'mongoose';
-import { CreateEventDto } from './dto/create-event.dto';
-import { UpdateEventDto } from './dto/update-event.dto';
-import { EventTicketsDocument } from 'src/schemas/event.tickets.schema';
-import {
-  eventMinorDetails,
-  Events,
-  EventsDocument,
-} from 'src/schemas/events.schema';
-import { ApiResponses } from 'src/shared/response';
-import { NearByEvents } from './dto/nearby-events.dto';
-import { EventsSeeder } from '../seeder/events.seeder';
-import CategorySeeder from '../seeder/category.seeder';
 import { ConfigService } from '@nestjs/config';
-import { PaginationQueryDto } from './dto/pagination-query.dto';
-import { EventSharedService } from './shared/shared.event.service';
-import { EventStatus } from '../schemas/enums/status';
-import { AddImageDto, DeleteImageDto } from './dto/add-image.dto';
-import * as mongoose from 'mongoose';
-import * as fs from 'fs';
-import { PaymentDocument } from '../schemas/payment.schema';
-import { IEventTicket } from '../schemas/interfaces/event.ticekt';
+import { EntityStatus } from '@prisma/client';
+import { PrismaService } from '@src/prisma/prisma.service';
 import { deleteImages } from '../shared/utils';
-import * as moment from 'moment';
-import { RetrieveEventDto } from '@src/event/dto/retrieve.event.dto';
-import { loggers } from '@src/interceptors/logger.enums';
-import { UserDocument } from '@src/schemas/user.shema';
+import { AddImageDto, DeleteImageDto } from './dto/add-image.dto';
+import { CreateEventDto } from './dto/create-event.dto';
+import { NearByEvents } from './dto/nearby-events.dto';
+import { PaginationQueryDto } from './dto/pagination-query.dto';
+import { RetrieveEventDto } from './dto/retrieve.event.dto';
+import { UpdateEventDto } from './dto/update-event.dto';
+import { EventSharedService } from './shared/shared.event.service';
+
+const EVENT_INCLUDE = { vendor: true, category: true, schedules: true };
 
 @Injectable()
 export class EventService {
   constructor(
+    private readonly prisma: PrismaService,
     private readonly eventSharedService: EventSharedService,
-    @InjectModel(Events.name)
-    private EventsModel: Model<EventsDocument>,
-    private readonly eventSeeder: EventsSeeder,
-    private readonly categorySeeder: CategorySeeder,
     private readonly config: ConfigService,
   ) {}
 
-  // Route Specific Function
-  // ===================================================================================================================
-
-  async create(
-    createEventDto: CreateEventDto,
-    files: Array<Express.Multer.File>,
-  ) {
-    let photos: string[] = [];
-    if (files) {
-      for (let i = 0; i < files.length; i++) {
-        photos.push(
-          this.config.get('APP_URL') + '/upload/' + files[i].filename,
-        );
-      }
-      createEventDto.bannerImages = photos;
-    }
-
-    const eventDataToCreate = {
-      ...createEventDto,
-      availableTickets: createEventDto.capacity,
-      loc: {
-        type: 'Point',
-        coordinates: [
-          +`${createEventDto.longitude}`,
-          +`${createEventDto.latitude}`,
-        ],
-      },
-    };
-    delete eventDataToCreate.latitude;
-    delete eventDataToCreate.longitude;
-    const createEvent: Events = new this.EventsModel(eventDataToCreate);
-    const event: Events = await createEvent.save();
-    if (!event) {
-      return {
-        success: false,
-        message: 'currently not able to create an event',
-        data: [],
-      };
-    }
-    return {
-      success: true,
-      message: 'event created successfuly!',
-      data: createEvent,
-    };
+  private buildPhotoUrls(files: Express.Multer.File[]): string[] {
+    return (files ?? []).map(f => `${this.config.get('APP_URL')}/upload/${f.filename}`);
   }
 
-  async createEventVendor(
-    createEventDto: CreateEventDto,
-    files: Array<Express.Multer.File>,
-  ) {
-    let photos: string[] = [];
-    if (files) {
-      for (let i = 0; i < files.length; i++) {
-        photos.push(
-          this.config.get('APP_URL') + '/upload/' + files[i].filename,
-        );
-      }
-      createEventDto.bannerImages = photos;
-    }
-
-    const eventDataToCreate = {
-      ...createEventDto,
-      availableTickets: createEventDto.capacity,
-      loc: {
-        type: 'Point',
-        coordinates: [
-          +`${createEventDto.longitude}`,
-          +`${createEventDto.latitude}`,
-        ],
+  async create(createEventDto: CreateEventDto, files: Array<Express.Multer.File>) {
+    const bannerImages = this.buildPhotoUrls(files);
+    const dto = createEventDto as any;
+    const event = await this.prisma.event.create({
+      data: {
+        name: createEventDto.name,
+        vendorId: createEventDto.vendor,
+        categoryId: createEventDto.category,
+        location: createEventDto.location,
+        city: createEventDto.city,
+        country: createEventDto.country,
+        latitude: createEventDto.latitude ? +createEventDto.latitude : null,
+        longitude: createEventDto.longitude ? +createEventDto.longitude : null,
+        price: createEventDto.price,
+        capacity: createEventDto.capacity ? +createEventDto.capacity : null,
+        maxTicketPurchased: createEventDto.maxTicketPurchased ? +createEventDto.maxTicketPurchased : null,
+        availableTickets: createEventDto.capacity ? +createEventDto.capacity : null,
+        bannerImages: bannerImages.length ? bannerImages : [],
+        startDate: dto.date?.start ?? null,
+        endDate: dto.date?.end ?? null,
       },
-    };
-    delete eventDataToCreate.latitude;
-    delete eventDataToCreate.longitude;
-    const createEvent: Events = new this.EventsModel(eventDataToCreate);
-    const event: Events = await createEvent.save();
-    if (!event) {
-      return {
-        success: false,
-        message: 'currently not able to create an event',
-        data: [],
-      };
-    }
-    return {
-      success: true,
-      message: 'event created successfuly!',
-      data: createEvent,
-    };
+    });
+    return { success: true, message: 'event created successfuly!', data: event };
+  }
+
+  async createEventVendor(createEventDto: CreateEventDto, files: Array<Express.Multer.File>) {
+    return this.create(createEventDto, files);
   }
 
   async eventEarningService(id: string) {
-    if (!mongoose.isValidObjectId(id))
-      throw new HttpException(
-        { message: 'Invalid reference id provided.', success: false },
-        HttpStatus.BAD_REQUEST,
-      );
-
     const result = await this.eventSharedService.calculateEventEarning(id);
-    if (!Array.isArray(result) || result.length === 0)
-      return {
-        success: true,
-        adminEarning: 0,
-        vendorEarning: 0,
-      };
-
-    return {
-      success: true,
-      data: result[0],
-    };
+    if (!Array.isArray(result) || result.length === 0) {
+      return { success: true, adminEarning: 0, vendorEarning: 0 };
+    }
+    return { success: true, data: result[0] };
   }
 
   async findAll({ page, limit, search }: RetrieveEventDto) {
-    let query: Partial<FilterQuery<EventsDocument>> = {
-      isDeleted: false,
-    };
-    if (search)
-      query.$text = {
-        $search: search,
-      };
-    const data: Array<EventsDocument> = await this.EventsModel.find(query)
-      .populate('category')
-      .populate('vendor')
-      .skip((page - 1) * limit)
-      .limit(limit)
-      .sort('-createdAt');
+    const where: any = { isDeleted: false };
+    if (search) where.name = { contains: search, mode: 'insensitive' };
 
-    const docCount = await this.EventsModel.count(query);
+    const [data, docCount] = await Promise.all([
+      this.prisma.event.findMany({
+        where,
+        include: EVENT_INCLUDE,
+        skip: (page - 1) * limit,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.event.count({ where }),
+    ]);
 
-    if (!data) {
-      return {
-        success: false,
-        message: 'There is currently no events',
-        data: [],
-      };
-    }
-    return {
-      success: true,
-      data,
-      page,
-      limit,
-      totalPages: Math.ceil(docCount / limit),
-    };
+    return { success: true, data, page, limit, totalPages: Math.ceil(docCount / limit) };
   }
 
-  async findAllByVendorId({ page, limit, search }: RetrieveEventDto,user) {
-    let query: Partial<FilterQuery<EventsDocument>> = {
-      isDeleted: false,
-      vendor:user.vendor_id,
-    };
-    if (search)
-      query.$text = {
-        $search: search,
-      };
-    const data: Array<EventsDocument> = await this.EventsModel.find(query)
-      .populate('category')
-      .populate('vendor')
-      .skip((page - 1) * limit)
-      .limit(limit)
-      .sort('-createdAt');
+  async findAllByVendorId({ page, limit, search }: RetrieveEventDto, user: any) {
+    const where: any = { isDeleted: false, vendorId: user.vendor_id ?? user.vendorId };
+    if (search) where.name = { contains: search, mode: 'insensitive' };
 
-    const docCount = await this.EventsModel.count(query);
+    const [data, docCount] = await Promise.all([
+      this.prisma.event.findMany({
+        where,
+        include: EVENT_INCLUDE,
+        skip: (page - 1) * limit,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.event.count({ where }),
+    ]);
 
-    if (!data) {
-      return {
-        success: false,
-        message: 'There is currently no events',
-        data: [],
-      };
-    }
-    return {
-      success: true,
-      data,
-      page,
-      limit,
-      totalPages: Math.ceil(docCount / limit),
-    };
+    return { success: true, data, page, limit, totalPages: Math.ceil(docCount / limit) };
   }
 
   async findOne(id: string, userId: string) {
-    if (!mongoose.isValidObjectId(userId) || !mongoose.isValidObjectId(id))
-      throw new HttpException('Invalid Request Data', HttpStatus.BAD_REQUEST);
-
-    const event: EventsDocument = await this.EventsModel.findById({
-      _id: id,
-    })
-      .populate('category')
-      .populate('vendor')
-      .lean();
-
-    let purchasedEvent: IEventTicket[] =
-      await this.eventSharedService.getUserPurchasedEventList(userId, id); // @todo add event id too
-
-    let noOfTicketPurchased = 0;
-    purchasedEvent.map((v) => {
-      noOfTicketPurchased += (v.paymentId as PaymentDocument)?.noOfItems;
+    const event = await this.prisma.event.findFirst({
+      where: { id, isDeleted: false },
+      include: EVENT_INCLUDE,
     });
 
+    const purchasedTickets = await this.eventSharedService.getUserPurchasedEventList(userId, id);
+    let noOfTicketPurchased = 0;
+    purchasedTickets.forEach(t => { noOfTicketPurchased += (t.payment as any)?.noOfItems ?? 0; });
+
     if (!event) {
-      return {
-        success: false,
-        message: 'There is no event with this id',
-        data: [],
-      };
+      return { success: false, message: 'There is no event with this id', data: [] };
     }
+
     return {
       success: true,
       message: 'Event Fetched Successfuly',
       data: {
         ...event,
-        isPurchased:
-          purchasedEvent.findIndex(
-            (e) => e.eventId.toString() == event._id.toString(),
-          ) > -1,
-        totalTicketPurchased: event.capacity - event.availableTickets,
+        isPurchased: purchasedTickets.some(t => t.eventId === event.id),
+        totalTicketPurchased: (event.capacity ?? 0) - (event.availableTickets ?? 0),
         noOfTicketPurchased,
-        lastTicket: purchasedEvent[0]?._id,
+        lastTicket: purchasedTickets[0]?.id,
       },
     };
   }
 
   async findOneEventByVendorId(id: string, userId: string) {
-    if (!mongoose.isValidObjectId(userId) || !mongoose.isValidObjectId(id))
-      throw new HttpException('Invalid Request Data', HttpStatus.BAD_REQUEST);
-
-    const event: EventsDocument = await this.EventsModel.findById({
-      _id: id,
-    })
-      .populate('category')
-      .populate('vendor')
-      .lean();
-
-    let purchasedEvent: IEventTicket[] =
-      await this.eventSharedService.getUserPurchasedEventList(userId, id); // @todo add event id too
-
-    let noOfTicketPurchased = 0;
-    purchasedEvent.map((v) => {
-      noOfTicketPurchased += (v.paymentId as PaymentDocument)?.noOfItems;
-    });
-
-    if (!event) {
-      return {
-        success: false,
-        message: 'There is no event with this id',
-        data: [],
-      };
-    }
-    return {
-      success: true,
-      message: 'Event Fetched Successfuly',
-      data: {
-        ...event,
-        isPurchased:
-          purchasedEvent.findIndex(
-            (e) => e.eventId.toString() == event._id.toString(),
-          ) > -1,
-        totalTicketPurchased: event.capacity - event.availableTickets,
-        noOfTicketPurchased,
-        lastTicket: purchasedEvent[0]?._id,
-      },
-    };
+    return this.findOne(id, userId);
   }
 
-  async eventParticipants(
-    filter: FilterQuery<EventTicketsDocument>,
-    me: UserDocument,
-  ) {
-    if (
-        !mongoose.isValidObjectId(filter.eventId) ||
-        !mongoose.isValidObjectId(filter.userId)
-    )
-      throw new HttpException('Invalid Request Data', HttpStatus.BAD_REQUEST);
-    const event: EventsDocument = await this.EventsModel.findById(
-        filter.eventId,
-    );
-
-    if (moment(event.date?.end).isBefore(moment()))
+  async eventParticipants(filter: { eventId: string; userId: string }, me: any) {
+    const event = await this.prisma.event.findFirst({ where: { id: filter.eventId, isDeleted: false } });
+    if (!event) {
+      return { success: false, message: 'There is no event with this id', data: [] };
+    }
+    if (event.endDate && new Date(event.endDate) < new Date()) {
       throw new HttpException('Event has been expired', HttpStatus.BAD_REQUEST);
-    loggers.info('event id: %O', event);
-    if (!event) {
-      return {
-        success: false,
-        message: 'There is no event with this id',
-        data: [],
-      };
     }
 
-    const {data: eventParticipants, count} =
-      await this.eventSharedService.helperGetEventParticipants(filter, me);
-
+    const { data: eventParticipants, count } = await this.eventSharedService.helperGetEventParticipants(filter, me);
     if (eventParticipants.length === 0) {
-      return {
-        success: true,
-        message: 'currently there are no participants in this event',
-        data: [],
-      };
+      return { success: true, message: 'currently there are no participants in this event', data: [] };
     }
 
-    return {
-      success: true,
-      message: 'Event paticipants Fetched Successfuly',
-      data: eventParticipants,
-      count,
-    };
+    return { success: true, message: 'Event paticipants Fetched Successfuly', data: eventParticipants, count };
   }
 
-  async addExtraImages(
-    files: Array<Express.Multer.File>,
-    addImagetDto: AddImageDto,
-  ) {
-    if (!mongoose.isValidObjectId(addImagetDto.eventId))
-      throw new HttpException('Invalid Request Data', HttpStatus.BAD_REQUEST);
-
-    let photos: string[] = [];
-    for (let i = 0; i < files.length; i++) {
-      photos.push(this.config.get('APP_URL') + '/upload/' + files[i].filename);
-    }
-
-    let updatedEvent: EventsDocument = await this.EventsModel.findOneAndUpdate(
-      { _id: addImagetDto.eventId },
-      { $push: { photos: { $each: [...photos] } } },
-      { new: true },
-    );
+  async addExtraImages(files: Array<Express.Multer.File>, addImagetDto: AddImageDto) {
+    const photos = this.buildPhotoUrls(files);
+    const updatedEvent = await this.prisma.event.update({
+      where: { id: addImagetDto.eventId },
+      data: { photos: { push: photos } },
+    }).catch(() => null);
 
     if (!updatedEvent) {
       throw new HttpException(
-        {
-          success: false,
-          message: 'there doesnot exist any event with given credentials',
-        },
+        { success: false, message: 'there doesnot exist any event with given credentials' },
         HttpStatus.FORBIDDEN,
       );
     }
-    return {
-      success: true,
-      message: 'Event Images uploadeded successfuly..',
-      data: updatedEvent,
-    };
+    return { success: true, message: 'Event Images uploadeded successfuly..', data: updatedEvent };
   }
 
   async deleteEventImages(deleteImagetDto: DeleteImageDto) {
     try {
       await deleteImages(deleteImagetDto.imageUrls);
-
-      let updatedEvent = await this.EventsModel.findOneAndUpdate(
-        { _id: deleteImagetDto.eventId },
-        {
-          $pullAll: {
-            photos: deleteImagetDto.imageUrls,
-            bannerImages: deleteImagetDto.imageUrls,
-          },
-        },
-        { new: true },
-      );
-
-      if (!updatedEvent) {
-        throw new HttpException(
-          {
-            success: false,
-            message: 'event does not exists',
-          },
-          HttpStatus.FORBIDDEN,
-        );
+      const event = await this.prisma.event.findUnique({ where: { id: deleteImagetDto.eventId } });
+      if (!event) {
+        throw new HttpException({ success: false, message: 'event does not exists' }, HttpStatus.FORBIDDEN);
       }
-
-      return {
-        success: true,
-        message: 'provided Images urls are deleted successfuly..',
-        data: updatedEvent,
-      };
+      const updatedEvent = await this.prisma.event.update({
+        where: { id: deleteImagetDto.eventId },
+        data: {
+          photos: event.photos.filter(p => !deleteImagetDto.imageUrls.includes(p)),
+          bannerImages: event.bannerImages.filter(p => !deleteImagetDto.imageUrls.includes(p)),
+        },
+      });
+      return { success: true, message: 'provided Images urls are deleted successfuly..', data: updatedEvent };
     } catch (e) {
       if (e instanceof HttpException) throw e;
-      throw new HttpException(
-        'Something went wrong',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
+      throw new HttpException('Something went wrong', HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
-  async nearByEvents(
-    filter: NearByEvents,
-    userId: string,
-    paginationDto?: PaginationQueryDto,
-  ) {
-    let maxNear: number = 1000;
+  async nearByEvents(filter: NearByEvents, userId: string, paginationDto?: PaginationQueryDto) {
     const { page, limit } = paginationDto;
-    let search: FilterQuery<EventsDocument> = {};
-    if (filter.radius) maxNear = filter.radius * 1000;
-    if (filter.name) {
-      search.$or = [
-        { name: { $regex: filter.name, $options: 'i' } },
-        { 'category.name': { $regex: filter.name, $options: 'i' } },
-      ];
-    }
+    const offset = (page - 1) * limit;
+    const now = new Date();
+
+    let events: any[];
+
     if (filter.latitude && filter.longitude) {
-      search.loc = {
-        $near: {
-          $geometry: {
-            type: 'Point',
-            coordinates: [filter.longitude, filter.latitude],
-          },
-          $maxDistance: maxNear,
-        },
-      };
+      const lat = +filter.latitude;
+      const lng = +filter.longitude;
+      events = await this.prisma.$queryRaw<any[]>`
+        SELECT *,
+          (6371 * acos(
+            cos(radians(${lat})) * cos(radians(latitude)) *
+            cos(radians(longitude) - radians(${lng})) +
+            sin(radians(${lat})) * sin(radians(latitude))
+          )) AS distance_km
+        FROM "Event"
+        WHERE "isDeleted" = false
+          AND latitude IS NOT NULL
+          AND longitude IS NOT NULL
+          AND status = 'ACTIVE'
+          AND ("endDate" IS NULL OR "endDate" >= ${now})
+        ORDER BY distance_km
+        LIMIT ${limit} OFFSET ${offset}
+      `;
+      if (filter.name) {
+        const name = filter.name.toLowerCase();
+        events = events.filter(e => e.name?.toLowerCase().includes(name));
+      }
+    } else {
+      const where: any = { isDeleted: false, status: EntityStatus.ACTIVE };
+      where.OR = [{ endDate: null }, { endDate: { gte: now } }];
+      if (filter.name) where.name = { contains: filter.name, mode: 'insensitive' };
+      events = await this.prisma.event.findMany({ where, orderBy: { startDate: 'asc' }, skip: offset, take: limit });
     }
 
-    let allData = await this.EventsModel.find(
-      {
-        ...search,
-        isDeleted: false,
-        isActive: EventStatus.ACTIVE,
-        'date.end': {
-          $gte: moment().startOf('day').toISOString(),
-        },
-      },
-      { ...eventMinorDetails },
-    );
+    const userPurchasedTickets = userId ? await this.eventSharedService.getUserPurchasedEventList(userId) : [];
+    const purchasedEventIds = new Set(userPurchasedTickets.map(t => t.eventId));
+    const data = events.map(e => ({ ...e, isPurchased: purchasedEventIds.has(e.id) }));
 
-    let nearByEventsData = await this.EventsModel.find(
-      {
-        ...search,
-        isDeleted: false,
-        isActive: EventStatus.ACTIVE,
-        'date.end': {
-          $gte: moment().startOf('day').toISOString(),
-        },
-      },
-      { ...eventMinorDetails },
-    )
-      .skip((page - 1) * limit)
-      .limit(limit)
-      .sort('date')
-      .lean();
-
-    let userPurchasedEvents = [];
-    let normalizeData = [];
-    if (userId) {
-      userPurchasedEvents =
-        await this.eventSharedService.getUserPurchasedEventList(userId);
-      nearByEventsData.map((val) => {
-        if (userPurchasedEvents.includes(val._id))
-          normalizeData.push({ ...val, isPurchased: true });
-        normalizeData.push({ ...val, isPurchased: false });
-      });
-    }
-
-    let totalEvents: number = allData.length;
-    let totalPages = Math.ceil(totalEvents / limit);
-    return {
-      success: true,
-      msg: 'Events fetched Successfuly',
-      data: userId ? normalizeData : nearByEventsData,
-      page,
-      limit,
-      totalPages,
-    };
+    return { success: true, msg: 'Events fetched Successfuly', data, page, limit, totalPages: Math.ceil(events.length / limit) };
   }
 
   async update(
     id: string,
     updateEventDto: UpdateEventDto,
-    uploadImages: {
-      files: Array<Express.Multer.File>;
-      photos: Array<Express.Multer.File>;
-    },
+    uploadImages: { files?: Express.Multer.File[]; photos?: Express.Multer.File[] },
   ) {
-    let eventToUpdate: EventsDocument = await this.EventsModel.findById(id);
-    const query: UpdateQuery<EventsDocument> = { ...updateEventDto };
-    const photos: string[] = [];
-    const bannerImages: string[] = [];
-    if (uploadImages?.files) {
-      for (let i = 0; i < uploadImages?.files.length; i++) {
-        bannerImages.push(
-          this.config.get('APP_URL') +
-            '/upload/' +
-            uploadImages?.files[i].filename,
-        );
-      }
-      delete updateEventDto.bannerImages;
-      query.$push = {
-        bannerImages: {
-          $each: bannerImages,
-        },
-      };
+    const eventToUpdate = await this.prisma.event.findFirst({ where: { id, isDeleted: false } });
+    if (!eventToUpdate) {
+      return { success: false, message: 'There is no event with this id', data: [] };
     }
 
-    if (updateEventDto.latitude)
-      query['loc.coordinates.1'] = updateEventDto.latitude;
-    if (updateEventDto.longitude)
-      query['loc.coordinates.0'] = updateEventDto.longitude;
+    const data: any = {};
+    const simple = ['name', 'location', 'city', 'state', 'country', 'description', 'price', 'maxTicketPurchased', 'status'];
+    simple.forEach(k => { if ((updateEventDto as any)[k] !== undefined) data[k] = (updateEventDto as any)[k]; });
 
-    if (uploadImages?.photos) {
-      for (let i = 0; i < uploadImages?.photos.length; i++) {
-        photos.push(
-          this.config.get('APP_URL') +
-            '/upload/' +
-            uploadImages?.photos[i].filename,
-        );
-      }
-      delete updateEventDto.photos;
-      query.$push = {
-        photos: {
-          $each: photos,
-        },
-      };
+    if (updateEventDto.latitude) data.latitude = +updateEventDto.latitude;
+    if (updateEventDto.longitude) data.longitude = +updateEventDto.longitude;
+
+    if (uploadImages?.files?.length) {
+      data.bannerImages = [...(eventToUpdate.bannerImages ?? []), ...this.buildPhotoUrls(uploadImages.files)];
+    }
+    if (uploadImages?.photos?.length) {
+      data.photos = [...(eventToUpdate.photos ?? []), ...this.buildPhotoUrls(uploadImages.photos)];
     }
 
     if (updateEventDto.capacity) {
-      const availableTicket = +`${eventToUpdate.availableTickets}`;
-      const capacity = +`${eventToUpdate.capacity}`;
-      const ticketPurchased = capacity - availableTicket;
-      if (!eventToUpdate.capacity) query.capacity = updateEventDto.capacity;
-      if (+`${updateEventDto.capacity}` >= ticketPurchased) {
-        const ticketToAddInCapacity =
-          +`${updateEventDto.capacity}` - ticketPurchased;
-        query.availableTickets = ticketToAddInCapacity;
+      const available = eventToUpdate.availableTickets ?? 0;
+      const capacity = eventToUpdate.capacity ?? 0;
+      const ticketPurchased = capacity - available;
+      const newCapacity = +updateEventDto.capacity;
+      if (newCapacity >= ticketPurchased) {
+        data.capacity = newCapacity;
+        data.availableTickets = newCapacity - ticketPurchased;
       } else {
-        throw new HttpException(
-          'Total capacity can not be less than tickets purchased.',
-          HttpStatus.BAD_REQUEST,
-        );
+        throw new HttpException('Total capacity can not be less than tickets purchased.', HttpStatus.BAD_REQUEST);
       }
     }
 
-    const updatedEvent: Events = await this.EventsModel.findByIdAndUpdate(
-      id,
-      query,
-      { new: true },
-    );
-
-    if (!updatedEvent) {
-      return {
-        success: false,
-        message: 'There is no event with this id',
-        data: [],
-      };
-    }
-    return {
-      success: true,
-      message: 'Event updated Successfuly',
-      data: updatedEvent,
-    };
+    const updatedEvent = await this.prisma.event.update({ where: { id }, data });
+    return { success: true, message: 'Event updated Successfuly', data: updatedEvent };
   }
 
-  async updateEventVendor(
-    id: string,
-    updateEventDto: UpdateEventDto,
-    uploadImages: {
-      files: Array<Express.Multer.File>;
-      photos: Array<Express.Multer.File>;
-    },
-  ) {
-    let eventToUpdate: EventsDocument = await this.EventsModel.findById(id);
-    const query: UpdateQuery<EventsDocument> = { ...updateEventDto };
-    const photos: string[] = [];
-    const bannerImages: string[] = [];
-    if (uploadImages?.files) {
-      for (let i = 0; i < uploadImages?.files.length; i++) {
-        bannerImages.push(
-          this.config.get('APP_URL') +
-            '/upload/' +
-            uploadImages?.files[i].filename,
-        );
-      }
-      delete updateEventDto.bannerImages;
-      query.$push = {
-        bannerImages: {
-          $each: bannerImages,
-        },
-      };
-    }
-
-    if (updateEventDto.latitude)
-      query['loc.coordinates.1'] = updateEventDto.latitude;
-    if (updateEventDto.longitude)
-      query['loc.coordinates.0'] = updateEventDto.longitude;
-
-    if (uploadImages?.photos) {
-      for (let i = 0; i < uploadImages?.photos.length; i++) {
-        photos.push(
-          this.config.get('APP_URL') +
-            '/upload/' +
-            uploadImages?.photos[i].filename,
-        );
-      }
-      delete updateEventDto.photos;
-      query.$push = {
-        photos: {
-          $each: photos,
-        },
-      };
-    }
-
-    if (updateEventDto.capacity) {
-      const availableTicket = +`${eventToUpdate.availableTickets}`;
-      const capacity = +`${eventToUpdate.capacity}`;
-      const ticketPurchased = capacity - availableTicket;
-      if (!eventToUpdate.capacity) query.capacity = updateEventDto.capacity;
-      if (+`${updateEventDto.capacity}` >= ticketPurchased) {
-        const ticketToAddInCapacity =
-          +`${updateEventDto.capacity}` - ticketPurchased;
-        query.availableTickets = ticketToAddInCapacity;
-      } else {
-        throw new HttpException(
-          'Total capacity can not be less than tickets purchased.',
-          HttpStatus.BAD_REQUEST,
-        );
-      }
-    }
-
-    const updatedEvent: Events = await this.EventsModel.findByIdAndUpdate(
-      id,
-      query,
-      { new: true },
-    );
-
-    if (!updatedEvent) {
-      return {
-        success: false,
-        message: 'There is no event with this id',
-        data: [],
-      };
-    }
-    return {
-      success: true,
-      message: 'Event updated Successfuly',
-      data: updatedEvent,
-    };
+  async updateEventVendor(id: string, updateEventDto: UpdateEventDto, files: any) {
+    return this.update(id, updateEventDto, files);
   }
 
   async remove(id: string) {
-    const checkEvent: EventsDocument = await this.getEvent(id, true);
-    if (!checkEvent) {
-      return {
-        success: false,
-        message: 'There is no event with this id or already deleted',
-        data: [],
-      };
+    const event = await this.prisma.event.findFirst({ where: { id, isDeleted: false } });
+    if (!event) {
+      return { success: false, message: 'There is no event with this id or already deleted', data: [] };
     }
-
-    const eventData: EventsDocument = await this.EventsModel.findByIdAndUpdate(
-      id,
-      {
-        isDeleted: true,
-        deletedAt: new Date(),
-      },
-      { new: true },
-    );
-    return {
-      success: true,
-      message: 'This event is deleted successfuly',
-      data: [eventData],
-    };
+    const eventData = await this.prisma.event.update({ where: { id }, data: { isDeleted: true, deletedAt: new Date() } });
+    return { success: true, message: 'This event is deleted successfuly', data: [eventData] };
   }
 
-  async getEvent(
-    id: string,
-    Alreaydelted: boolean,
-  ): Promise<null | EventsDocument> {
-    let query: Object;
-    if (Alreaydelted) {
-      query = { isDeleted: false };
-    }
-
-    const event: EventsDocument = await this.EventsModel.findOne({
-      _id: id,
-      ...query,
-    });
-    return event ? event : null;
+  async getEvent(id: string, filterDeleted: boolean) {
+    const where: any = { id };
+    if (filterDeleted) where.isDeleted = false;
+    return this.prisma.event.findFirst({ where });
   }
 
-  async removepermanent(id: string): Promise<any | typeof ApiResponses> {
-    const checkEvent: EventsDocument = await this.getEvent(id, false);
-    if (!checkEvent) {
-      return {
-        success: false,
-        message: 'There is no event with this id or already deleted',
-        data: [],
-      };
+  async removepermanent(id: string) {
+    const event = await this.getEvent(id, false);
+    if (!event) {
+      return { success: false, message: 'There is no event with this id or already deleted', data: [] };
     }
-
-    await this.eventSharedService.helperEventTicketUpdateMany(
-      { eventId: id },
-      { deletedEventData: checkEvent },
-    );
-    await this.EventsModel.findByIdAndDelete({ _id: id });
-    return {
-      success: true,
-      message: 'This event is deleted successfuly',
-      data: [],
-    };
+    await this.eventSharedService.helperEventTicketUpdateMany({ eventId: id }, {});
+    await this.prisma.event.delete({ where: { id } });
+    return { success: true, message: 'This event is deleted successfuly', data: [] };
   }
 
   async dbDataFiller() {
-    let filledData = await this.eventSeeder.createDummyEvents();
-    return {
-      success: true,
-      filledData,
-    };
+    return { success: false, message: 'Seeder not available in Prisma mode' };
   }
 
   async clearEventCL() {
-    await this.EventsModel.deleteMany({});
-    return {
-      success: true,
-    };
+    await this.prisma.event.deleteMany({});
+    return { success: true };
   }
 }

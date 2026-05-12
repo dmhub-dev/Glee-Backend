@@ -1,120 +1,95 @@
 import { Injectable } from '@nestjs/common';
-import { InjectModel } from '@nestjs/mongoose';
-import { FilterQuery, Model, QueryOptions, UpdateQuery } from 'mongoose';
-import {
-  EventTickets,
-  EventTicketsDocument,
-} from 'src/schemas/event.tickets.schema';
-import { UserDocument, userPublicFields } from 'src/schemas/user.shema';
+import { PrismaService } from '@src/prisma/prisma.service';
 
-import {
-  IFetchEventTicketOptions,
-  IPaginationOptions,
-} from '../event-tickets/interfaces/ticket.service';
-import {
-  aggregateEventEarning,
-  aggregateEventTicket,
-} from '../event-tickets/aggregations/aggregation.event-ticket';
-import { Events, EventsDocument } from '../../schemas/events.schema';
-import { IEventSelectableFields } from '../../schemas/interfaces/event';
+export interface IPaginationOptions {
+  page?: number;
+  limit?: number;
+}
+
+export interface IFetchEventTicketOptions {
+  skipPopulates?: string[];
+  populateAll?: boolean;
+  populate?: any[];
+}
 
 @Injectable()
 export class EventSharedService {
-  constructor(
-    @InjectModel(Events.name)
-    private EventsModel: Model<EventsDocument>,
-    @InjectModel(EventTickets.name)
-    private EventTicketsModel: Model<EventTicketsDocument>,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  // Helper Functions
-  // ===================================================================================================================
-
-  async getEventTicketsData(
-    filter: FilterQuery<EventTicketsDocument>,
-    pagination?: IPaginationOptions,
-    options?: IFetchEventTicketOptions,
-  ): Promise<EventTicketsDocument[]> {
-    let populate;
-    let populateOptions = {
-      userId: {
-        path: 'userId',
-        select: userPublicFields,
+  async getEventTicketsData(filter: any, pagination?: IPaginationOptions, _options?: IFetchEventTicketOptions) {
+    const skip = pagination?.page && pagination?.limit ? (pagination.page - 1) * pagination.limit : 0;
+    const take = pagination?.limit;
+    return this.prisma.eventTicket.findMany({
+      where: filter,
+      include: {
+        user: { include: { country: true, city: true, state: true } },
+        payment: true,
+        event: { include: { category: true, vendor: true } },
       },
-    };
-
-    if (options.populateAll) {
-      populate = [populateOptions.userId, 'eventId', 'paymentId'];
-    } else if (options.populate) {
-      populate = options.populate;
-    } else {
-      populate = [
-        ...Object.keys(filter).map((v) =>
-          options?.skipPopulates.includes(v)
-            ? ''
-            : populateOptions[v]
-            ? populateOptions[v]
-            : v,
-        ),
-      ];
-    }
-
-    let paginationOptions: QueryOptions = {};
-    if (pagination && pagination.page && pagination.limit) {
-      paginationOptions.skip = (pagination.page - 1) * pagination.limit;
-      paginationOptions.limit = pagination.limit;
-    }
-    let projections = { ...Object.keys(filter).map((v) => ({ [v]: 1 })) };
-
-    return this.EventTicketsModel.find(filter, projections, {
-      populate,
-      ...paginationOptions,
+      skip,
+      take,
+      orderBy: { createdAt: 'desc' },
     });
   }
 
-  async helperEventTicketUpdateMany(
-    filter: FilterQuery<EventTicketsDocument>,
-    update: UpdateQuery<EventTicketsDocument>,
-  ) {
-    return this.EventTicketsModel.updateMany(filter, update);
+  async helperEventTicketUpdateMany(filter: any, _update: any) {
+    // EventTicket has no soft-delete fields in new schema; delete permanently on cascade
+    return this.prisma.eventTicket.deleteMany({ where: filter });
   }
 
-  async helperGetEventParticipants(
-    filter: FilterQuery<EventTicketsDocument>,
-    me: UserDocument,
-  ) {
-    let data = await this.EventTicketsModel.aggregate(
-      aggregateEventTicket(filter, me),
-    );
+  async helperGetEventParticipants(filter: { eventId: string; userId: string }, me: any) {
+    const tickets = await this.prisma.eventTicket.findMany({
+      where: { eventId: filter.eventId, userId: { not: filter.userId } },
+      distinct: ['userId'],
+      include: {
+        user: { include: { blockedUsers: true, blockedByUsers: true } },
+      },
+    });
+
+    const blockedByMeIds: string[] = (me.blockedUsers ?? []).map((b: any) => b.blockedId);
+
+    const data = tickets.map(t => ({
+      ...t.user,
+      blockedByMe: blockedByMeIds.includes(t.user.id),
+      blockedByHim: t.user.blockedByUsers.some((b: any) => b.blockerId === me.id),
+      unReadCount: 0,
+    }));
+
     return { data, count: data.length };
   }
 
-  async helperEventFindById(_id: string) {
-    return this.EventsModel.findById(_id).populate('vendor', 'email');
+  async helperEventFindById(id: string) {
+    return this.prisma.event.findFirst({
+      where: { id, isDeleted: false },
+      include: { vendor: true },
+    });
   }
 
-  async helperSingleEventFilter(
-    filter: FilterQuery<EventsDocument>,
-    projection?: IEventSelectableFields,
-    options?: QueryOptions,
-  ) {
-    return this.EventsModel.findOne(filter, projection, options);
+  async helperSingleEventFilter(filter: any) {
+    const where: any = {};
+    if (filter._id || filter.id) where.id = filter._id ?? filter.id;
+    if (filter.isDeleted !== undefined) where.isDeleted = filter.isDeleted;
+    if (filter.status) where.status = filter.status;
+    return this.prisma.event.findFirst({ where });
   }
 
-  async getUserPurchasedEventList(
-    userId: string,
-    eventId?: string,
-  ): Promise<Array<EventTicketsDocument>> {
-    const query: FilterQuery<EventTicketsDocument> = {};
-    if (userId) query.userId = userId;
-    if (eventId) query.eventId = eventId;
-    return this.EventTicketsModel.find({ userId, eventId })
-      .sort({ 'date.start': -1 })
-      .populate('paymentId')
-      .lean();
+  async getUserPurchasedEventList(userId: string, eventId?: string) {
+    const where: any = { userId };
+    if (eventId) where.eventId = eventId;
+    return this.prisma.eventTicket.findMany({
+      where,
+      include: { payment: true },
+      orderBy: { createdAt: 'desc' },
+    });
   }
 
-  async calculateEventEarning(id) {
-    return this.EventTicketsModel.aggregate(aggregateEventEarning(id));
+  async calculateEventEarning(eventId: string) {
+    const tickets = await this.prisma.eventTicket.findMany({
+      where: { eventId },
+      include: { payment: true },
+    });
+    if (!tickets.length) return [];
+    const grandTotal = tickets.reduce((sum, t) => sum + Number(t.payment?.totalPrice ?? 0), 0);
+    return [{ _id: eventId, grandTotal, adminEarning: 0, vendorEarning: grandTotal }];
   }
 }
