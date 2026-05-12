@@ -1,24 +1,9 @@
 import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
-import { UserDto } from './dto/user.dto';
-import { CreateUserDto } from './dto/user.create.dto';
-import { LoginUserDto } from './dto/user-login.dto';
-import { comparePasswords } from '../shared/utils';
-import { Model } from 'mongoose';
-import {
-  UserDocument,
-  User,
-  userPublicFields,
-  userInternalUsedFields,
-} from '../schemas/user.shema';
-import { InjectModel } from '@nestjs/mongoose';
+import { PrismaService } from '@src/prisma/prisma.service';
+import { UserRole } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
-import { NotificationType } from 'src/schemas/enums/notification-enum';
-import {
-  NotificationDocument,
-  Notification,
-} from 'src/schemas/notification.schema';
-import { OnesignalService } from 'src/onesignal/onesignal.service';
-import { SocketGateway } from 'src/socket/socket.gateway';
+import { JwtService } from '@nestjs/jwt';
+import { comparePasswords } from '../shared/utils';
 import {
   LoginDto,
   LoginVendorDto,
@@ -26,238 +11,186 @@ import {
   RegisterVendorDto,
   VerifyOtpDto,
 } from '../auth/dto/create-auth.dto';
-import { IUser, IUserSelectableFields } from '../schemas/interfaces/user';
-import { JwtService } from '@nestjs/jwt';
-import { Role } from '@src/schemas/enums/role';
-import { AccountStatus } from '@src/schemas/enums/status';
+
+export const USER_PUBLIC_FIELDS = {
+  id: true,
+  name: true,
+  email: true,
+  phone: true,
+  address: true,
+  city: true,
+  state: true,
+  country: true,
+  profileImage: true,
+  role: true,
+  vendorId: true,
+  vendor: true,
+  notificationStatus: true,
+  profileStatus: true,
+  haveNewNotification: true,
+  isAllChatRead: true,
+  notificationIds: true,
+};
+
+export const USER_AUTH_FIELDS = {
+  ...USER_PUBLIC_FIELDS,
+  token: true,
+};
 
 @Injectable()
 export class UsersService {
   constructor(
-    @InjectModel(User.name) private UserModel: Model<UserDocument>,
-    @InjectModel(Notification.name)
-    private notificationModel: Model<NotificationDocument>, // private readonly onesignalService: OnesignalService,
+    private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
   ) {}
 
-  async findOne(
-    filter: Partial<IUser>,
-    projection?: IUserSelectableFields,
-    options?: object,
-  ): Promise<UserDocument> {
-    return this.UserModel.findOne(filter, projection, options);
+  async findOne(where: { id?: string; email?: string; otp?: number }) {
+    return this.prisma.user.findFirst({ where: { ...where, isDeleted: false } });
   }
 
-  async readChat(id) {
-    return this.UserModel.findByIdAndUpdate(id, { isAllChatRead: true });
+  async readChat(id: string) {
+    return this.prisma.user.update({ where: { id }, data: { isAllChatRead: true } });
   }
 
-  async findByLogin({ email, password, role }: LoginDto): Promise<IUser> {
-    const user: UserDocument = await this.UserModel.findOne({ email, role })
-      .populate('state')
-      .populate('city')
-      .populate('country');
-    if (!user) {
-      throw new HttpException('User does not exists', HttpStatus.UNAUTHORIZED);
-    }
+  async findByLogin({ email, password, role }: LoginDto) {
+    const user = await this.prisma.user.findFirst({
+      where: { email, role: role as UserRole, isDeleted: false },
+      include: { city: true, state: true, country: true },
+    });
+
+    if (!user) throw new HttpException('User does not exist', HttpStatus.UNAUTHORIZED);
 
     const areEqual = await comparePasswords(user.password, password);
-    if (!areEqual) {
-      throw new HttpException(`Invalid credentials`, HttpStatus.UNAUTHORIZED);
-    }
+    if (!areEqual) throw new HttpException('Invalid credentials', HttpStatus.UNAUTHORIZED);
 
-    if (user.isActive == 'INACTIVE') {
+    if (user.isActive === 'INACTIVE') {
       throw new HttpException(
         `Account has been ${user.isActive}. Please contact your administrator.`,
         HttpStatus.UNAUTHORIZED,
       );
     }
 
-    if (user.isActive !== 'ACTIVE') {
-      throw new HttpException(
-        `Account has been ${user.isActive}. Please contact your administrator.`,
-        HttpStatus.UNAUTHORIZED,
-      );
-    }
+    const token = await this._createToken(user);
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { token: token.accessToken, profileStatus: true },
+    });
 
-    if (user.role === Role.ADMIN) {
-    }
-
-    const token = this._createToken(user);
-    user.token = token.accessToken;
-    user.profileStatus = true;
-    await user.save();
-
-    return user.toAuthData();
+    return this._toAuthData({ ...user, token: token.accessToken });
   }
 
-  async getRoleByAuth({ email, password }: LoginDto){
-    const user: UserDocument = await this.UserModel.findOne({ email })
-      .populate('state')
-      .populate('city')
-      .populate('country');
-    if (!user) {
-      throw new HttpException('User does not exists', HttpStatus.UNAUTHORIZED);
-    }
+  async getRoleByAuth({ email, password }: LoginDto) {
+    const user = await this.prisma.user.findFirst({
+      where: { email, isDeleted: false },
+    });
+    if (!user) throw new HttpException('User does not exist', HttpStatus.UNAUTHORIZED);
 
     const areEqual = await comparePasswords(user.password, password);
-    if (!areEqual) {
-      throw new HttpException(`Invalid credentials`, HttpStatus.UNAUTHORIZED);
-    }
+    if (!areEqual) throw new HttpException('Invalid credentials', HttpStatus.UNAUTHORIZED);
 
-    if (user.isActive == 'INACTIVE') {
-      throw new HttpException(
-        `Account has been ${user.isActive}. Please contact your administrator.`,
-        HttpStatus.UNAUTHORIZED,
-      );
-    }
-
-    if (user.isActive !== 'ACTIVE') {
+    if (user.isActive === 'INACTIVE') {
       throw new HttpException(
         `Account has been ${user.isActive}. Please contact your administrator.`,
         HttpStatus.UNAUTHORIZED,
       );
     }
     return user;
-}
+  }
 
-  async findByVendorLogin({ email, password, role }: LoginVendorDto): Promise<IUser> {
-    const user: UserDocument = await this.UserModel.findOne({ email, role })
-      .populate('vendor_id')
-      .populate('state')
-      .populate('city')
-      .populate('country');
-    if (!user) {
-      throw new HttpException('User does not exists', HttpStatus.UNAUTHORIZED);
-    }
-    console.log("user.vendor_id._id", user.vendor_id._id);
-    console.log("user.vendor_id.email", user.vendor_id.email);
-    console.log("user.vendor_id.name",user.vendor_id.name);
-    
-    
+  async findByVendorLogin({ email, password, role }: LoginVendorDto) {
+    const user = await this.prisma.user.findFirst({
+      where: { email, role: role as UserRole, isDeleted: false },
+      include: { vendor: true, city: true, state: true, country: true },
+    });
+    if (!user) throw new HttpException('User does not exist', HttpStatus.UNAUTHORIZED);
 
     const areEqual = await comparePasswords(user.password, password);
-    if (!areEqual) {
-      throw new HttpException(`Invalid credentials`, HttpStatus.UNAUTHORIZED);
-    }
+    if (!areEqual) throw new HttpException('Invalid credentials', HttpStatus.UNAUTHORIZED);
 
-    if (user.isActive == 'INACTIVE') {
+    if (user.isActive === 'INACTIVE') {
       throw new HttpException(
         `Account has been ${user.isActive}. Please contact your administrator.`,
         HttpStatus.UNAUTHORIZED,
       );
     }
 
-    if (user.isActive !== 'ACTIVE') {
-      throw new HttpException(
-        `Account has been ${user.isActive}. Please contact your administrator.`,
-        HttpStatus.UNAUTHORIZED,
-      );
+    const token = await this._createToken(user);
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { token: token.accessToken, profileStatus: true },
+    });
+
+    return this._toAuthData({ ...user, token: token.accessToken });
+  }
+
+  async findByPayload(payload: { userId: string }) {
+    return this.prisma.user.findFirst({
+      where: { id: payload.userId, isDeleted: false },
+      select: USER_PUBLIC_FIELDS,
+    });
+  }
+
+  async create(userDto: RegisterUserDto) {
+    const { password, ...rest } = userDto as any;
+    const hashed = await bcrypt.hash(password, 10);
+    return this.prisma.user.create({ data: { ...rest, password: hashed } });
+  }
+
+  async createVendorAuth(dto: RegisterVendorDto, vendorId: string) {
+    const password = await bcrypt.hash(dto.password, 10);
+    return this.prisma.user.create({
+      data: {
+        name: (dto as any).username,
+        password,
+        email: dto.email,
+        role: UserRole.VENDOR,
+        isActive: 'INACTIVE' as any,
+        vendorId,
+      },
+    });
+  }
+
+  async forgotPassword(data: { email: string; otp: number }) {
+    const user = await this.prisma.user.findFirst({ where: { email: data.email } });
+    if (!user) throw new HttpException("User doesn't exist", HttpStatus.BAD_REQUEST);
+    return this.prisma.user.update({ where: { id: user.id }, data: { otp: data.otp } });
+  }
+
+  async resetPassword(data: { email: string; otp: number; password: string }) {
+    const user = await this.prisma.user.findFirst({ where: { email: data.email } });
+    if (!user) throw new HttpException('Invalid user email', HttpStatus.BAD_REQUEST);
+    if (user.otp !== data.otp) {
+      throw new HttpException({ message: 'Invalid OTP', isOtpInvalid: true }, HttpStatus.BAD_REQUEST);
     }
-
-    const token = this._createToken(user);
-    user.token = token.accessToken;
-    user.profileStatus = true;
-    await user.save();
-
-    return user.toAuthData();
-  }
-
-  async findByPayload(data: any, projection?: any): Promise<any> {
-    return await this.findOne(
-      { _id: data.userId },
-      projection ? projection : { ...userPublicFields },
-    );
-  }
-
-  async create(userDto: RegisterUserDto): Promise<UserDocument> {
-    userDto.password = await bcrypt.hash(userDto.password, 10);
-    return await this.UserModel.create(userDto);
-  }
-
-  async createVendorAuth(registerVendorDto: RegisterVendorDto,vendor_id:number): Promise<UserDocument> {
-    registerVendorDto.password = await bcrypt.hash(registerVendorDto.password, 10);
-    const data = {
-      name: registerVendorDto.username,
-      password: registerVendorDto.password,
-      email: registerVendorDto.email,
-      role: Role.VENDOR,
-      isActive: AccountStatus.INACTIVE,
-      vendor_id:vendor_id
-    };
-    return await this.UserModel.create(data);
-  }
-
-  async forgotPassword(data): Promise<any> {
-    const userInDb = await this.UserModel.findOne({ email: data.email });
-    if (!userInDb) {
-      throw new HttpException("User doesn't exists", HttpStatus.BAD_REQUEST);
-    }
-
-    const user = this.UserModel.findOneAndUpdate(
-      { email: data.email },
-      { otp: data.otp },
-      { new: true },
-    );
-    return user;
-  }
-
-  async resetPassword(data): Promise<any> {
-    let userExists = await this.findOne({ email: data.email });
-
-    if (!userExists) {
-      throw new HttpException('Invalid user email', HttpStatus.BAD_REQUEST);
-    }
-
-    if (userExists.otp !== data.otp) {
-      throw new HttpException(
-        { message: 'Invalid OTP', isOtpInvalid: true },
-        HttpStatus.BAD_REQUEST,
-      );
-    }
-
     const password = await bcrypt.hash(data.password, 10);
-
-    const user: UserDocument = await this.UserModel.findOneAndUpdate(
-      { email: data.email },
-      { password: password, otp: null },
-      { new: true },
-    );
-
-    return user.toPublicData();
+    return this.prisma.user.update({
+      where: { id: user.id },
+      data: { password, otp: null },
+      select: USER_PUBLIC_FIELDS,
+    });
   }
 
-  async verifyOtp(data: VerifyOtpDto): Promise<any> {
-    let userExists = await this.findOne({ email: data.email, otp: data.otp });
-
-    if (!userExists) {
+  async verifyOtp(data: VerifyOtpDto) {
+    const user = await this.prisma.user.findFirst({
+      where: { email: data.email, otp: data.otp },
+    });
+    if (!user) {
       throw new HttpException(
-        { message: 'Invalid OTP', isOtpInvalid: true, success: false, data },
+        { message: 'Invalid OTP', isOtpInvalid: true, success: false },
         HttpStatus.BAD_REQUEST,
       );
     }
-
-    return {
-      success: true,
-      message: 'Otp has been verified',
-      data,
-    };
+    return { success: true, message: 'Otp has been verified', data };
   }
 
-  /**
-   * Method: Create Token
-   * ....................
-   * @param data
-   * @private
-   */
-  private _createToken(data): any {
+  private async _createToken(user: { id: string; email: string }) {
     const expiresIn = process.env.EXPIRESIN;
+    const accessToken = this.jwtService.sign({ userId: user.id, email: user.email });
+    return { expiresIn, accessToken };
+  }
 
-    const user = { userId: data._id, email: data.email };
-    const accessToken = this.jwtService.sign(user);
-    return {
-      expiresIn,
-      accessToken,
-    };
+  private _toAuthData(user: any) {
+    const fields = Object.keys(USER_AUTH_FIELDS);
+    return fields.reduce((acc, k) => ({ ...acc, [k]: user[k] }), {});
   }
 }
