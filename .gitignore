@@ -27,6 +27,7 @@ migration/outputEc2.txt
 /.idea
 .project
 .classpath
+/.claude
 .c9/
 *.launch
 .settings/
@@ -45,3 +46,5 @@ package-lock.json
 yarn.lock
 pnpm-lock.yaml
 *.env
+/docs
+/generated/prisma

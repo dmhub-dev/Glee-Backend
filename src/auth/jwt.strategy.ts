@@ -10,7 +10,6 @@ import {
 } from '@nestjs/common';
 // import { JwtPayload } from './interfaces/payload.interface';
 import { RegisterUserDto } from './dto/create-auth.dto';
-import { AccountStatus } from 'src/schemas/enums/status';
 import { ConfigService } from '@nestjs/config';
 
 @Injectable()
@@ -27,7 +26,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
   async validate(payload): Promise<RegisterUserDto> {
     const user: any = await this.authService.validateUser(payload);
-    if (user.isActive == AccountStatus.INACTIVE) {
+    if (user.isActive === 'INACTIVE') {
       throw new HttpException('Inactive user', HttpStatus.UNAUTHORIZED);
     }
     if (!user) {
