@@ -1,0 +1,388 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  OPERATIONS_MANAGER
+  COMMERCIAL_MANAGER
+  FINANCE
+  VENDOR
+  VENDOR_STAFF
+  CUSTOMER_SUPPORT
+  CONTENT_MANAGER
+  USER
+}
+
+enum AccountStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum VendorStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum EntityStatus {
+  ACTIVE
+  DONE
+  SUSPENDED
+  INACTIVE
+}
+
+enum PaymentStatus {
+  SUCCEEDED
+  PENDING
+  FAILED
+}
+
+enum NotificationType {
+  CHAT
+  EVENT_TICKET
+  SERVICE
+  BOOKING
+}
+
+// ─── Core ─────────────────────────────────────────────────────────────────────
+
+model User {
+  id                  String        @id @default(cuid())
+  name                String
+  email               String        @unique
+  phone               String?
+  password            String
+  role                UserRole      @default(USER)
+  isActive            AccountStatus @default(ACTIVE)
+  profileImage        String?
+  token               String?
+  otp                 Int?
+  margin              Float?
+  adminContactInfo    Json?
+  address             String?
+  cityId              Int?
+  city                City?         @relation(fields: [cityId], references: [id])
+  stateId             Int?
+  state               State?        @relation(fields: [stateId], references: [id])
+  countryId           Int?
+  country             Country?      @relation(fields: [countryId], references: [id])
+  vendorId            String?
+  vendor              Vendor?       @relation(fields: [vendorId], references: [id])
+  profileStatus       Boolean       @default(true)
+  notificationIds     String[]
+  notificationStatus  Boolean       @default(true)
+  isAllChatRead       Boolean       @default(true)
+  haveNewNotification Boolean       @default(false)
+  isDeleted           Boolean       @default(false)
+  deletedAt           DateTime?
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+
+  blockedUsers        UserBlock[]         @relation("blocker")
+  blockedByUsers      UserBlock[]         @relation("blocked")
+  notifications       Notification[]
+  sentMessages        Chat[]              @relation("sender")
+  receivedMessages    Chat[]              @relation("receiver")
+  eventTickets        EventTicket[]
+  purchasedServices   PurchasedService[]
+  purchasedBookings   PurchasedBooking[]
+  payments            Payment[]
+
+  @@index([email])
+  @@index([isDeleted])
+}
+
+model UserBlock {
+  blockerId String
+  blockedId String
+  blocker   User   @relation("blocker", fields: [blockerId], references: [id])
+  blocked   User   @relation("blocked", fields: [blockedId], references: [id])
+
+  @@id([blockerId, blockedId])
+}
+
+model Vendor {
+  id              String       @id @default(cuid())
+  name            String
+  email           String       @unique
+  phone           String?
+  address         String?
+  state           String?
+  country         String?
+  city            String?
+  profileImage    String?
+  routingNumber   String?
+  businessAccount String?
+  status          VendorStatus @default(ACTIVE)
+  isDeleted       Boolean      @default(false)
+  deletedAt       DateTime?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  users    User[]
+  events   Event[]
+  services Service[]
+  bookings Booking[]
+
+  @@index([isDeleted])
+}
+
+model Category {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  events   Event[]
+  services Service[]
+  bookings Booking[]
+}
+
+// ─── Events ───────────────────────────────────────────────────────────────────
+
+model Event {
+  id                 String       @id @default(cuid())
+  name               String
+  vendorId           String
+  vendor             Vendor       @relation(fields: [vendorId], references: [id])
+  categoryId         String?
+  category           Category?    @relation(fields: [categoryId], references: [id])
+  description        String?
+  price              Decimal      @db.Decimal(10, 2)
+  capacity           Int?
+  maxTicketPurchased Int?
+  availableTickets   Int?
+  location           String?
+  city               String?
+  state              String?
+  country            String?
+  latitude           Float?
+  longitude          Float?
+  bannerImages       String[]
+  photos             String[]
+  startDate          DateTime?
+  endDate            DateTime?
+  status             EntityStatus @default(ACTIVE)
+  suspended          Boolean      @default(false)
+  isDeleted          Boolean      @default(false)
+  deletedAt          DateTime?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  schedules EventSchedule[]
+  tickets   EventTicket[]
+
+  @@index([isDeleted])
+  @@index([vendorId])
+}
+
+model EventSchedule {
+  id        String   @id @default(cuid())
+  eventId   String
+  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  startTime DateTime
+  endTime   DateTime
+  createdAt DateTime @default(now())
+}
+
+model EventTicket {
+  id         String   @id @default(cuid())
+  eventId    String
+  event      Event    @relation(fields: [eventId], references: [id])
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  quantity   Int      @default(1)
+  totalPrice Decimal  @db.Decimal(10, 2)
+  paymentId  String?
+  payment    Payment? @relation(fields: [paymentId], references: [id])
+  createdAt  DateTime @default(now())
+
+  notifications Notification[]
+}
+
+// ─── Services ─────────────────────────────────────────────────────────────────
+
+model Service {
+  id             String       @id @default(cuid())
+  name           String
+  vendorId       String
+  vendor         Vendor       @relation(fields: [vendorId], references: [id])
+  categoryId     String?
+  category       Category?    @relation(fields: [categoryId], references: [id])
+  description    String?
+  price          Decimal      @db.Decimal(10, 2)
+  address        String?
+  latitude       Float?
+  longitude      Float?
+  photos         String[]
+  serviceDetails Json?
+  status         EntityStatus @default(ACTIVE)
+  isDeleted      Boolean      @default(false)
+  deletedAt      DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  purchasedServices PurchasedService[]
+
+  @@index([isDeleted])
+  @@index([vendorId])
+}
+
+model PurchasedService {
+  id        String   @id @default(cuid())
+  serviceId String
+  service   Service  @relation(fields: [serviceId], references: [id])
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  paymentId String?
+  payment   Payment? @relation(fields: [paymentId], references: [id])
+  createdAt DateTime @default(now())
+
+  notifications Notification[]
+}
+
+// ─── Bookings ─────────────────────────────────────────────────────────────────
+
+model Booking {
+  id             String       @id @default(cuid())
+  name           String
+  vendorId       String
+  vendor         Vendor       @relation(fields: [vendorId], references: [id])
+  categoryId     String?
+  category       Category?    @relation(fields: [categoryId], references: [id])
+  address        String?
+  description    String?
+  price          Decimal      @db.Decimal(10, 2)
+  capacity       Int?
+  startTime      DateTime
+  endTime        DateTime
+  latitude       Float?
+  longitude      Float?
+  photos         String[]
+  bookingDetails Json?
+  status         EntityStatus @default(ACTIVE)
+  isDeleted      Boolean      @default(false)
+  deletedAt      DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  tables            BookingTable[]
+  purchasedBookings PurchasedBooking[]
+
+  @@index([isDeleted])
+  @@index([vendorId])
+}
+
+model BookingTable {
+  id        String   @id @default(cuid())
+  bookingId String
+  booking   Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  name      String?
+  capacity  Int?
+  status    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model PurchasedBooking {
+  id        String   @id @default(cuid())
+  bookingId String
+  booking   Booking  @relation(fields: [bookingId], references: [id])
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  paymentId String?
+  payment   Payment? @relation(fields: [paymentId], references: [id])
+  createdAt DateTime @default(now())
+
+  notifications Notification[]
+}
+
+// ─── Payments ─────────────────────────────────────────────────────────────────
+
+model Payment {
+  id                String        @id @default(cuid())
+  transactionId     String?       @unique
+  bankAccountNumber String?
+  paymentStatus     PaymentStatus @default(PENDING)
+  noOfItems         Int           @default(1)
+  totalPrice        Decimal       @db.Decimal(10, 2)
+  perItemPrice      Decimal       @db.Decimal(10, 2)
+  userId            String?
+  user              User?         @relation(fields: [userId], references: [id])
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  eventTickets      EventTicket[]
+  purchasedServices PurchasedService[]
+  purchasedBookings PurchasedBooking[]
+}
+
+// ─── Chat & Notifications ─────────────────────────────────────────────────────
+
+model Chat {
+  id         String   @id @default(cuid())
+  senderId   String
+  sender     User     @relation("sender", fields: [senderId], references: [id])
+  receiverId String
+  receiver   User     @relation("receiver", fields: [receiverId], references: [id])
+  message    String
+  isRead     Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  @@index([senderId, receiverId])
+}
+
+model Notification {
+  id                 String            @id @default(cuid())
+  type               NotificationType
+  userId             String?
+  user               User?             @relation(fields: [userId], references: [id])
+  isRead             Boolean           @default(false)
+  eventTicketId      String?
+  eventTicket        EventTicket?      @relation(fields: [eventTicketId], references: [id])
+  purchasedServiceId String?
+  purchasedService   PurchasedService? @relation(fields: [purchasedServiceId], references: [id])
+  purchasedBookingId String?
+  purchasedBooking   PurchasedBooking? @relation(fields: [purchasedBookingId], references: [id])
+  createdAt          DateTime          @default(now())
+}
+
+// ─── Geo Data ─────────────────────────────────────────────────────────────────
+
+model Country {
+  id      Int     @id @default(autoincrement())
+  name    String
+  isoCode String  @unique
+  states  State[]
+  users   User[]
+}
+
+model State {
+  id        Int     @id @default(autoincrement())
+  name      String
+  isoCode   String
+  countryId Int
+  country   Country @relation(fields: [countryId], references: [id])
+  cities    City[]
+  users     User[]
+
+  @@index([countryId])
+}
+
+model City {
+  id      Int    @id @default(autoincrement())
+  name    String
+  stateId Int
+  state   State  @relation(fields: [stateId], references: [id])
+  users   User[]
+
+  @@index([stateId])
+}
