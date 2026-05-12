@@ -1,105 +1,62 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
-import { CreateServiceDto } from './dto/create-service.dto';
-import {
-  UpdateServiceDetailsDto,
-  UpdateServiceDto,
-  UpdateVendorServiceDto,
-} from './dto/update-service.dto';
-import { InjectModel } from '@nestjs/mongoose';
-import { Service, ServiceDocument } from '../schemas/services.schema';
-import { Model, FilterQuery, UpdateQuery } from 'mongoose';
-import CategorySeeder from '../seeder/category.seeder';
-import { ServiceSeeder } from '../seeder/service.seeder';
 import { ConfigService } from '@nestjs/config';
-import * as mongoose from 'mongoose';
-import { DeleteImageDto } from './dto/delete-service.dto';
-import fs from 'fs';
+import { EntityStatus } from '@prisma/client';
+import { PrismaService } from '@src/prisma/prisma.service';
 import { deleteImages } from 'src/shared/utils';
 import { ServiceSharedService } from './Shared/shared.services.service';
-import { RetrieveServiceAdminDto } from '@src/services/dto/retrieve.service.dto';
-import { UserDocument } from '@src/schemas/user.shema';
+import { CreateServiceDto } from './dto/create-service.dto';
+import { DeleteImageDto } from './dto/delete-service.dto';
+import { RetrieveServiceAdminDto } from './dto/retrieve.service.dto';
+import { UpdateServiceDetailsDto, UpdateServiceDto, UpdateVendorServiceDto } from './dto/update-service.dto';
+
+const SERVICE_INCLUDE = { vendor: true, category: true };
 
 @Injectable()
 export class ServicesService {
   constructor(
-    @InjectModel(Service.name)
-    private ServiceModel: Model<ServiceDocument>,
-    private readonly categorySeeder: CategorySeeder,
-    private readonly serviceSeeder: ServiceSeeder,
+    private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly sharedService: ServiceSharedService,
   ) {}
 
-  async create(
-    createServiceDto: CreateServiceDto,
-    files?: Array<Express.Multer.File>,
-  ) {
-    let photos: string[] = [];
-    if (files) {
-      for (let i = 0; i < files.length; i++) {
-        photos.push(
-          this.config.get('APP_URL') + '/upload/' + files[i].filename,
-        );
-      }
-      createServiceDto.photos = photos;
-    }
+  private buildPhotoUrls(files: Express.Multer.File[]): string[] {
+    return (files ?? []).map(f => `${this.config.get('APP_URL')}/upload/${f.filename}`);
+  }
 
-    const serviceCreate = {
-      ...createServiceDto,
-      loc: {
-        type: 'Point',
-        coordinates: [
-          +`${createServiceDto.longitude}`,
-          +`${createServiceDto.latitude}`,
-        ],
+  async create(createServiceDto: CreateServiceDto, files?: Array<Express.Multer.File>) {
+    const photos = this.buildPhotoUrls(files);
+    const service = await this.prisma.service.create({
+      data: {
+        name: createServiceDto.name,
+        vendorId: (createServiceDto as any).vendor,
+        categoryId: (createServiceDto as any).category,
+        description: (createServiceDto as any).description,
+        price: createServiceDto.price,
+        address: (createServiceDto as any).address,
+        latitude: createServiceDto.latitude ? +createServiceDto.latitude : null,
+        longitude: createServiceDto.longitude ? +createServiceDto.longitude : null,
+        photos: photos.length ? photos : [],
+        serviceDetails: (createServiceDto as any).serviceDetails ?? null,
       },
-    };
-    delete serviceCreate.latitude;
-    delete serviceCreate.longitude;
-    const createService: ServiceDocument = new this.ServiceModel(serviceCreate);
-    const service: ServiceDocument = await createService.save();
-    if (!service)
-      throw new HttpException(
-        'currently not able to create an service',
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      );
-
-    return {
-      success: true,
-      message: 'service created successfuly!',
-      data: createService,
-    };
+    });
+    return { success: true, message: 'service created successfuly!', data: service };
   }
 
-  async findAll(
-    { page, limit, search, isDeleted }: RetrieveServiceAdminDto,
-    user?: UserDocument,
-  ) {
-    let query: Partial<FilterQuery<ServiceDocument>> = {
-      isDeleted: false,
-    };
-    if (search)
-      query.$text = {
-        $search: search,
-      };
-    if (isDeleted) query['isDeleted'] = isDeleted;
+  async findAll({ page, limit, search }: RetrieveServiceAdminDto, user?: any) {
+    const where: any = { isDeleted: false };
+    if (search) where.name = { contains: search, mode: 'insensitive' };
 
-    const data: Array<ServiceDocument> = await this.ServiceModel.find(query)
-      .skip((page - 1) * limit)
-      .limit(limit)
-      .populate('category')
-      .populate('vendor')
-      .sort('-createdAt');
-    const docCount: number = await this.ServiceModel.count(query);
+    const [data, docCount] = await Promise.all([
+      this.prisma.service.findMany({
+        where,
+        include: SERVICE_INCLUDE,
+        skip: (page - 1) * limit,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.service.count({ where }),
+    ]);
 
-    if (!data) {
-      return {
-        success: true,
-        message: 'There is currently no services available',
-        data: [],
-        haveNewNotification: user.haveNewNotification,
-      };
-    }
     return {
       success: true,
       data,
@@ -110,36 +67,21 @@ export class ServicesService {
     };
   }
 
-  async findAllByVendor(
-    { page, limit, search, isDeleted }: RetrieveServiceAdminDto,
-    user?: UserDocument,
-  ) {
-    let query: Partial<FilterQuery<ServiceDocument>> = {
-      isDeleted: false,
-      vendor:user.vendor_id
-    };
-    if (search)
-      query.$text = {
-        $search: search,
-      };
-    if (isDeleted) query['isDeleted'] = isDeleted;
+  async findAllByVendor({ page, limit, search }: RetrieveServiceAdminDto, user?: any) {
+    const where: any = { isDeleted: false, vendorId: user?.vendor_id ?? user?.vendorId };
+    if (search) where.name = { contains: search, mode: 'insensitive' };
 
-    const data: Array<ServiceDocument> = await this.ServiceModel.find(query)
-      .skip((page - 1) * limit)
-      .limit(limit)
-      .populate('category')
-      .populate('vendor')
-      .sort('-createdAt');
-    const docCount: number = await this.ServiceModel.count(query);
+    const [data, docCount] = await Promise.all([
+      this.prisma.service.findMany({
+        where,
+        include: SERVICE_INCLUDE,
+        skip: (page - 1) * limit,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.service.count({ where }),
+    ]);
 
-    if (!data) {
-      return {
-        success: true,
-        message: 'There is currently no services available',
-        data: [],
-        haveNewNotification: user.haveNewNotification,
-      };
-    }
     return {
       success: true,
       data,
@@ -150,289 +92,129 @@ export class ServicesService {
     };
   }
 
-  async findOne(id: string, query) {
-    if (!mongoose.isValidObjectId(id)) {
-      throw new HttpException('Invalid Request data', HttpStatus.BAD_REQUEST);
-    }
-
-    const service: ServiceDocument = await this.ServiceModel.findById({
-      _id: id,
-      ...query,
-    })
-      .populate('category')
-      .populate('vendor');
-
+  async findOne(id: string, query?: any) {
+    const service = await this.prisma.service.findFirst({
+      where: { id, isDeleted: false },
+      include: SERVICE_INCLUDE,
+    });
     if (!service) {
-      return {
-        success: false,
-        message: 'There is no service exists with this id',
-        data: {},
-      };
+      return { success: false, message: 'There is no service exists with this id', data: {} };
     }
-    return {
-      success: true,
-      data: service,
-    };
+    return { success: true, data: service };
   }
 
-  async update(id: string, updateServiceDto: UpdateServiceDto, files) {
-    const query: UpdateQuery<ServiceDocument> = { ...updateServiceDto };
-
-    if (updateServiceDto.latitude) {
-      query['loc.type'] = 'Point';
-      query['loc.coordinates.1'] = updateServiceDto.latitude;
-    }
-    if (updateServiceDto.longitude) {
-      query['loc.type'] = 'Point';
-      query['loc.coordinates.0'] = updateServiceDto.longitude;
+  async update(id: string, updateServiceDto: UpdateServiceDto, files: any) {
+    const service = await this.prisma.service.findFirst({ where: { id, isDeleted: false } });
+    if (!service) {
+      return { success: false, message: 'There is no service with this id', data: {} };
     }
 
-    const bannerImages: string[] = [];
-    if (files) {
-      for (let i = 0; i < files.length; i++) {
-        bannerImages.push(
-          this.config.get('APP_URL') + '/upload/' + files[i].filename,
-        );
-      }
-      delete updateServiceDto.photos;
-      query.$push = {
-        photos: {
-          $each: bannerImages,
-        },
-      };
-    }
+    const data: any = {};
+    ['name', 'description', 'price', 'address', 'status'].forEach(k => {
+      if ((updateServiceDto as any)[k] !== undefined) data[k] = (updateServiceDto as any)[k];
+    });
+    if (updateServiceDto.latitude) data.latitude = +updateServiceDto.latitude;
+    if (updateServiceDto.longitude) data.longitude = +updateServiceDto.longitude;
 
-    const updatedService: ServiceDocument =
-      await this.ServiceModel.findByIdAndUpdate(id, query, {
-        new: true,
-      });
+    const newPhotos = this.buildPhotoUrls(files ?? []);
+    if (newPhotos.length) data.photos = [...(service.photos ?? []), ...newPhotos];
 
-    if (!updatedService) {
-      return {
-        success: false,
-        message: 'There is no service with this id',
-        data: {},
-      };
-    }
-    return {
-      success: true,
-      message: 'Service updated successfully',
-      data: updatedService,
-    };
+    const updatedService = await this.prisma.service.update({ where: { id }, data });
+    return { success: true, message: 'Service updated successfully', data: updatedService };
   }
 
-  async updateVendorService(id: string, updateVendorServiceDto: UpdateVendorServiceDto, files) {
-    const query: UpdateQuery<ServiceDocument> = { ...updateVendorServiceDto };
-
-    if (updateVendorServiceDto.latitude) {
-      query['loc.type'] = 'Point';
-      query['loc.coordinates.1'] = updateVendorServiceDto.latitude;
-    }
-    if (updateVendorServiceDto.longitude) {
-      query['loc.type'] = 'Point';
-      query['loc.coordinates.0'] = updateVendorServiceDto.longitude;
-    }
-
-    const bannerImages: string[] = [];
-    if (files) {
-      for (let i = 0; i < files.length; i++) {
-        bannerImages.push(
-          this.config.get('APP_URL') + '/upload/' + files[i].filename,
-        );
-      }
-      delete updateVendorServiceDto.photos;
-      query.$push = {
-        photos: {
-          $each: bannerImages,
-        },
-      };
-    }
-
-    const updatedService: ServiceDocument =
-      await this.ServiceModel.findByIdAndUpdate(id, query, {
-        new: true,
-      });
-
-    if (!updatedService) {
-      return {
-        success: false,
-        message: 'There is no service with this id',
-        data: {},
-      };
-    }
-    return {
-      success: true,
-      message: 'Service updated successfully',
-      data: updatedService,
-    };
+  async updateVendorService(id: string, updateVendorServiceDto: UpdateVendorServiceDto, files: any) {
+    return this.update(id, updateVendorServiceDto as any, files);
   }
 
-  async addAndDeleteServiceDetails(
-    id: string,
-    updateServiceDetailsDto: UpdateServiceDetailsDto,
-  ) {
-    let updatedService: ServiceDocument;
-    if (
-      !updateServiceDetailsDto.addItems &&
-      !updateServiceDetailsDto.deleteItems
-    ) {
-      throw new HttpException(
-        'Both the array should not be empty at single call',
-        HttpStatus.BAD_REQUEST,
-      );
+  async addAndDeleteServiceDetails(id: string, updateServiceDetailsDto: UpdateServiceDetailsDto) {
+    if (!updateServiceDetailsDto.addItems && !updateServiceDetailsDto.deleteItems) {
+      throw new HttpException('Both the array should not be empty at single call', HttpStatus.BAD_REQUEST);
     }
-    const checkService: Service = await this.getService(id, false);
-    if (!checkService) {
-      throw new HttpException(
-        'There is no service with this id',
-        HttpStatus.NOT_FOUND,
-      );
+    const service = await this.prisma.service.findFirst({ where: { id, isDeleted: false } });
+    if (!service) {
+      throw new HttpException('There is no service with this id', HttpStatus.NOT_FOUND);
     }
+
+    let details: any[] = Array.isArray(service.serviceDetails) ? (service.serviceDetails as any[]) : [];
 
     if (updateServiceDetailsDto.deleteItems) {
-      updatedService = await this.ServiceModel.findOneAndUpdate(
-        { _id: id },
-        { $pullAll: { serviceDetails: updateServiceDetailsDto.deleteItems } },
-        { new: true },
-      );
+      details = details.filter(d => !updateServiceDetailsDto.deleteItems.includes(d));
     }
     if (updateServiceDetailsDto.addItems) {
-      updatedService = await this.ServiceModel.findOneAndUpdate(
-        { _id: id },
-        {
-          $push: {
-            serviceDetails: { $each: updateServiceDetailsDto.addItems },
-          },
-        },
-        { new: true },
-      );
+      details = [...details, ...updateServiceDetailsDto.addItems];
     }
 
-    if (!updatedService) {
-      return {
-        success: false,
-        msg: 'some error occured while updation',
-        data: {},
-      };
-    }
-    return {
-      success: true,
-      msg: 'Service details is updated',
-      data: updatedService,
-    };
+    const updatedService = await this.prisma.service.update({ where: { id }, data: { serviceDetails: details } });
+    return { success: true, msg: 'Service details is updated', data: updatedService };
   }
 
   async serviceEarning(id: string) {
-    if (!mongoose.isValidObjectId(id))
-      throw new HttpException(
-        { message: 'Invalid reference id provided.', success: false },
-        HttpStatus.BAD_REQUEST,
-      );
-
     const result = await this.sharedService.calculateServiceEarning(id);
-    if (!Array.isArray(result) || result.length === 0)
-      return {
-        success: true,
-        adminEarning: 0,
-        vendorEarning: 0,
-      };
-
-    return {
-      success: true,
-      data: result[0],
-    };
+    if (!Array.isArray(result) || result.length === 0) {
+      return { success: true, adminEarning: 0, vendorEarning: 0 };
+    }
+    return { success: true, data: result[0] };
   }
 
   async deleteServiceImages(deleteImagetDto: DeleteImageDto) {
-
-    await deleteImages(deleteImagetDto.imageUrls)
-    let updatedService = await this.ServiceModel.findOneAndUpdate(
-      { _id: deleteImagetDto.serviceId },
-      {
-        $pullAll: {
-          photos: deleteImagetDto.imageUrls,
-        },
-      },
-      { new: true },
-    );
-
-    if (!updatedService) {
-      throw new HttpException(
-        {
-          success: false,
-          message: 'Service does not exists',
-        },
-        HttpStatus.FORBIDDEN,
-      );
+    await deleteImages(deleteImagetDto.imageUrls);
+    const service = await this.prisma.service.findUnique({ where: { id: deleteImagetDto.serviceId } });
+    if (!service) {
+      throw new HttpException({ success: false, message: 'Service does not exists' }, HttpStatus.FORBIDDEN);
     }
-
-    return {
-      success: true,
-      message: 'Provided Images urls are deleted successfully..',
-      data: updatedService,
-    };
+    const updatedService = await this.prisma.service.update({
+      where: { id: deleteImagetDto.serviceId },
+      data: { photos: service.photos.filter(p => !deleteImagetDto.imageUrls.includes(p)) },
+    });
+    return { success: true, message: 'Provided Images urls are deleted successfully..', data: updatedService };
   }
 
   async remove(id: string) {
-    const checkService: Service = await this.getService(id, true);
-    if (!checkService)
-      throw new HttpException(
-        'There is no service with this id or already deleted',
-        HttpStatus.NOT_FOUND,
-      );
-
-    const serviceData: Service = await this.ServiceModel.findByIdAndUpdate(
-      id,
-      {
-        isDeleted: true,
-        deletedAt: new Date(),
-      },
-      { new: true },
-    );
-    return;
+    const service = await this.prisma.service.findFirst({ where: { id, isDeleted: false } });
+    if (!service) throw new HttpException('There is no service with this id or already deleted', HttpStatus.NOT_FOUND);
+    await this.prisma.service.update({ where: { id }, data: { isDeleted: true, deletedAt: new Date() } });
   }
 
-  async getService(id: string, alreayDelted: boolean): Promise<Service> {
-    let query: FilterQuery<ServiceDocument>;
-    if (alreayDelted) {
-      query = { isDeleted: false };
-    }
-
-    const service: ServiceDocument = await this.ServiceModel.findOne({
-      _id: id,
-      ...query,
-    });
-    return service ? service : null;
+  async getService(id: string, filterDeleted: boolean) {
+    const where: any = { id };
+    if (filterDeleted) where.isDeleted = false;
+    return this.prisma.service.findFirst({ where });
   }
 
-  async removePermanent(id: string): Promise<any> {
-    const checkService: Service = await this.getService(id, false);
-    if (!checkService) {
-      throw new HttpException(
-        'There is no service with this id or already deleted',
-        HttpStatus.NOT_FOUND,
-      );
-    }
-    if (checkService.photos.length > 0) {
-      await deleteImages(checkService.photos);
-    }
-    // await this.serviceBuyerModel.deleteMany({ serviceId: id });
-    await this.ServiceModel.findByIdAndDelete({ _id: id });
-    return;
+  async removePermanent(id: string) {
+    const service = await this.getService(id, false);
+    if (!service) throw new HttpException('There is no service with this id or already deleted', HttpStatus.NOT_FOUND);
+    if (service.photos.length > 0) await deleteImages(service.photos);
+    await this.prisma.service.delete({ where: { id } });
+  }
+
+  async nearByServices(lat: number, lng: number, radiusKm = 15, page = 1, limit = 10) {
+    const offset = (page - 1) * limit;
+    const now = new Date();
+    return this.prisma.$queryRaw<any[]>`
+      SELECT *,
+        (6371 * acos(
+          cos(radians(${+lat})) * cos(radians(latitude)) *
+          cos(radians(longitude) - radians(${+lng})) +
+          sin(radians(${+lat})) * sin(radians(latitude))
+        )) AS distance_km
+      FROM "Service"
+      WHERE "isDeleted" = false
+        AND latitude IS NOT NULL
+        AND longitude IS NOT NULL
+        AND status = 'ACTIVE'
+      ORDER BY distance_km
+      LIMIT ${limit} OFFSET ${offset}
+    `;
   }
 
   async dbDataFiller() {
-    let filledData = await this.serviceSeeder.createDummyEvents();
-    return {
-      success: true,
-      filledData,
-    };
+    return { success: false, message: 'Seeder not available in Prisma mode' };
   }
 
   async clearEventCL() {
-    await this.ServiceModel.deleteMany({});
-    return {
-      success: true,
-    };
+    await this.prisma.service.deleteMany({});
+    return { success: true };
   }
 }

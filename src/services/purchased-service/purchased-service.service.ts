@@ -1,49 +1,32 @@
 import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
-import { CreatePurchasedServiceDto } from './dto/create-purchased-service.dto';
-import {
-  PaymentMethods,
-  PaymentService,
-} from './../../payment/payment.service';
+import { NotificationType } from '@prisma/client';
+import { EmailService } from '@src/email-server/email.service';
+import { loggers } from '@src/interceptors/logger.enums';
+import { NotificationService } from '@src/notification/notification.service';
+import { PrismaService } from '@src/prisma/prisma.service';
+import { SocketGateway } from '@src/socket/socket.gateway';
+import * as moment from 'moment';
+import * as path from 'path';
+import { ServiceSharedService } from '../Shared/shared.services.service';
 import { UsersService } from 'src/users/users.service';
-import { InjectModel } from '@nestjs/mongoose';
-import {
-  PurchasedService,
-  PurchasedServiceDocument,
-} from 'src/schemas/purchased-service.schema';
-import { FilterQuery, Model } from 'mongoose';
-import { ServiceSharedService } from './../Shared/shared.services.service';
-import {
-  ServiceDocument,
-  serviceMinorDetails,
-} from 'src/schemas/services.schema';
-import {
-  adminGetRequestEventManagementUser,
-  UserDocument,
-} from 'src/schemas/user.shema';
-import { PaymentDocument } from 'src/schemas/payment.schema';
+import { PaymentMethods, PaymentService } from '../../payment/payment.service';
+import { CreatePurchasedServiceDto } from './dto/create-purchased-service.dto';
 import { GetServicesDataDto } from './dto/public.purchased-service.dto';
 import { AdminGetServicesDataDto } from './dto/admin.purchased-sercvices.dto';
-import * as mongoose from 'mongoose';
-import { eventMinorDetails } from '../../schemas/events.schema';
-import { Role } from '@src/schemas/enums/role';
-import { SocketGateway } from '@src/socket/socket.gateway';
-import * as path from 'path';
-import * as moment from 'moment';
-import { loggers } from '@src/interceptors/logger.enums';
-import { EmailService } from '@src/email-server/email.service';
-import { NotificationType } from '@src/schemas/enums/notification-enum';
-import { PurchasedBooking } from '@src/schemas/purchased-booking.schema';
-import { NotificationDocument } from '@src/schemas/notification.schema';
-import { NotificationService } from '@src/notification/notification.service';
+
+const PURCHASED_SERVICE_INCLUDE = {
+  user: { include: { country: true, city: true, state: true } },
+  service: { include: { category: true, vendor: true } },
+  payment: true,
+};
 
 @Injectable()
 export class PurchasedServiceService {
   constructor(
-    private readonly ServicesSharedService: ServiceSharedService,
+    private readonly prisma: PrismaService,
+    private readonly servicesSharedService: ServiceSharedService,
     private readonly paymentService: PaymentService,
     private readonly userService: UsersService,
-    @InjectModel(PurchasedService.name)
-    private readonly PurchasedServiceModel: Model<PurchasedServiceDocument>,
     private readonly emailService: EmailService,
     private readonly notificationService: NotificationService,
   ) {}
@@ -54,32 +37,17 @@ export class PurchasedServiceService {
     expMonth: string,
     expYear: string,
   ) {
-    let totalPriceCalculated: number;
-    let service: any = await this.ServicesSharedService.helperServiceFindById(
-      createPurchasedServiceDto.serviceId,
-    );
-    if (!service) {
-      throw new HttpException('Service not find...', HttpStatus.BAD_REQUEST);
-    }
-    let user: UserDocument = await this.userService.findOne({ _id: userId });
-    if (!user) {
-      throw new HttpException('User not found...', HttpStatus.UNAUTHORIZED);
-    }
+    const service = await this.servicesSharedService.helperServiceFindById(createPurchasedServiceDto.serviceId);
+    if (!service) throw new HttpException('Service not find...', HttpStatus.BAD_REQUEST);
 
-    let admin: UserDocument = await this.userService.findOne({
-      role: Role.ADMIN,
-    });
-    let commission = 0;
-    if (
-      admin?.margin &&
-      typeof +`${admin.margin}` === 'number' &&
-      !Number.isNaN(admin.margin)
-    )
-      commission = admin.margin;
+    const user = await this.userService.findOne({ id: userId });
+    if (!user) throw new HttpException('User not found...', HttpStatus.UNAUTHORIZED);
 
-    totalPriceCalculated =
-      service.price * createPurchasedServiceDto.totalPersons * 100; // multiply by hundred due to stripe take price in cent and 1 cent equal to 100;
-    let { status: result, id } = await this.paymentService.createPaymentCharges(
+    const admin = await this.prisma.user.findFirst({ where: { role: 'ADMIN', isDeleted: false } });
+
+    const totalPriceCalculated = Number(service.price) * createPurchasedServiceDto.totalPersons * 100;
+
+    const { status: result, id } = await this.paymentService.createPaymentCharges(
       PaymentMethods.ONE_TIME,
       {
         amount: totalPriceCalculated,
@@ -99,108 +67,81 @@ export class PurchasedServiceService {
       },
     );
 
-    if (result == 'failed') {
-      throw new HttpException('payment failed...', HttpStatus.BAD_REQUEST);
-    }
-    if (result == 'pending') {
-      return {
-        success: true,
-        status: 'pending',
-      };
-    }
+    if (result === 'failed') throw new HttpException('payment failed...', HttpStatus.BAD_REQUEST);
+    if (result === 'pending') return { success: true, status: 'pending' };
 
-    let payment: PaymentDocument =
-      await this.paymentService.helperCreatePayment({
-        transactionId: id,
-        bankAccountNumber: createPurchasedServiceDto.number,
-        paymentStatus: result,
-        noOfItems: createPurchasedServiceDto.totalPersons,
-        totalPrice: totalPriceCalculated * 0.01,
-        perItemPrice: service.price,
-      });
+    const payment = await this.paymentService.helperCreatePayment({
+      transactionId: id,
+      bankAccountNumber: createPurchasedServiceDto.number,
+      paymentStatus: result,
+      noOfItems: createPurchasedServiceDto.totalPersons,
+      totalPrice: totalPriceCalculated * 0.01,
+      perItemPrice: Number(service.price),
+    });
 
-    let purchasedService: PurchasedServiceDocument =
-      await this.PurchasedServiceModel.create({
+    const purchasedService = await this.prisma.purchasedService.create({
+      data: {
         serviceId: createPurchasedServiceDto.serviceId,
-        userId: user._id,
-        paymentId: payment._id,
-        date: createPurchasedServiceDto.date,
-        commission,
-      });
-
-    const dataToSend = await this.PurchasedServiceModel.populate(
-      [purchasedService],
-      [
-        { path: 'paymentId' },
-        {
-          path: 'serviceId',
-          select: {
-            ...serviceMinorDetails,
-            category: 1,
-          },
-          populate: {
-            path: 'category',
-            select: {
-              name: 1,
-            },
-          },
-        },
-      ],
-    );
-
-    // noinspection DuplicatedCode
-
-    const notification = await this.notificationService.addNotification({
-      notificationType: NotificationType.SERVICE,
-      orderModel: PurchasedBooking.name,
-      orderPayload: purchasedService._id.toString(),
-      body: `A new Service has been purchased by ${user.name}.`,
-    } as NotificationDocument);
-
-    SocketGateway.emitEvent(
-      'notification',
-      {
-        notificationType: NotificationType.SERVICE,
-        body: `A new Service has been purchased by ${user.name}.`,
-        orderPayload: purchasedService._id,
-        _id: notification._id,
-      },
-      admin._id.toString(),
-    );
-
-    const responseEmail = await this.emailService.sendMail({
-      template: 'event-ticket',
-      message: {
-        to: [admin.email, service.vendor?.email, user?.email],
-        subject: 'New Service Ticket Purchased',
-        attachments: [
-          {
-            filename: 'logo.svg',
-            path: path.join(process.cwd(), 'views', 'logo.svg'),
-            cid: 'logo',
-          },
-        ],
-      },
-      locals: {
-        purchasedOn: moment().format('MMMM DD,YYYY'),
-        userEmail: user.email,
-        userName: user.name,
-        productId: service?._id,
-        productTitle: service.name,
-        total: payment.totalPrice,
-        subTotal: payment.perItemPrice,
-        noOfItems: payment.noOfItems,
-        productImage: service.photos[0],
-        orderType: 'Service',
+        userId: user.id,
+        paymentId: payment.id,
       },
     });
-    loggers.info('Email Response:::: %O', responseEmail);
 
-    return {
-      success: 'true',
-      msg: 'service purchased successfuly',
-      data: dataToSend,
-    };
+    const dataToSend = await this.prisma.purchasedService.findFirst({
+      where: { id: purchasedService.id },
+      include: PURCHASED_SERVICE_INCLUDE,
+    });
+
+    try {
+      const notification = await this.notificationService.addNotification({
+        notificationType: NotificationType.SERVICE,
+        orderModel: 'PurchasedService',
+        orderPayload: purchasedService.id,
+        body: `A new Service has been purchased by ${user.name}.`,
+      } as any);
+
+      SocketGateway.emitEvent(
+        'notification',
+        {
+          notificationType: NotificationType.SERVICE,
+          body: `A new Service has been purchased by ${user.name}.`,
+          orderPayload: purchasedService.id,
+          _id: (notification as any)?.id ?? (notification as any)?._id,
+        },
+        admin?.id,
+      );
+    } catch (e) {
+      loggers.error('Notification error: %O', e);
+    }
+
+    try {
+      await this.emailService.sendMail({
+        template: 'event-ticket',
+        message: {
+          to: [admin?.email, (service as any).vendor?.email, user?.email].filter(Boolean),
+          subject: 'New Service Ticket Purchased',
+          attachments: [
+            { filename: 'logo.svg', path: path.join(process.cwd(), 'views', 'logo.svg'), cid: 'logo' },
+          ],
+        },
+        locals: {
+          purchasedOn: moment().format('MMMM DD,YYYY'),
+          userEmail: user.email,
+          userName: user.name,
+          productId: service.id,
+          productTitle: service.name,
+          total: payment.totalPrice,
+          subTotal: payment.perItemPrice,
+          noOfItems: payment.noOfItems,
+          productImage: service.photos?.[0],
+          orderType: 'Service',
+        },
+      });
+    } catch (e) {
+      loggers.error('Email error: %O', e);
+    }
+
+    return { success: 'true', msg: 'service purchased successfuly', data: dataToSend };
   }
 
   async getPurchasedServices(
@@ -208,117 +149,46 @@ export class PurchasedServiceService {
     userId?: string,
   ) {
     const { page, limit } = getServicesDataDto;
-    let totalPages: number;
-    let query: FilterQuery<PurchasedServiceDocument> = {
-      isDeleted: false,
-      deletedAt: null,
-    };
+    const where: any = {};
+    if (userId) where.userId = userId;
+    if ((getServicesDataDto as any).serviceId) where.serviceId = (getServicesDataDto as any).serviceId;
 
-    if (userId) query.userId = userId;
-    if (getServicesDataDto?.serviceId)
-      query.serviceId = getServicesDataDto.serviceId;
+    const [purchasedServices, purchasedServicesCount] = await Promise.all([
+      this.prisma.purchasedService.findMany({
+        where,
+        include: PURCHASED_SERVICE_INCLUDE,
+        skip: (page - 1) * limit,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.purchasedService.count({ where }),
+    ]);
 
-    const purchasedServicesCount: number =
-      await this.PurchasedServiceModel.find(query).count();
-    totalPages = Math.ceil(purchasedServicesCount / limit);
-    const purchasedServices: PurchasedServiceDocument[] =
-      await this.PurchasedServiceModel.find(query)
-        .populate({
-          path: 'userId',
-          select: adminGetRequestEventManagementUser,
-          populate: [
-            { path: 'country', select: { name: 1, isoCode: 1 } },
-            {
-              path: 'city',
-              select: {
-                isoCode: 1,
-                name: 1,
-                _id: 1,
-                countryCode: 1,
-                stateCode: 1,
-              },
-            },
-            {
-              path: 'state',
-              select: { isoCode: 1, name: 1, _id: 1, countryCode: 1 },
-            },
-          ],
-        })
-        .populate({
-          path: 'serviceId',
-          populate: [
-            {
-              path: 'category',
-            },
-            {
-              path: 'vendor',
-              select: {
-                name: 1,
-              },
-            },
-          ],
-        })
-        .populate('paymentId')
-        .skip((page - 1) * limit)
-        .limit(limit);
-    if (purchasedServices.length == 0) {
-      return {
-        success: false,
-        msg: 'not any service purchased yet',
-        data: [],
-      };
+    if (purchasedServices.length === 0) {
+      return { success: false, msg: 'not any service purchased yet', data: [] };
     }
+
     return {
       success: true,
       msg: 'purchased services fetched successfuly',
       data: purchasedServices,
       page,
       limit,
-      totalPages,
+      totalPages: Math.ceil(purchasedServicesCount / limit),
     };
   }
 
   async getPurchasedService(id: string, userId: string = null) {
-    if (
-      (!userId && !mongoose.isValidObjectId(userId)) ||
-      !mongoose.isValidObjectId(id)
-    ) {
-      throw new HttpException('Invalid request data', HttpStatus.BAD_REQUEST);
-    }
-    let query: FilterQuery<PurchasedServiceDocument> = {
-      _id: id,
-    };
+    const where: any = { id };
+    if (userId) where.userId = userId;
 
-    if (userId) {
-      query.isDeleted = false;
-      query.userId = userId;
-    }
+    const purchasedData = await this.prisma.purchasedService.findFirst({
+      where,
+      include: PURCHASED_SERVICE_INCLUDE,
+    });
 
-    let purchasedData = await this.PurchasedServiceModel.findOne({
-      ...query,
-    })
-      .populate('paymentId')
-      .populate({
-        path: 'serviceId',
-        populate: [
-          {
-            path: 'category',
-          },
-          {
-            path: 'vendor',
-            select: {
-              name: 1,
-            },
-          },
-        ],
-      });
-    if (!purchasedData) {
-      throw new HttpException('Invalid request data', HttpStatus.BAD_REQUEST);
-    }
-    return {
-      success: true,
-      msg: 'purchased service fetched successfuly',
-      data: purchasedData,
-    };
+    if (!purchasedData) throw new HttpException('Invalid request data', HttpStatus.BAD_REQUEST);
+
+    return { success: true, msg: 'purchased service fetched successfuly', data: purchasedData };
   }
 }
