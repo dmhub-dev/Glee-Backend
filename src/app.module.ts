@@ -4,7 +4,7 @@ import { HttpModule } from '@nestjs/axios';
 import { APP_GUARD, APP_INTERCEPTOR, Reflector } from '@nestjs/core';
 import configuration from './config/configuration';
 import { JwtAuthGuard } from './config/auth-guard';
-import { RolesGuard } from './guards/roles.guard';
+import { PermissionsGuard } from '@src/auth/rbac/permissions.guard';
 import { HttpLogInterceptor } from '@src/interceptors/logger.interceptors';
 import { PrismaModule } from '@src/prisma/prisma.module';
 
@@ -69,7 +69,7 @@ import { AppService } from '@src/app.service';
     },
     {
       provide: APP_GUARD,
-      useClass: RolesGuard,
+      useClass: PermissionsGuard,
     },
   ],
 })
