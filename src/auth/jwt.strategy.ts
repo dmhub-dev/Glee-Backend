@@ -24,7 +24,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
   }
 
-  async validate(payload): Promise<RegisterUserDto> {
+  async validate(payload: { userId: string; email: string; permissions: string[] }): Promise<any> {
     const user: any = await this.authService.validateUser(payload);
     if (user.isActive === 'INACTIVE') {
       throw new HttpException('Inactive user', HttpStatus.UNAUTHORIZED);
@@ -32,7 +32,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     if (!user) {
       throw new HttpException('Invalid token', HttpStatus.UNAUTHORIZED);
     }
-    return user;
+    // Attach permissions from the JWT payload to the request user object
+    return { ...user, permissions: payload.permissions ?? [] };
   }
 }
 

@@ -184,9 +184,18 @@ export class UsersService {
     return { success: true, message: 'Otp has been verified', data };
   }
 
-  private async _createToken(user: { id: string; email: string }) {
+  private async _createToken(user: Pick<User, 'id' | 'email'> & { roleId?: string | null }) {
     const expiresIn = process.env.EXPIRESIN;
-    const accessToken = this.jwtService.sign({ userId: user.id, email: user.email });
+    let permissions: string[] = [];
+    if (user.roleId) {
+      const roleWithPerms = await this.prisma.role.findUnique({
+        where: { id: user.roleId },
+        include: { permissions: { include: { permission: true } } },
+      });
+      permissions = roleWithPerms?.permissions.map(rp => rp.permission.name) ?? [];
+    }
+    const payload = { userId: user.id, email: user.email, permissions };
+    const accessToken = this.jwtService.sign(payload);
     return { expiresIn, accessToken };
   }
 
