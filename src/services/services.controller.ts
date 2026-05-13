@@ -4,8 +4,7 @@ import { ApiResponses } from '../shared/response';
 import { ApiConsumes, ApiTags } from '@nestjs/swagger';
 import { RetrieveServiceDto } from './dto/retrieve.service.dto';
 import { CurrentUser } from 'src/auth/jwt.strategy';
-import { UserDocument } from 'src/schemas/user.shema';
-import { Role } from 'src/schemas/enums/role';
+import { UserRole } from '@prisma/client';
 
 @Controller('services')
 @ApiTags('Services')
@@ -16,11 +15,11 @@ export class ServicesController {
    * Route: /services/
    * Method: GET
    */
-  @ApiResponses(true, [Role.USER])
+  @ApiResponses(true, [UserRole.USER])
   @Get()
   findAll(
     @Query() query: RetrieveServiceDto,
-    @CurrentUser() user: UserDocument,
+    @CurrentUser() user: any,
   ) {
     return this.servicesService.findAll(
       {
@@ -36,7 +35,7 @@ export class ServicesController {
    * Route: /services/
    * Method: GET
    */
-  @ApiResponses(false, [Role.USER])
+  @ApiResponses(false, [UserRole.USER])
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.servicesService.findOne(id, { isDeleted: false });

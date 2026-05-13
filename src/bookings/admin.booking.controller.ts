@@ -30,7 +30,7 @@ import {
   ApiImageFile,
   UploadType,
 } from 'src/decorators/check-mime-type.decorator';
-import { Role } from '../schemas/enums/role';
+import { UserRole } from '@prisma/client';
 import {
   RetrieveBookingAdminDto,
   RetrieveBookingSingleAdminDto,
@@ -51,7 +51,7 @@ export class AdminBookingController {
    * Route: /services/
    * Method: POST
    */
-  @ApiResponses(true, [Role.ADMIN])
+  @ApiResponses(true, [UserRole.ADMIN])
   @ApiConsumes('multipart/form-data')
   @ApiImageFile('files', { type: UploadType.ARRAY })
   @Post('bookings')
@@ -65,7 +65,7 @@ export class AdminBookingController {
   vendor booking
    */
   @Version('2')
-  @ApiResponses(true, [Role.VENDOR])
+  @ApiResponses(true, [UserRole.VENDOR])
   @ApiConsumes('multipart/form-data')
   @ApiImageFile('files', { type: UploadType.ARRAY })
   @Post('bookings')
@@ -79,13 +79,13 @@ export class AdminBookingController {
 
 
   @Post('bookings/tables')
-  @ApiResponses(true, [Role.ADMIN])
+  @ApiResponses(true, [UserRole.ADMIN])
   createTables(@Body() body: CreateBookingTableDto) {
     return this.bookingsService.createTables(body);
   }
 
   @Patch('bookings/tables/:id')
-  @ApiResponses(true, [Role.ADMIN])
+  @ApiResponses(true, [UserRole.ADMIN])
   updateTable(
     @Param('id') id: string,
     @Body() updateBookingTableDto: UpdateBookingTableDto,
@@ -94,7 +94,7 @@ export class AdminBookingController {
   }
 
   @Delete('bookings/tables/:id')
-  @ApiResponses(true, [Role.ADMIN])
+  @ApiResponses(true, [UserRole.ADMIN])
   deleteTable(@Param('id') id: string) {
     return this.bookingsService.deleteBookingTable(id);
   }
@@ -104,7 +104,7 @@ export class AdminBookingController {
    * Method: PATCH
    */
   @Patch('bookings/:id')
-  @ApiResponses(true, [Role.ADMIN])
+  @ApiResponses(true, [UserRole.ADMIN])
   @ApiConsumes('multipart/form-data')
   @ApiImageFile('files', { type: UploadType.ARRAY })
   update(
@@ -118,7 +118,7 @@ export class AdminBookingController {
   // vendor patch
   @Version('2')
   @Patch('bookings/:id')
-  @ApiResponses(true, [Role.VENDOR])
+  @ApiResponses(true, [UserRole.VENDOR])
   @ApiConsumes('multipart/form-data')
   @ApiImageFile('files', { type: UploadType.ARRAY })
   updateVendorBookingById(
@@ -130,7 +130,7 @@ export class AdminBookingController {
   }
 
   // @Patch('booking/details/update/:bookingId')
-  // @ApiResponses(true, [Role.ADMIN])
+  // @ApiResponses(true, [UserRole.ADMIN])
   // addAndDeleteBookingDetails(
   //   @Param('serviceid') id: string,
   //   @Body() updateServiceDetailsDto: UpdateServiceDetailsDto,
@@ -141,13 +141,13 @@ export class AdminBookingController {
   //   );
   // }
 
-  @ApiResponses(true, [Role.ADMIN])
+  @ApiResponses(true, [UserRole.ADMIN])
   @Delete('booking/images')
   deleteImage(@Query() deleteImagetDto: DeleteImageDto) {
     return this.bookingsService.deleteBookingImages(deleteImagetDto);
   }
 
-  @ApiResponses(true, [Role.ADMIN])
+  @ApiResponses(true, [UserRole.ADMIN])
   @Get('bookings')
   findAll(@Query() query: RetrieveBookingAdminDto) {
     return this.bookingsService.findAll(query);
@@ -158,7 +158,7 @@ export class AdminBookingController {
    * @param query
    */
   @Version('2')
-  @ApiResponses(true, [Role.VENDOR])
+  @ApiResponses(true, [UserRole.VENDOR])
   @Get('bookings')
   findAllByVendorId(@CurrentUser() user,@Query() query: RetrieveBookingAdminDto) {
     return this.bookingsService.findAllByVendorId(query,user);
@@ -168,7 +168,7 @@ export class AdminBookingController {
   //  * Route: /services/
   //  * Method: GET
   //  */
-  @ApiResponses(false, [Role.ADMIN])
+  @ApiResponses(false, [UserRole.ADMIN])
   @Get('booking/:id')
   findOne(
     @Param('id') id: string,
@@ -177,14 +177,14 @@ export class AdminBookingController {
     return this.bookingsService.findOne(id, retrieveBookingSingleAdminDto);
   }
 
-  @ApiResponses(true, [Role.ADMIN])
+  @ApiResponses(true, [UserRole.ADMIN])
   @Get('booking/earning/:id')
   bookingEarniing(@Param('id') id) {
     return this.bookingsService.bookingEarningService(id);
   }
 
   @Version('2')
-  @ApiResponses(false, [Role.VENDOR])
+  @ApiResponses(false, [UserRole.VENDOR])
   @Get('booking/:id')
   findOneVendorModule(
     @Param('id') id: string,
@@ -194,7 +194,7 @@ export class AdminBookingController {
   }
 
   @Version('2')
-  @ApiResponses(true, [Role.VENDOR])
+  @ApiResponses(true, [UserRole.VENDOR])
   @Get('booking/earning/:id')
   bookingEarniingVendorModule(@Param('id') id:string) {
     return this.bookingsService.bookingEarningService(id);
@@ -207,7 +207,7 @@ export class AdminBookingController {
   //  */
   @Delete('booking/:id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiResponses(true, [Role.ADMIN])
+  @ApiResponses(true, [UserRole.ADMIN])
   remove(@Param('id') id: string) {
     return this.bookingsService.remove(id);
   }
@@ -218,7 +218,7 @@ export class AdminBookingController {
   //  */
   @Delete('bookings/permanent/:id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiResponses(true, [Role.ADMIN])
+  @ApiResponses(true, [UserRole.ADMIN])
   removePermanent(@Param('id') id: string) {
     return this.bookingsService.removePermanent(id);
   }
@@ -227,7 +227,7 @@ export class AdminBookingController {
   @Version('2')
   @Delete('bookings/permanent/:id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiResponses(true, [Role.VENDOR])
+  @ApiResponses(true, [UserRole.VENDOR])
   removePermanentVendor(@Param('id') id: string) {
     return this.bookingsService.removePermanentVendor(id);
   }
@@ -237,7 +237,7 @@ export class AdminBookingController {
    * Method: GET
    */
   // @Get('bookings/table/auto-fill')
-  // @ApiResponses(true, [Role.ADMIN])
+  // @ApiResponses(true, [UserRole.ADMIN])
   // addData() {
   //   return this.bookingsService.dbDataFiller();
   // }
@@ -247,7 +247,7 @@ export class AdminBookingController {
    * Method: DELETE
    */
   // @Delete('bookings/table/clear')
-  // @ApiResponses(true, [Role.ADMIN])
+  // @ApiResponses(true, [UserRole.ADMIN])
   // clearEventCL() {
   //   return this.servicesService.clearEventCL();
   // }

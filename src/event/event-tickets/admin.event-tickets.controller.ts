@@ -13,7 +13,7 @@ import { EventTicketsService } from './event-tickets.service';
 import { CreateEventTicketDto } from './dto/create-event-ticket.dto';
 import { ApiTags } from '@nestjs/swagger';
 import { ApiResponses } from 'src/shared/response';
-import { Role } from '../../schemas/enums/role';
+import { UserRole } from '@prisma/client';
 import { PaginationQueryDto } from './dto/pagination-query.dto';
 import { IEventTicketAdminFilters } from './interfaces/filters';
 
@@ -22,7 +22,7 @@ import { IEventTicketAdminFilters } from './interfaces/filters';
 export class AdminEventTicketsController {
   constructor(private readonly eventTicketsService: EventTicketsService) {}
 
-  @ApiResponses(true, [Role.ADMIN])
+  @ApiResponses(true, [UserRole.ADMIN])
   @Get()
   getAllEvents(@Query() queryData: PaginationQueryDto) {
     let filter: IEventTicketAdminFilters = {};
@@ -40,14 +40,14 @@ export class AdminEventTicketsController {
   // update(@Param('id') id: string, @Body() updateEventTicketDto: UpdateEventTicketDto) {
   //   return this.eventTicketsService.update(+id, updateEventTicketDto);
   // }
-  @ApiResponses(true, [Role.ADMIN])
+  @ApiResponses(true, [UserRole.ADMIN])
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   remove(@Param('id') id: string) {
     return this.eventTicketsService.removeTicket(id);
   }
 
-  @ApiResponses(true, [Role.ADMIN])
+  @ApiResponses(true, [UserRole.ADMIN])
   @Delete('ticket')
   @HttpCode(HttpStatus.NO_CONTENT)
   removeTickets(
@@ -57,7 +57,7 @@ export class AdminEventTicketsController {
     return this.eventTicketsService.remove(eventId, userId);
   }
 
-  @ApiResponses(true, [Role.ADMIN])
+  @ApiResponses(true, [UserRole.ADMIN])
   @Delete('ticket/permanent')
   @HttpCode(HttpStatus.NO_CONTENT)
   permanentRemoveTickets() {

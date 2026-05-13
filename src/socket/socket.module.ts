@@ -6,8 +6,7 @@ import { UsersModule } from 'src/users/users.module';
 import { SocketAuthGuard } from './socket-auth.guard';
 import { SocketGateway } from './socket.gateway';
 import { SocketEventHandler } from './socket_event.handler';
-import { MongooseModule } from '@nestjs/mongoose';
-import { User, UserSchema } from '@src/schemas/user.shema';
+
 import { ChatModule } from '@src/chat/chat.module';
 
 @Module({

@@ -26,7 +26,7 @@ import {
   ApiImageFile,
   UploadType,
 } from 'src/decorators/check-mime-type.decorator';
-import { Role } from '../schemas/enums/role';
+import { UserRole } from '@prisma/client';
 import {
   RetrieveServiceAdminDto,
   RetrieveServiceSingleAdminDto,
@@ -44,7 +44,7 @@ export class AdminServiceController {
    * Route: /services/
    * Method: POST
    */
-  @ApiResponses(true, [Role.ADMIN])
+  @ApiResponses(true, [UserRole.ADMIN])
   @ApiConsumes('multipart/form-data')
   @ApiImageFile('files', { type: UploadType.ARRAY })
   @Post('services')
@@ -56,7 +56,7 @@ export class AdminServiceController {
   }
 
   @Version('2')
-  @ApiResponses(true, [Role.VENDOR])
+  @ApiResponses(true, [UserRole.VENDOR])
   @ApiConsumes('multipart/form-data')
   @ApiImageFile('files', { type: UploadType.ARRAY })
   @Post('services')
@@ -71,7 +71,7 @@ export class AdminServiceController {
    * Method: PATCH
    */
   @Patch('services/:id')
-  @ApiResponses(true, [Role.ADMIN])
+  @ApiResponses(true, [UserRole.ADMIN])
   @ApiConsumes('multipart/form-data')
   @ApiImageFile('files', { type: UploadType.ARRAY })
   update(
@@ -84,7 +84,7 @@ export class AdminServiceController {
 
   @Version('2')
   @Patch('services/:id')
-  @ApiResponses(true, [Role.VENDOR])
+  @ApiResponses(true, [UserRole.VENDOR])
   @ApiConsumes('multipart/form-data')
   @ApiImageFile('files', { type: UploadType.ARRAY })
   updateVendorService(
@@ -96,7 +96,7 @@ export class AdminServiceController {
   }
 
   @Patch('service/details/update/:serviceid')
-  @ApiResponses(true, [Role.ADMIN])
+  @ApiResponses(true, [UserRole.ADMIN])
   addAndDeleteServiceDetails(
     @Param('serviceid') id: string,
     @Body() updateServiceDetailsDto: UpdateServiceDetailsDto,
@@ -107,20 +107,20 @@ export class AdminServiceController {
     );
   }
 
-  @ApiResponses(true, [Role.ADMIN])
+  @ApiResponses(true, [UserRole.ADMIN])
   @Get('services')
   findAll(@Query() query: RetrieveServiceAdminDto) {
     return this.servicesService.findAll(query);
   }
 
   @Version('2')
-  @ApiResponses(true, [Role.VENDOR])
+  @ApiResponses(true, [UserRole.VENDOR])
   @Get('services')
   findAllByVendor(@CurrentUser() user,@Query() query: RetrieveServiceAdminDto) {
     return this.servicesService.findAllByVendor(query,user);
   }
 
-  @ApiResponses(true, [Role.ADMIN])
+  @ApiResponses(true, [UserRole.ADMIN])
   @Get('services/earning/:id')
   serviceEarning(@Param('id') id) {
     return this.servicesService.serviceEarning(id);
@@ -130,7 +130,7 @@ export class AdminServiceController {
    * Route: /services/
    * Method: GET
    */
-  @ApiResponses(false, [Role.ADMIN])
+  @ApiResponses(false, [UserRole.ADMIN])
   @Get('service/:id')
   findOne(
     @Param('id') id: string,
@@ -143,7 +143,7 @@ export class AdminServiceController {
    * Route: /services/images
    * Method: DELETE
    */
-  @ApiResponses(true, [Role.ADMIN])
+  @ApiResponses(true, [UserRole.ADMIN])
   @Delete('services/images')
   deleteImage(@Query() deleteImagetDto: DeleteImageDto) {
     return this.servicesService.deleteServiceImages(deleteImagetDto);
@@ -155,7 +155,7 @@ export class AdminServiceController {
    */
   @Delete('services/:id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiResponses(true, [Role.ADMIN])
+  @ApiResponses(true, [UserRole.ADMIN])
   remove(@Param('id') id: string) {
     return this.servicesService.remove(id);
   }
@@ -166,7 +166,7 @@ export class AdminServiceController {
    */
   @Delete('services/permanent/:id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiResponses(true, [Role.ADMIN])
+  @ApiResponses(true, [UserRole.ADMIN])
   removePermanent(@Param('id') id: string) {
     return this.servicesService.removePermanent(id);
   }
@@ -176,7 +176,7 @@ export class AdminServiceController {
    * Method: GET
    */
   @Get('services/table/auto-fill')
-  @ApiResponses(true, [Role.ADMIN])
+  @ApiResponses(true, [UserRole.ADMIN])
   addData() {
     return this.servicesService.dbDataFiller();
   }
@@ -186,7 +186,7 @@ export class AdminServiceController {
    * Method: DELETE
    */
   @Delete('services/table/clear')
-  @ApiResponses(true, [Role.ADMIN])
+  @ApiResponses(true, [UserRole.ADMIN])
   clearEventCL() {
     return this.servicesService.clearEventCL();
   }

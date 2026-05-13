@@ -3,7 +3,7 @@ import { ApiTags } from '@nestjs/swagger';
 
 import { CurrentUser } from 'src/auth/jwt.strategy';
 // import { PaginationDto } from 'src/modules/usermanagment/dtos/pagination.dto';
-import { Role } from 'src/schemas/enums/role';
+import { UserRole } from '@prisma/client';
 import { ApiResponses } from 'src/shared/response';
 import { NotificationDto } from './dto/notification.dto';
 import { NotificationService } from './notification.service';
@@ -13,7 +13,7 @@ import { NotificationService } from './notification.service';
 export class AdminNotificationController {
   constructor(private notificationService: NotificationService) {}
 
-  @ApiResponses(true, [Role.ADMIN, Role.USER])
+  @ApiResponses(true, [UserRole.ADMIN, UserRole.USER])
   @Get('/')
   async getNotification(@Query() query: NotificationDto, @CurrentUser() user) {
     const result = await this.notificationService.getAdminNotification(query);
@@ -36,7 +36,7 @@ export class AdminNotificationController {
   // }
 
   // @Get('/admin-adv-notification')
-  // @ApiResponses(true, [Role.ADMIN, Role.USER])
+  // @ApiResponses(true, [UserRole.ADMIN, UserRole.USER])
   // async getAdminAdvNotification(
   //   @Query() query: AdvNotificationDto,
   //   @CurrentUser() user,
@@ -53,7 +53,7 @@ export class AdminNotificationController {
   // }
 
   // @Get('/get-unread-count')
-  // @ApiResponses(true, [Role.ADMIN, Role.USER])
+  // @ApiResponses(true, [UserRole.ADMIN, UserRole.USER])
   // async getUnreadCount(@CurrentUser() user) {
   //   const result = await this.notificationService.getUnreadCount(user);
   //
@@ -64,7 +64,7 @@ export class AdminNotificationController {
   // }
 
   // @Post('toggle-notification')
-  // @ApiResponses(true, [Role.ADMIN, Role.USER])
+  // @ApiResponses(true, [UserRole.ADMIN, UserRole.USER])
   // async toggleNotification(@CurrentUser() user) {
   //   const result = await this.notificationService.toggleNotification(user);
   //

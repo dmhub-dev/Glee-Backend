@@ -1,19 +1,19 @@
 import { Controller, Get, Query } from '@nestjs/common';
 import { ApiResponses } from '@src/shared/response';
-import { Role } from '@src/schemas/enums/role';
+import { UserRole } from '@prisma/client';
 import { CommonApi } from '@src/common.api/common-api';
 
 @Controller('common-api')
 export class CommonApiController {
   constructor(private readonly commonApiServices: CommonApi) {}
 
-  @ApiResponses(true, [Role.USER])
+  @ApiResponses(true, [UserRole.USER])
   @Get('app/global/search')
   appSearchController(@Query('search') search: string) {
     return this.commonApiServices.appSearchApi(search);
   }
 
-  @ApiResponses(true, [Role.ADMIN])
+  @ApiResponses(true, [UserRole.ADMIN])
   @Get('dashboard/stats')
   dashboardStats() {
     return this.commonApiServices.dashboardStates();

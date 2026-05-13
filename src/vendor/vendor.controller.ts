@@ -20,7 +20,7 @@ import {
   UploadType,
 } from 'src/decorators/check-mime-type.decorator';
 import { RetrieveVendorAdminDto } from '@src/vendor/dto/retrieve.vendor.dto';
-import { Role } from '@src/schemas/enums/role';
+import { UserRole } from '@prisma/client';
 import { CurrentUser } from '@src/auth/jwt.strategy';
 
 @ApiTags('Vendor-Apis')
@@ -28,7 +28,7 @@ import { CurrentUser } from '@src/auth/jwt.strategy';
 export class VendorController {
   constructor(private readonly vendorService: VendorService) {}
 
-  @ApiResponses(true, [Role.ADMIN])
+  @ApiResponses(true, [UserRole.ADMIN])
   @Post()
   @ApiConsumes('multipart/form-data')
   @ApiImageFile('file', { type: UploadType.SINGLE })
@@ -39,13 +39,13 @@ export class VendorController {
     return this.vendorService.create(createVendorDto, file);
   }
 
-  @ApiResponses(true, [Role.ADMIN])
+  @ApiResponses(true, [UserRole.ADMIN])
   @Get()
   findAll(@Query() query: RetrieveVendorAdminDto) {
     return this.vendorService.findAll(query);
   }
 
-  @ApiResponses(true, [Role.ADMIN])
+  @ApiResponses(true, [UserRole.ADMIN])
   @Get('ticket-listing/:vendorId')
   ticketListingOfVendor(
     @Param('vendorId') vendor: string,
@@ -54,7 +54,7 @@ export class VendorController {
     return this.vendorService.ticketListingOfSpecificVendor(vendor, admin._id);
   }
   @Version('2')
-  @ApiResponses(true, [Role.VENDOR])
+  @ApiResponses(true, [UserRole.VENDOR])
   @Get('ticket-listing/:vendorId')
   ticketListingOfVendorRole(
     @Param('vendorId') vendor: string,
@@ -63,19 +63,19 @@ export class VendorController {
     return this.vendorService.ticketListingOfSpecificVendor(vendor, admin._id);
   }
 
-  @ApiResponses(true, [Role.USER, Role.ADMIN])
+  @ApiResponses(true, [UserRole.USER, UserRole.ADMIN])
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.vendorService.findOne(id);
   }
 
-  @ApiResponses(true, [Role.ADMIN])
+  @ApiResponses(true, [UserRole.ADMIN])
   @Patch(':id')
   update(@Param('id') id: string, @Body() updateVendorDto: UpdateVendorDto) {
     return this.vendorService.update(id, updateVendorDto);
   }
 
-  @ApiResponses(true, [Role.ADMIN])
+  @ApiResponses(true, [UserRole.ADMIN])
   @Delete(':id')
   remove(@Param('id') id: string) {
     return this.vendorService.remove(id);

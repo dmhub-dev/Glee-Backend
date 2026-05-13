@@ -1,7 +1,11 @@
 import Stripe from 'stripe';
 import { StripeOptions } from './../interfaces';
 
-const packageJson = require('../../../package.json');
+const packageJson = {
+  name: 'vtl-news',
+  repository: '',
+  version: '0.0.1',
+};
 
 export function getStripeClient({
   apiKey,

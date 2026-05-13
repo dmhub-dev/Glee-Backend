@@ -3,11 +3,7 @@ import { UsersService } from 'src/users/users.service';
 import { Socket } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
 import { OnesignalService } from 'src/onesignal/onesignal.service';
-import {
-  userInternalUsedFields,
-  userPublicFields,
-  UserDocument,
-} from '../schemas/user.shema';
+
 interface DecodedUser {
   userId: string;
   email: string;
@@ -27,16 +23,16 @@ export class SocketEventHandler {
   }
 
   async onDisconnect(client: Socket) {
-    const auth: UserDocument | boolean = await this.socketAuth(client);
+    const auth = await this.socketAuth(client);
     if (auth == false) {
       return client.disconnect();
     }
 
-    client.leave((auth as UserDocument)._id);
+    client.leave(auth.id);
     client.disconnect();
   }
 
-  private async socketAuth(socket: any): Promise<UserDocument | boolean> {
+  private async socketAuth(socket: any) {
     const token = socket.handshake.auth.token;
     let user: DecodedUser | null;
     try {
@@ -49,13 +45,10 @@ export class SocketEventHandler {
       return false;
     }
 
-    const userDoc = await this._userService.findOne(
-      {
-        _id: user.userId,
-        email: user.email,
-      },
-      { ...userPublicFields },
-    );
+    const userDoc = await this._userService.findOne({
+      id: user.userId,
+      email: user.email,
+    });
 
     if (userDoc == null) {
       return false;
@@ -64,11 +57,11 @@ export class SocketEventHandler {
   }
 
   async onConnect(socket: Socket) {
-    const auth: UserDocument | boolean = await this.socketAuth(socket);
+    const auth = await this.socketAuth(socket);
     if (auth == false) {
       socket.emit('auth failed', { message: 'Invalid token' });
       return socket.disconnect();
     }
-    socket.join((auth as UserDocument)._id.toString());
+    socket.join(auth.id.toString());
   }
 }

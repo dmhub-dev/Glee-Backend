@@ -1,52 +1,57 @@
 import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
-import { InjectModel } from '@nestjs/mongoose';
-import { FilterQuery, Model, UpdateQuery } from 'mongoose';
-import { User, UserDocument, userPublicFields } from 'src/schemas/user.shema';
+import { PrismaService } from '@src/prisma/prisma.service';
 import {
   AddCommissionDto,
   UserDto,
   UserStatusAndNotificationAdminDto,
 } from './dto/admin-users.dto';
-import { Role } from '../schemas/enums/role';
-import * as mongoose from 'mongoose';
+import { UserRole, AccountStatus } from '@prisma/client';
 import {
   UserProfileUpdateDto,
   UserStatusAndNotificationDto,
 } from './dto/user.dto';
 import { ConfigService } from '@nestjs/config';
-import { getArray } from '@src/shared/utils';
 import { loggers } from '@src/interceptors/logger.enums';
-import { ObjectId } from 'bson';
-import { Countries, CountriesDocument } from '@src/schemas/countries.schema';
-import { Cities, CitiesDocument } from '@src/schemas/cities.schema';
-import { States, StatesDocument } from '@src/schemas/states.schema';
+
+const USER_PUBLIC_FIELDS = {
+  id: true,
+  name: true,
+  email: true,
+  phone: true,
+  address: true,
+  city: true,
+  state: true,
+  country: true,
+  profileImage: true,
+  role: true,
+  vendorId: true,
+  notificationStatus: true,
+  profileStatus: true,
+  haveNewNotification: true,
+  isAllChatRead: true,
+  margin: true,
+};
 
 @Injectable()
 export class UserManagementService {
   constructor(
-    @InjectModel(User.name)
-    private UserModel: Model<UserDocument>,
-    @InjectModel(Countries.name)
-    private CountriesModel: Model<CountriesDocument>,
-    @InjectModel(Cities.name)
-    private CitiesModel: Model<CitiesDocument>,
-    @InjectModel(States.name)
-    private StatesModel: Model<StatesDocument>,
+    private readonly prisma: PrismaService,
     public configService: ConfigService,
   ) {}
 
-  async addCommission(addCommissionDto: AddCommissionDto, userId: String) {
-    let user: UserDocument = await this.UserModel.findByIdAndUpdate(
-      { _id: userId },
-      { margin: addCommissionDto.commission },
-      { new: true },
-    );
+  async addCommission(addCommissionDto: AddCommissionDto, userId: string) {
+    const user = await this.prisma.user.update({
+      where: { id: userId },
+      data: { margin: addCommissionDto.commission },
+    });
+
     if (!user) {
       throw new HttpException(
         "Admin doesn't exist any more",
         HttpStatus.BAD_REQUEST,
       );
     }
+
     return {
       success: true,
       msg: 'commission added successfuly',
@@ -55,13 +60,17 @@ export class UserManagementService {
   }
 
   async getCommission(userId: string) {
-    let user: UserDocument = await this.UserModel.findById(userId);
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
     if (!user) {
       throw new HttpException(
         "Admin doesn't exist any more",
         HttpStatus.BAD_REQUEST,
       );
     }
+
     if (!user.margin) {
       return {
         success: true,
@@ -69,6 +78,7 @@ export class UserManagementService {
         data: 0,
       };
     }
+
     return {
       success: true,
       msg: 'commission fetched successfuly',
@@ -77,29 +87,38 @@ export class UserManagementService {
   }
 
   async findAll(userQueryDto: UserDto) {
-    let query: Partial<FilterQuery<UserDocument>> = {
-      role: Role.USER,
+    const where: any = {
+      role: UserRole.USER,
       isDeleted: false,
     };
-    if (userQueryDto.isDeleted) query.isDeleted = userQueryDto.isDeleted;
-    if (userQueryDto.status) query.isActive = userQueryDto.status;
-    if (userQueryDto.search)
-      query.$text = {
-        $search: userQueryDto.search,
-      };
 
-    const users: UserDocument[] = await this.UserModel.find(query, {
-      ...userPublicFields,
-      isActive: 1,
-    })
-      .populate('country', 'isoCode name _id')
-      .populate('city', 'isoCode name _id countryCode stateCode')
-      .populate('state', 'isoCode name _id countryCode')
-      .skip((userQueryDto.page - 1) * userQueryDto.limit)
-      .limit(userQueryDto.limit)
-      .sort('-createdAt');
+    if (userQueryDto.isDeleted !== undefined) {
+      where.isDeleted = userQueryDto.isDeleted;
+    }
 
-    const docCount = await this.UserModel.count(query);
+    if (userQueryDto.status) {
+      where.isActive = userQueryDto.status as AccountStatus;
+    }
+
+    if (userQueryDto.search) {
+      where.OR = [
+        { name: { contains: userQueryDto.search, mode: 'insensitive' } },
+        { email: { contains: userQueryDto.search, mode: 'insensitive' } },
+        { phone: { contains: userQueryDto.search, mode: 'insensitive' } },
+      ];
+    }
+
+    const [users, docCount] = await Promise.all([
+      this.prisma.user.findMany({
+        where,
+        include: { country: true, city: true, state: true },
+        skip: (userQueryDto.page - 1) * userQueryDto.limit,
+        take: userQueryDto.limit,
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.user.count({ where }),
+    ]);
+
     return {
       success: true,
       data: users,
@@ -109,62 +128,43 @@ export class UserManagementService {
     };
   }
 
-  async findOne(id) {
-    const users: UserDocument = await this.UserModel.findById(id, {
-      ...userPublicFields,
-    })
-      .populate('country', 'isoCode name _id')
-      .populate('city', 'isoCode name _id countryCode stateCode')
-      .populate('state', 'isoCode name _id countryCode');
+  async findOne(id: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      include: { country: true, city: true, state: true },
+    });
+
     return {
       success: true,
-      data: users,
+      data: user,
     };
   }
 
   async updateProfile(
     userProfileUpdateDto: UserProfileUpdateDto,
-    userId,
+    userId: string,
     file?: Express.Multer.File,
   ) {
+    const updateData: any = { ...userProfileUpdateDto };
+
     if (file) {
-      userProfileUpdateDto.profileImage = `${this.configService.get(
-        'APP_URL',
-      )}/upload/${file.filename}`;
+      updateData.profileImage = `${this.configService.get('APP_URL')}/upload/${file.filename}`;
     }
 
-    // if (userProfileUpdateDto.country) {
-    //   let country = await this.CountriesModel.findById(
-    //     userProfileUpdateDto.country,
-    //   ).lean();
-    //   userProfileUpdateDto.country = country.name;
-    // }
-    // if (userProfileUpdateDto.city) {
-    //   let city = await this.CitiesModel.findById(userProfileUpdateDto.city);
-    //   userProfileUpdateDto.city = city.name;
-    // }
-    // if (userProfileUpdateDto.state) {
-    //   let state = await this.StatesModel.findById(userProfileUpdateDto.state);
-    //   userProfileUpdateDto.state = state.name;
-    // }
+    const updatedUser = await this.prisma.user.update({
+      where: { id: userId },
+      data: updateData,
+      include: { state: true, city: true, country: true },
+    });
 
-    let updatedUser: UserDocument = await this.UserModel.findOneAndUpdate(
-      { _id: userId },
-      userProfileUpdateDto,
-      { new: true },
-    );
     loggers.info('updated record......... %O', updatedUser);
+
     if (!updatedUser) {
       throw new HttpException(
         'There is no user exist with given credentials',
         HttpStatus.BAD_REQUEST,
       );
     }
-
-    await this.UserModel.populate(
-      [updatedUser],
-      [{ path: 'state' }, { path: 'city' }, { path: 'country' }],
-    );
 
     return {
       success: true,
@@ -179,20 +179,18 @@ export class UserManagementService {
       | UserStatusAndNotificationAdminDto,
     userId: string,
   ) {
-    if (!mongoose.isValidObjectId(userId)) {
-      throw new HttpException('Invalid Request data', HttpStatus.BAD_REQUEST);
-    }
-    let updatedUser: UserDocument = await this.UserModel.findOneAndUpdate(
-      { _id: userId },
-      userStatusAndNotification,
-      { new: true },
-    );
+    const updatedUser = await this.prisma.user.update({
+      where: { id: userId },
+      data: userStatusAndNotification as any,
+    });
+
     if (!updatedUser) {
       throw new HttpException(
         "This user doesn't exist any more",
         HttpStatus.BAD_REQUEST,
       );
     }
+
     return {
       success: true,
       msg: 'status updated successfuly',
@@ -200,29 +198,23 @@ export class UserManagementService {
     };
   }
 
-  userExist(_id: string) {
-    return this.UserModel.findById(_id);
+  userExist(id: string) {
+    return this.prisma.user.findUnique({ where: { id } });
   }
 
-  async softDelete(userId) {
-    if (!mongoose.isValidObjectId(userId)) {
-      throw new HttpException('Invalid Request data', HttpStatus.BAD_REQUEST);
-    }
+  async softDelete(userId: string) {
+    const deletedUser = await this.prisma.user.update({
+      where: { id: userId },
+      data: { isDeleted: true, deletedAt: new Date() },
+    });
 
-    // let deletedUser:UserDocument=await this.UserModel.findOne({_id:userId});
-    // await deletedUser.softDelete();
-
-    let deletedUser: UserDocument = await this.UserModel.findOneAndUpdate(
-      { _id: userId },
-      { isDeleted: true, deletedAt: new Date() },
-      { new: true },
-    );
     if (!deletedUser) {
       throw new HttpException(
         "This is already deleted or doesn't exist",
         HttpStatus.NOT_FOUND,
       );
     }
+
     return {
       success: true,
       msg: 'Successfuly deleted the user',
@@ -230,12 +222,10 @@ export class UserManagementService {
     };
   }
 
-  async remove(userId) {
-    if (!mongoose.isValidObjectId(userId)) {
-      throw new HttpException('Invalid Request data', HttpStatus.BAD_REQUEST);
-    }
-
-    await this.UserModel.findOneAndDelete({ _id: userId });
+  async remove(userId: string) {
+    await this.prisma.user.delete({
+      where: { id: userId },
+    });
 
     return;
   }
@@ -247,44 +237,57 @@ export class UserManagementService {
     };
   }
 
-  async updateContactInfo(admin: UserDocument, _id, info) {
-    let query = {};
-    if (info.name) query['adminContactInfo.$.name'] = info.name;
-    if (info.link) query['adminContactInfo.$.link'] = info.link;
-    if (info.icon) query['adminContactInfo.$.icon'] = info.icon;
+  async updateContactInfo(admin: any, _id: string, info: any) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: admin.id },
+    });
 
-    let doc: UserDocument = await this.UserModel.findOneAndUpdate(
-      { _id: admin._id, 'adminContactInfo._id': _id },
-      {
-        $set: query,
-      },
-      { new: true },
-    ).lean();
+    if (!user) {
+      throw new HttpException('Admin not found', HttpStatus.NOT_FOUND);
+    }
+
+    const existingContactInfo = Array.isArray(user.adminContactInfo)
+      ? (user.adminContactInfo as any[])
+      : [];
+
+    const updatedContactInfo = _id
+      ? existingContactInfo.map((contact: any) =>
+          contact._id === _id || contact.id === _id ? { ...contact, ...info } : contact,
+        )
+      : [...existingContactInfo, { ...info, _id: `${Date.now()}` }];
+
+    const updated = await this.prisma.user.update({
+      where: { id: admin.id },
+      data: { adminContactInfo: updatedContactInfo },
+    });
 
     return {
       success: true,
-      data: doc?.adminContactInfo,
+      data: updated.adminContactInfo,
     };
   }
 
-  async deleteContactInfo(admin: UserDocument, _id) {
-    let query = {};
+  async deleteContactInfo(admin: any, _id: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: admin.id },
+    });
 
-    let doc: UserDocument = await this.UserModel.findOneAndUpdate(
-      { _id: admin._id },
-      {
-        $pull: {
-          adminContactInfo: {
-            _id,
-          },
-        },
-      },
-      { new: true },
-    ).lean();
+    if (!user) {
+      throw new HttpException('Admin not found', HttpStatus.NOT_FOUND);
+    }
+
+    const updatedContactInfo = ((user.adminContactInfo as any[]) || []).filter(
+      (contact: any) => contact.id !== _id,
+    );
+
+    const updated = await this.prisma.user.update({
+      where: { id: admin.id },
+      data: { adminContactInfo: updatedContactInfo },
+    });
 
     return {
       success: true,
-      data: doc?.adminContactInfo,
+      data: updated.adminContactInfo,
     };
   }
 }

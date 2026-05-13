@@ -1,10 +1,9 @@
 import { Controller, Get, HttpException, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { Role } from 'src/schemas/enums/role';
+import { UserRole } from '@prisma/client';
 import { ApiResponses } from 'src/shared/response';
 import { OnesignalService } from './onesignal.service';
 import { CurrentUser } from '@src/auth/jwt.strategy';
-import { UserDocument } from '@src/schemas/user.shema';
 
 @ApiTags('One signal')
 @Controller('onesignal')
@@ -12,7 +11,7 @@ export class OnesignalController {
   constructor(private readonly oneSignalService: OnesignalService) {}
 
   @Get('/send-notification')
-  @ApiResponses(true, [Role.ADMIN, Role.USER])
+  @ApiResponses(true, [UserRole.ADMIN, UserRole.USER])
   async sendNotification(
     @Query('userId') userId: string,
     @Query('content') content: string,
@@ -29,7 +28,7 @@ export class OnesignalController {
   }
 
   @Post('add-user-to-notification-list')
-  @ApiResponses(true, [Role.ADMIN, Role.USER])
+  @ApiResponses(true, [UserRole.ADMIN, UserRole.USER])
   async addUserToNotificationList(
     @Query('userId') userId: string,
     @Query('playerId') playerId: string,
@@ -47,7 +46,7 @@ export class OnesignalController {
   }
 
   @Post('remove-user-from-notification-list')
-  @ApiResponses(true, [Role.ADMIN, Role.USER])
+  @ApiResponses(true, [UserRole.ADMIN, UserRole.USER])
   async removeUserFromNotificationList(
     @Query('userId') userId: string,
     @Query('playerId') playerId: string,
@@ -65,12 +64,8 @@ export class OnesignalController {
   }
 
   @Get('mark-all-notification-as-read')
-  @ApiResponses(true, [Role.USER])
-  async markAllNotificationAsRead(@CurrentUser() user: UserDocument) {
-    user.haveNewNotification = false;
-    await user.save();
-    return {
-      success: true,
-    };
+  @ApiResponses(true, [UserRole.USER])
+  async markAllNotificationAsRead(@CurrentUser() user: any) {
+    return this.oneSignalService.markAllNotificationAsRead(user.id);
   }
 }

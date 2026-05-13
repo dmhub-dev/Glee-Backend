@@ -1,9 +1,4 @@
-import { CategoryDocument } from '../schemas/categories.schema';
-import { Events, EventsDocument } from '../schemas/events.schema';
 import { faker } from '@faker-js/faker';
-import { EventStatus } from '../schemas/enums/status';
-import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
 import { Injectable } from '@nestjs/common';
 import {
   SeederCategoryIdsArrayType,
@@ -11,12 +6,13 @@ import {
 } from '../types/seeder.type';
 import { SeederService } from './seeder.service';
 import * as moment from 'moment';
+import { EntityStatus } from '@prisma/client';
+import { PrismaService } from '@src/prisma/prisma.service';
 
 @Injectable()
 export class EventsSeeder {
   constructor(
-    @InjectModel(Events.name)
-    private EventsModel: Model<EventsDocument>,
+    private readonly prisma: PrismaService,
     private readonly seederService: SeederService,
   ) {}
 
@@ -27,7 +23,7 @@ export class EventsSeeder {
   createDocument(
     categories: SeederCategoryIdsArrayType,
     vendors: SeederVendorIdsArrayType,
-  ): EventsDocument {
+  ) {
     const capacity = faker.datatype.number({ max: 500 });
     const eventDate = faker.date.future();
     return {
@@ -59,10 +55,11 @@ export class EventsSeeder {
         faker.image.business(),
       ),
       price: faker.datatype.number({ max: 100000, min: 1000 }),
-      isActive: faker.helpers.arrayElement([
-        EventStatus.ACTIVE,
-        EventStatus.SUSPENDED,
-        EventStatus.DONE,
+      status: faker.helpers.arrayElement([
+        EntityStatus.ACTIVE,
+        EntityStatus.INACTIVE,
+        EntityStatus.DONE,
+        EntityStatus.SUSPENDED,
       ]),
       maxTicketPurchased: faker.datatype.number({ max: 100, min: 10 }),
       eventSchedule: faker.helpers.arrayElements(
@@ -76,7 +73,7 @@ export class EventsSeeder {
       ),
       isDeleted: false,
       deletedAt: new Date(),
-    } as EventsDocument;
+    } as any;
   }
 
   /**
@@ -86,10 +83,8 @@ export class EventsSeeder {
   async createDummyEvents() {
     let categories = await this.seederService.getRandomCategory();
     let vendors = await this.seederService.getRandomVendors();
-    return await this.EventsModel.insertMany(
-      Array.from({ length: 50 }).map(() =>
-        this.createDocument(categories, vendors),
-      ),
-    );
+    return this.prisma.event.createMany({
+      data: Array.from({ length: 50 }).map(() => this.createDocument(categories, vendors)) as any[],
+    });
   }
 }

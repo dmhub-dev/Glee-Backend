@@ -1,32 +1,18 @@
 import { Injectable } from '@nestjs/common';
-import { InjectModel } from '@nestjs/mongoose';
-import { query } from 'express';
-import { FilterQuery, Model } from 'mongoose';
-import { Role } from 'src/schemas/enums/role';
-import {
-  Notification,
-  NotificationDocument,
-} from 'src/schemas/notification.schema';
-import { User, UserDocument } from 'src/schemas/user.shema';
+import { PrismaService } from '@src/prisma/prisma.service';
+import { UserRole, NotificationType } from '@prisma/client';
 import { NotificationDto, TimeFilter } from './dto/notification.dto';
-import { ObjectId } from 'bson';
-import { NotificationType } from '@src/schemas/enums/notification-enum';
-import { aggregateUserNotificationListing } from '@src/notification/aggregation/notification.aggregate';
 
 @Injectable()
 export class NotificationService {
-  constructor(
-    @InjectModel(Notification.name)
-    private notificationModel: Model<NotificationDocument>,
-    @InjectModel(User.name)
-    private userModel: Model<UserDocument>, // @InjectModel(Post.name) private postModel: Model<PostDocument>,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
+
   async toggleNotification(user: any) {
     try {
-      const updateUser = await this.userModel.findOneAndUpdate(
-        { _id: user._id },
-        { $set: { notificationStatus: !user.notificationStatus } },
-      );
+      const updateUser = await this.prisma.user.update({
+        where: { id: user.id },
+        data: { notificationStatus: !user.notificationStatus },
+      });
       return {
         success: true,
         message: 'Notification status updated',
@@ -42,21 +28,12 @@ export class NotificationService {
       };
     }
   }
+
   async getUnreadCount(user: any) {
     try {
-      const count: any = (
-        await this.notificationModel.aggregate([
-          { $match: { userId: user._id } },
-          {
-            $lookup: {
-              from: 'ads',
-              localField: 'postId',
-              foreignField: '_id',
-              as: 'postId',
-            },
-          },
-        ])
-      ).length;
+      const count = await this.prisma.notification.count({
+        where: { userId: user.id, isRead: false },
+      });
 
       return {
         success: true,
@@ -74,15 +51,28 @@ export class NotificationService {
     }
   }
 
-  async addNotification(payload: NotificationDocument) {
-    return this.notificationModel.create(payload);
+  async addNotification(payload: any) {
+    return this.prisma.notification.create({ data: payload });
   }
 
-  async getUserNotification(user: UserDocument, filter: NotificationDto) {
+  async getUserNotification(user: any, filter: NotificationDto) {
     const { limit, page } = filter;
-    const data: any[] = await this.notificationModel.aggregate(
-      aggregateUserNotificationListing({ to: user._id }, filter),
-    );
+    const skip = (page - 1) * limit;
+
+    const [data, count] = await Promise.all([
+      this.prisma.notification.findMany({
+        where: { userId: user.id },
+        include: {
+          eventTicket: { include: { event: true } },
+          purchasedService: { include: { service: true } },
+          purchasedBooking: { include: { booking: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      this.prisma.notification.count({ where: { userId: user.id } }),
+    ]);
 
     if (!data || data.length === 0) {
       return {
@@ -91,37 +81,46 @@ export class NotificationService {
         message: 'No notification found',
       };
     }
+
     return {
       success: true,
-      data: data[0]?.data,
-      metadata: data[0]?.metadata[0],
+      data,
+      metadata: {
+        count,
+        page,
+        limit,
+        totalPages: Math.ceil(count / limit),
+      },
     };
   }
 
   async getAdminNotification(filter: NotificationDto) {
     const { limit, page } = filter;
-    const data = await this.notificationModel
-      .find(
-        {
-          notificationType: {
-            $ne: NotificationType.CHAT,
-          },
+    const skip = (page - 1) * limit;
+
+    const [data, docCount] = await Promise.all([
+      this.prisma.notification.findMany({
+        where: {
+          type: { not: NotificationType.CHAT },
         },
-        {
-          orderPayload: 1,
-          orderModel: 1,
-          notificationType: 1,
-          body: 1,
+        select: {
+          id: true,
+          type: true,
+          isRead: true,
+          createdAt: true,
+          eventTicket: { select: { id: true } },
+          purchasedService: { select: { id: true } },
+          purchasedBooking: { select: { id: true } },
         },
-      )
-      .skip((page - 1) * limit)
-      .limit(limit)
-      .sort('-createdAt');
-    const docCount = await this.notificationModel.count({
-      notificationType: {
-        $ne: NotificationType.CHAT,
-      },
-    });
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      this.prisma.notification.count({
+        where: { type: { not: NotificationType.CHAT } },
+      }),
+    ]);
+
     if (!data) {
       return {
         success: false,
@@ -129,6 +128,7 @@ export class NotificationService {
         message: 'No notification found',
       };
     }
+
     return {
       success: true,
       data,
@@ -138,13 +138,13 @@ export class NotificationService {
     };
   }
 
-  async readNotification(id: string, user: UserDocument) {
+  async readNotification(id: string, user: any) {
     try {
-      const notif = await this.notificationModel.findOne({
-        userId: user._id,
-        _id: id,
+      const notif = await this.prisma.notification.findFirst({
+        where: { id, userId: user.id },
       });
-      if (notif == null) {
+
+      if (!notif) {
         return {
           success: false,
           message: 'Notification not found',
@@ -153,7 +153,11 @@ export class NotificationService {
         };
       }
 
-      const result = await notif.save();
+      const result = await this.prisma.notification.update({
+        where: { id },
+        data: { isRead: true },
+      });
+
       return {
         success: true,
         message: 'Notification read successfully',
@@ -174,43 +178,41 @@ export class NotificationService {
     let nPage = page == null ? 1 : parseInt(page);
     let nPerPage = perPage == null ? 10 : parseInt(perPage);
     nPage--;
+
     try {
-      let notif;
-      if (user.role == Role.ADMIN) {
-        notif = await this.notificationModel
-          .find({ userId: user._id })
-          .populate({
-            path: 'actorId',
-            select: 'name email profileImage phone',
-            model: this.userModel,
-          })
-          .populate({
-            path: 'userId',
-            select: 'name email profileImage phone',
-            model: this.userModel,
-          })
-          .populate({
-            path: 'postId',
-            select: '',
-            // model: this.postModel,
-          })
-          .sort({ createdAt: -1 })
-          .skip(nPage * nPerPage)
-          .limit(nPerPage);
-      } else {
+      if (user.role !== UserRole.ADMIN) {
         return {
           success: false,
-          message:
-            'Bad Request: Only Admin and Advertiser can access this endpoint',
+          message: 'Bad Request: Only Admin and Advertiser can access this endpoint',
           statusCode: 400,
           data: null,
         };
       }
+
+      const [notif, totalCount] = await Promise.all([
+        this.prisma.notification.findMany({
+          where: { userId: user.id },
+          include: {
+            user: { select: { id: true, name: true, email: true, profileImage: true } },
+            eventTicket: true,
+            purchasedService: true,
+            purchasedBooking: true,
+          },
+          orderBy: { createdAt: 'desc' },
+          skip: nPage * nPerPage,
+          take: nPerPage,
+        }),
+        this.prisma.notification.count({ where: { userId: user.id } }),
+      ]);
+
       return {
         success: true,
         message: 'Notifications fetched successfully',
         data: notif,
         statusCode: 200,
+        page: nPage + 1,
+        limit: nPerPage,
+        totalPages: Math.ceil(totalCount / nPerPage),
       };
     } catch (err) {
       return {

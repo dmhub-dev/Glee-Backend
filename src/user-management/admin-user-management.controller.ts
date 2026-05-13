@@ -18,9 +18,8 @@ import {
   UserDto,
   UserStatusAndNotificationAdminDto,
 } from './dto/admin-users.dto';
-import { Role } from '../schemas/enums/role';
+import { UserRole } from '@prisma/client';
 import { CurrentUser } from 'src/auth/jwt.strategy';
-import { UserDocument } from 'src/schemas/user.shema';
 import {
   ApiImageFile,
   UploadType,
@@ -31,31 +30,31 @@ import {
 export class AdminUserManagementController {
   constructor(private readonly userManagementService: UserManagementService) {}
 
-  @ApiResponses(true, [Role.ADMIN])
+  @ApiResponses(true, [UserRole.ADMIN])
   @Get()
   findAll(@Query() userQueryDto: UserDto) {
     return this.userManagementService.findAll(userQueryDto);
   }
 
-  @ApiResponses(true, [Role.ADMIN])
+  @ApiResponses(true, [UserRole.ADMIN])
   @Post('set-commission')
   addCommission(
     @Body() addCommissionDto: AddCommissionDto,
-    @CurrentUser() currentUser: UserDocument,
+    @CurrentUser() currentUser: any,
   ) {
     return this.userManagementService.addCommission(
       addCommissionDto,
-      currentUser._id,
+      currentUser.id,
     );
   }
 
-  @ApiResponses(true, [Role.ADMIN])
+  @ApiResponses(true, [UserRole.ADMIN])
   @Get('get-commission')
-  getCommission(@CurrentUser() currentUser: UserDocument) {
-    return this.userManagementService.getCommission(currentUser._id);
+  getCommission(@CurrentUser() currentUser: any) {
+    return this.userManagementService.getCommission(currentUser.id);
   }
 
-  @ApiResponses(true, [Role.ADMIN])
+  @ApiResponses(true, [UserRole.ADMIN])
   @Patch('update')
   @ApiConsumes('multipart/form-data')
   @ApiImageFile('file', { type: UploadType.SINGLE })
@@ -72,7 +71,7 @@ export class AdminUserManagementController {
     );
   }
 
-  @ApiResponses(true, [Role.ADMIN])
+  @ApiResponses(true, [UserRole.ADMIN])
   @Patch('update/user-status-notification')
   updateStatusAndNotification(
     @Body()
@@ -86,19 +85,19 @@ export class AdminUserManagementController {
     );
   }
 
-  @ApiResponses(true, [Role.ADMIN])
+  @ApiResponses(true, [UserRole.ADMIN])
   @Delete('delete/soft/:userId')
   softDelete(@Param('userId') userId: string) {
     return this.userManagementService.softDelete(userId);
   }
 
-  @ApiResponses(true, [Role.ADMIN])
+  @ApiResponses(true, [UserRole.ADMIN])
   @Delete('delete/permanent/:userId')
   permanentDelete(@Param('userId') userId: string) {
     return this.userManagementService.remove(userId);
   }
 
-  @ApiResponses(true, [Role.ADMIN])
+  @ApiResponses(true, [UserRole.ADMIN])
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.userManagementService.findOne(id);

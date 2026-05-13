@@ -12,9 +12,7 @@ import {
 import { SocketAuthGuard } from './socket-auth.guard';
 import { SocketEventHandler } from './socket_event.handler';
 import { Socket } from 'socket.io';
-import { Model } from 'mongoose';
-import { User, UserDocument } from '@src/schemas/user.shema';
-import { InjectModel } from '@nestjs/mongoose';
+
 import { UsersService } from '@src/users/users.service';
 import { ChatService } from '@src/chat/chat.service';
 

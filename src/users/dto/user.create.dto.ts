@@ -8,13 +8,14 @@ import {
   IsNumber,
 } from 'class-validator';
 import { ApiProperty, ApiBody } from '@nestjs/swagger';
-import { RegisterRole } from '../../schemas/enums/role';
+
 
 export class CreateUserDto {
   @ApiProperty()
   @IsNotEmpty()
   name: string;
 
+  
   @ApiProperty()
   @IsNotEmpty()
   password: string;

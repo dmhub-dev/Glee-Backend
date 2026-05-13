@@ -9,7 +9,7 @@ import {
   IsUrl,
   MinLength,
 } from 'class-validator';
-import { AccountStatus } from '../../schemas/enums/status';
+import { AccountStatus } from '@prisma/client';
 import { CountryCodes } from '../../shared/countries';
 import { faker } from '@faker-js/faker';
 

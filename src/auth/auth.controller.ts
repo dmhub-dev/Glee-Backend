@@ -36,8 +36,7 @@ import {
   RetrieveStatesDto,
 } from '@src/auth/dto/retrieve.dto';
 import { CurrentUser } from '@src/auth/jwt.strategy';
-import { Role } from '@src/schemas/enums/role';
-import { UserDocument } from '@src/schemas/user.shema';
+import { UserRole } from '@prisma/client';
 
 @Controller()
 @ApiTags('Auth')
@@ -99,7 +98,7 @@ export class AuthController {
   public async login(@Body() loginUserDto: LoginDto): Promise<any> {
     const getRole = await this.authService.getRoleByAuth(loginUserDto);
     loginUserDto.role = getRole.role;
-    if (!loginUserDto.role || loginUserDto.role === Role.USER) {
+    if (!loginUserDto.role || loginUserDto.role === UserRole.USER) {
       if (!loginUserDto.playerId)
         throw new HttpException('Player Id is missing', HttpStatus.BAD_REQUEST);
     }
@@ -110,7 +109,7 @@ export class AuthController {
   @Post('login')
   @ApiResponses(false)
   public async loginV2(@Body() loginVendorDto: LoginVendorDto): Promise<any> {
-    if (loginVendorDto.role !== Role.VENDOR) {
+    if (loginVendorDto.role !== UserRole.VENDOR) {
         throw new HttpException('Vendor Login', HttpStatus.BAD_REQUEST);
     }
     return await this.authService.loginVendor(loginVendorDto);
@@ -183,14 +182,12 @@ export class AuthController {
   }
 
   @Get('logout/:playerId')
-  @ApiResponses(true, [Role.USER])
+  @ApiResponses(true, [UserRole.USER])
   public async logout(
-    @CurrentUser() user,
+    @CurrentUser() user: any,
     @Param('playerId') playerId: string,
   ): Promise<any> {
-    console.log('current user.......', user.toObject());
-    user.notificationIds.pull(playerId);
-    await user.save();
+    user.notificationIds = (user.notificationIds || []).filter((id: string) => id !== playerId);
     return {
       success: true,
     };
@@ -201,10 +198,10 @@ export class AuthController {
    * @param req
    */
   @Get('me')
-  @ApiResponses(true, [Role.USER])
+  @ApiResponses(true, [UserRole.USER])
   // @ApiBearerAuth('access-token')
   // @UseGuards(AuthGuard('jwt'))
-  public async testAuth(@CurrentUser() user): Promise<any> {
+  public async testAuth(@CurrentUser() user: any): Promise<any> {
     return this.authService.testAuth(user);
   }
 

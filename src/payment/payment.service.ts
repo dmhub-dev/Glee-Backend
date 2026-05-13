@@ -1,9 +1,7 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import Stripe from 'stripe';
 import { InjectStripe } from '../stripe';
-import { Payment, PaymentDocument } from '../schemas/payment.schema';
-import { InjectModel } from '@nestjs/mongoose';
-import { AnyKeys, Model } from 'mongoose';
+import { PrismaService } from '@src/prisma/prisma.service';
 
 export enum PaymentMethods {
   ONE_TIME = 0,
@@ -22,17 +20,14 @@ export class PaymentService {
   public constructor(
     @InjectStripe()
     private readonly stripeClient: Stripe,
-    @InjectModel(Payment.name)
-    private PaymentModel: Model<PaymentDocument>,
+    private readonly prisma: PrismaService,
   ) {}
 
   // Helper Function
   // ===================================================================================================================
 
-  async helperCreatePayment(
-    data: AnyKeys<PaymentDocument>,
-  ): Promise<PaymentDocument> {
-    return this.PaymentModel.create(data);
+  async helperCreatePayment(data: any) {
+    return this.prisma.payment.create({ data });
   }
 
   // Route Specific Function

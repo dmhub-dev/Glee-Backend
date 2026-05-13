@@ -5,7 +5,7 @@ import {
   SetMetadata,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { Role } from '../schemas/enums/role';
+import { UserRole } from '@prisma/client';
 
 @Injectable()
 export class RolesGuard implements CanActivate {
@@ -22,4 +22,4 @@ export class RolesGuard implements CanActivate {
   }
 }
 
-export const Roles = (roles: Role[]) => SetMetadata('roles', roles);
+export const Roles = (roles: UserRole[]) => SetMetadata('roles', roles);

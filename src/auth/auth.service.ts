@@ -124,39 +124,43 @@ export class AuthService {
       const user = await this.usersService.create(userDto);
       const config = this.configService.get('EMAIL_SMTP');
 
-      if (admin?.email) {
+      try {
+        if (admin?.email) {
+          await this.emailService.sendMail({
+            template: 'new-account',
+            message: {
+              to: admin.email,
+              subject: 'New Account Creation',
+              attachments: [{ filename: 'logo.svg', path: path.join(process.cwd(), 'views', 'logo.svg'), cid: 'logo' }],
+            },
+            locals: {
+              config,
+              message: `${userDto.name} has registered in Glee App.`,
+              linkText: 'Please visit the dashboard',
+              link: 'https://glee-admin.appnofy.com/user-management',
+              name: 'Admin',
+              date: new Date().getFullYear(),
+            },
+          });
+        }
+
         await this.emailService.sendMail({
           template: 'new-account',
           message: {
-            to: admin.email,
+            to: userDto.email,
             subject: 'New Account Creation',
             attachments: [{ filename: 'logo.svg', path: path.join(process.cwd(), 'views', 'logo.svg'), cid: 'logo' }],
           },
           locals: {
             config,
-            message: `${userDto.name} has registered in Glee App.`,
-            linkText: 'Please visit the dashboard',
-            link: 'https://glee-admin.appnofy.com/user-management',
-            name: 'Admin',
+            message: `Congratulations, ${userDto.name} your account has been created.`,
+            name: userDto.name,
             date: new Date().getFullYear(),
           },
         });
+      } catch (emailError) {
+        loggers.info(emailError);
       }
-
-      await this.emailService.sendMail({
-        template: 'new-account',
-        message: {
-          to: userDto.email,
-          subject: 'New Account Creation',
-          attachments: [{ filename: 'logo.svg', path: path.join(process.cwd(), 'views', 'logo.svg'), cid: 'logo' }],
-        },
-        locals: {
-          config,
-          message: `Congratulations, ${userDto.name} your account has been created.`,
-          name: userDto.name,
-          date: new Date().getFullYear(),
-        },
-      });
 
       return { success: true, message: 'User registered successfully', data: user };
     } catch (err) {
@@ -281,39 +285,43 @@ export class AuthService {
       const user = await this.usersService.createVendorAuth(registerVendorDto, createVendor.id);
 
       const config = this.configService.get('EMAIL_SMTP');
-      if (admin?.email) {
+      try {
+        if (admin?.email) {
+          await this.emailService.sendMail({
+            template: 'new-account',
+            message: {
+              to: admin.email,
+              subject: 'New Account Creation',
+              attachments: [{ filename: 'logo.svg', path: path.join(process.cwd(), 'views', 'logo.svg'), cid: 'logo' }],
+            },
+            locals: {
+              config,
+              message: `${(registerVendorDto as any).username} has registered in Glee App.`,
+              linkText: 'Please visit the dashboard',
+              link: 'https://glee-admin.appnofy.com/user-management',
+              name: 'Admin',
+              date: new Date().getFullYear(),
+            },
+          });
+        }
+
         await this.emailService.sendMail({
           template: 'new-account',
           message: {
-            to: admin.email,
+            to: registerVendorDto.email,
             subject: 'New Account Creation',
             attachments: [{ filename: 'logo.svg', path: path.join(process.cwd(), 'views', 'logo.svg'), cid: 'logo' }],
           },
           locals: {
             config,
-            message: `${(registerVendorDto as any).username} has registered in Glee App.`,
-            linkText: 'Please visit the dashboard',
-            link: 'https://glee-admin.appnofy.com/user-management',
-            name: 'Admin',
+            message: `Congratulations, ${(registerVendorDto as any).username} your account has been created.`,
+            name: (registerVendorDto as any).username,
             date: new Date().getFullYear(),
           },
         });
+      } catch (emailError) {
+        loggers.info(emailError);
       }
-
-      await this.emailService.sendMail({
-        template: 'new-account',
-        message: {
-          to: registerVendorDto.email,
-          subject: 'New Account Creation',
-          attachments: [{ filename: 'logo.svg', path: path.join(process.cwd(), 'views', 'logo.svg'), cid: 'logo' }],
-        },
-        locals: {
-          config,
-          message: `Congratulations, ${(registerVendorDto as any).username} your account has been created.`,
-          name: (registerVendorDto as any).username,
-          date: new Date().getFullYear(),
-        },
-      });
 
       return { success: true, message: 'Vendor registered successfully', data: user };
     } catch (err) {

@@ -18,7 +18,7 @@ import {
   ApiImageFile,
   UploadType,
 } from 'src/decorators/check-mime-type.decorator';
-import { Role } from '../schemas/enums/role';
+import { UserRole } from '@prisma/client';
 import { AddImageDto, DeleteImageDto } from './dto/add-image.dto';
 
 @Controller('admin/event')
@@ -32,7 +32,7 @@ export class AdminEventController {
    * @param files
    * @param createEventDto
    */
-  @ApiResponses(true, [Role.ADMIN])
+  @ApiResponses(true, [UserRole.ADMIN])
   @ApiConsumes('multipart/form-data')
   @ApiImageFile('files', { type: UploadType.ARRAY })
   @Post()
@@ -44,7 +44,7 @@ export class AdminEventController {
   }
 
   @Version('2')
-  @ApiResponses(true, [Role.VENDOR])
+  @ApiResponses(true, [UserRole.VENDOR])
   @ApiConsumes('multipart/form-data')
   @ApiImageFile('files', { type: UploadType.ARRAY })
   @Post()
@@ -63,7 +63,7 @@ export class AdminEventController {
    * @param updateEventDto
    * @param files
    */
-  @ApiResponses(true, [Role.ADMIN])
+  @ApiResponses(true, [UserRole.ADMIN])
   @ApiConsumes('multipart/form-data')
   @ApiImageFile(null, {
     type: UploadType.MULTIPLE,
@@ -92,7 +92,7 @@ export class AdminEventController {
   }
 
   @Version('2')
-  @ApiResponses(true, [Role.VENDOR])
+  @ApiResponses(true, [UserRole.VENDOR])
   @ApiConsumes('multipart/form-data')
   @ApiImageFile(null, {
     type: UploadType.MULTIPLE,
@@ -120,7 +120,7 @@ export class AdminEventController {
     return this.eventService.updateEventVendor(id, updateEventDto, files);
   }
 
-  @ApiResponses(true, [Role.ADMIN])
+  @ApiResponses(true, [UserRole.ADMIN])
   @ApiConsumes('multipart/form-data')
   @ApiImageFile('files', {type: UploadType.ARRAY})
   @Post('upload/images')
@@ -131,20 +131,20 @@ export class AdminEventController {
     return this.eventService.addExtraImages(files, addImagetDto);
   }
 
-  @ApiResponses(true, [Role.ADMIN])
+  @ApiResponses(true, [UserRole.ADMIN])
   @Get('earning/:id')
   eventEarning(@Param('id') id) {
     return this.eventService.eventEarningService(id);
   }
 
   @Version('2')
-  @ApiResponses(true, [Role.VENDOR])
+  @ApiResponses(true, [UserRole.VENDOR])
   @Get('earning/:id')
   eventEarningByVendor(@Param('id') id) {
     return this.eventService.eventEarningService(id);
   }
 
-  @ApiResponses(true, [Role.ADMIN])
+  @ApiResponses(true, [UserRole.ADMIN])
   @Delete('images')
   deleteImage(@Body() deleteImagetDto: DeleteImageDto) {
     return this.eventService.deleteEventImages(deleteImagetDto);
@@ -155,14 +155,14 @@ export class AdminEventController {
    * Method: DELETE
    * @param id
    */
-  @ApiResponses(true, [Role.ADMIN])
+  @ApiResponses(true, [UserRole.ADMIN])
   @Delete(':id')
   remove(@Param('id') id: string) {
     return this.eventService.remove(id);
   }
 
   @Version('2')
-  @ApiResponses(true, [Role.VENDOR])
+  @ApiResponses(true, [UserRole.VENDOR])
   @Delete(':id')
   removeByVendor(@Param('id') id: string) {
     return this.eventService.remove(id);
@@ -173,7 +173,7 @@ export class AdminEventController {
    * Method: DELETE
    * @param id
    */
-  @ApiResponses(true, [Role.ADMIN])
+  @ApiResponses(true, [UserRole.ADMIN])
   @Delete('permanent/:id')
   removepermanent(@Param('id') id: string) {
     return this.eventService.removepermanent(id);
@@ -183,7 +183,7 @@ export class AdminEventController {
    * Route: /admin/event/table/auto-fill
    * Method: GET
    */
-  @ApiResponses(true, [Role.ADMIN])
+  @ApiResponses(true, [UserRole.ADMIN])
   @Get('table/auto-fill')
   addData() {
     return this.eventService.dbDataFiller();
@@ -193,7 +193,7 @@ export class AdminEventController {
    * Route: /admin/event/table/clear
    * Method: DELETE
    */
-  @ApiResponses(true, [Role.ADMIN])
+  @ApiResponses(true, [UserRole.ADMIN])
   @Delete('table/clear')
   clearEventCL() {
     return this.eventService.clearEventCL();

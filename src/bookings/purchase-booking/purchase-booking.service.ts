@@ -1,50 +1,31 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
-import { CreatePurchaseBookingDto } from './dto/create-purchase-booking.dto';
+import { NotificationType } from '@prisma/client';
+import { EmailService } from '@src/email-server/email.service';
+import { loggers } from '@src/interceptors/logger.enums';
+import { NotificationService } from '@src/notification/notification.service';
+import { PrismaService } from '@src/prisma/prisma.service';
+import { SocketGateway } from '@src/socket/socket.gateway';
+import * as moment from 'moment/moment';
+import * as path from 'path';
 import { BookingSharedService } from '../shared/shared.bookings.service';
 import { PaymentMethods, PaymentService } from 'src/payment/payment.service';
 import { UsersService } from 'src/users/users.service';
-import { InjectModel } from '@nestjs/mongoose';
-import * as mongoose from 'mongoose';
-import { FilterQuery, Model } from 'mongoose';
-import {
-  PurchasedBooking,
-  PurchasedBookingDocument,
-} from 'src/schemas/purchased-booking.schema';
-import {
-  BookingTable,
-  BookingTableDocument,
-} from 'src/schemas/booking-table.schema';
-import { BookingDocument } from 'src/schemas/booking.schema';
-import { UserDocument } from 'src/schemas/user.shema';
-import { PaymentDocument } from 'src/schemas/payment.schema';
-import { BookingType } from 'src/schemas/enums/bookingType-enum';
+import { CreatePurchaseBookingDto } from './dto/create-purchase-booking.dto';
 import { GetBookingsDataDto } from './dto/public.purchased-booking.dto';
-import { Role } from '@src/schemas/enums/role';
-import { loggers } from '@src/interceptors/logger.enums';
-import {
-  bookingHistoryAggregation,
-  singleBookingHistory,
-} from '@src/bookings/purchase-booking/aggregate/listing.aggregate';
-import { ObjectId } from 'bson';
-import { eventMinorDetails } from '@src/schemas/events.schema';
-import { SocketGateway } from '@src/socket/socket.gateway';
-import * as path from 'path';
-import * as moment from 'moment/moment';
-import { EmailService } from '@src/email-server/email.service';
-import { NotificationService } from '@src/notification/notification.service';
-import { NotificationType } from '@src/schemas/enums/notification-enum';
-import { NotificationDocument } from '@src/schemas/notification.schema';
+
+const PURCHASED_BOOKING_INCLUDE = {
+  user: { include: { country: true, city: true, state: true } },
+  booking: { include: { category: true, vendor: true } },
+  payment: true,
+};
 
 @Injectable()
 export class PurchaseBookingService {
   constructor(
+    private readonly prisma: PrismaService,
     private readonly bookingSharedService: BookingSharedService,
     private readonly paymentService: PaymentService,
     private readonly userService: UsersService,
-    @InjectModel(PurchasedBooking.name)
-    private readonly purchasedBookingModel: Model<PurchasedBookingDocument>,
-    @InjectModel(BookingTable.name)
-    private readonly bookingTableModel: Model<BookingTableDocument>,
     private readonly emailService: EmailService,
     private readonly notificationService: NotificationService,
   ) {}
@@ -55,93 +36,26 @@ export class PurchaseBookingService {
     expMonth: string,
     expYear: string,
   ) {
-    let price: number;
+    const booking = await this.bookingSharedService.helperBookingFindById(createPurchaseBookingDto.bookingId);
+    if (!booking) throw new HttpException('booking not find...', HttpStatus.BAD_REQUEST);
 
-    let booking: any = await this.bookingSharedService.helperBookingFindById(
-      createPurchaseBookingDto.bookingId,
-    );
+    const user = await this.userService.findOne({ id: userId });
+    if (!user) throw new HttpException('User not found...', HttpStatus.UNAUTHORIZED);
 
-    let table: BookingTableDocument;
+    const admin = await this.prisma.user.findFirst({ where: { role: 'ADMIN', isDeleted: false } });
 
-    if (!booking) {
-      throw new HttpException('booking not find...', HttpStatus.BAD_REQUEST);
+    let price = Number(booking.price);
+
+    let table: any = null;
+    const dto = createPurchaseBookingDto as any;
+    if (dto.tableId) {
+      table = await this.prisma.bookingTable.findFirst({ where: { id: dto.tableId } });
+      if (!table) throw new HttpException('No table exists with this id...', HttpStatus.BAD_REQUEST);
+      if (table?.status === 'booked') throw new HttpException('This table is already booked...', HttpStatus.BAD_REQUEST);
+      if ((table as any).tablePrice) price = (table as any).tablePrice;
     }
 
-    let admin: UserDocument = await this.userService.findOne({
-      role: Role.ADMIN,
-    });
-    let commission = 0;
-    if (
-      admin?.margin &&
-      typeof +`${admin.margin}` === 'number' &&
-      !Number.isNaN(admin.margin)
-    )
-      commission = admin.margin;
-
-    let checkPriorBooking: PurchasedBookingDocument =
-      await this.purchasedBookingModel.findOne({
-        bookingId: createPurchaseBookingDto.bookingId,
-      });
-    if (checkPriorBooking) {
-      if (
-        checkPriorBooking.bookingType == BookingType.VENUE &&
-        createPurchaseBookingDto.bookingType == BookingType.VENUE
-      ) {
-        throw new HttpException(
-          'This Venue is already booked',
-          HttpStatus.NOT_ACCEPTABLE,
-        );
-      } else if (
-        checkPriorBooking.bookingType == BookingType.VENUE &&
-        createPurchaseBookingDto.bookingType == BookingType.TABLE
-      ) {
-        throw new HttpException(
-          'Not selling tables anymore',
-          HttpStatus.BAD_REQUEST,
-        );
-      } else if (
-        checkPriorBooking.bookingType == BookingType.TABLE &&
-        createPurchaseBookingDto.bookingType == BookingType.VENUE
-      ) {
-        throw new HttpException(
-          'whole Venue not avalibale, you can buy tables if avaliable',
-          HttpStatus.BAD_REQUEST,
-        );
-      }
-    }
-
-    let user: UserDocument = await this.userService.findOne({ _id: userId });
-    if (!user) {
-      throw new HttpException('User not found...', HttpStatus.UNAUTHORIZED);
-    }
-    price = booking.price;
-    if (createPurchaseBookingDto.bookingType == BookingType.TABLE) {
-      if (!createPurchaseBookingDto.tableId) {
-        throw new HttpException(
-          'table Id is required when booking type is Table...',
-          HttpStatus.BAD_REQUEST,
-        );
-      }
-      table = await this.bookingTableModel.findById(
-        createPurchaseBookingDto.tableId,
-      );
-      if (!table) {
-        throw new HttpException(
-          'No table exists with this id...',
-          HttpStatus.BAD_REQUEST,
-        );
-      }
-      if (table?.isBooked) {
-        throw new HttpException(
-          'This table is already booked...',
-          HttpStatus.BAD_REQUEST,
-        );
-      }
-      price = table?.tablePrice;
-    }
-    // totalPriceCalculated =
-    //   service.price * createPurchasedServiceDto.totalPersons;
-    let { status: result, id } = await this.paymentService.createPaymentCharges(
+    const { status: result, id } = await this.paymentService.createPaymentCharges(
       PaymentMethods.ONE_TIME,
       {
         amount: price * 100,
@@ -155,193 +69,135 @@ export class PurchaseBookingService {
           exp_month: expMonth,
           exp_year: expYear,
           cvc: createPurchaseBookingDto.cvc,
-          address_state: createPurchaseBookingDto.addressState,
-          address_zip: createPurchaseBookingDto.addressZip,
+          address_state: (createPurchaseBookingDto as any).addressState,
+          address_zip: (createPurchaseBookingDto as any).addressZip,
         },
       },
     );
 
-    if (result == 'failed') {
-      throw new HttpException('payment failed...', HttpStatus.BAD_REQUEST);
-    }
-    if (result == 'pending') {
-      return {
-        success: true,
-        status: 'pending',
-      };
-    }
+    if (result === 'failed') throw new HttpException('payment failed...', HttpStatus.BAD_REQUEST);
+    if (result === 'pending') return { success: true, status: 'pending' };
 
-    let payment: PaymentDocument =
-      await this.paymentService.helperCreatePayment({
-        transactionId: id,
-        bankAccountNumber: createPurchaseBookingDto.number,
-        paymentStatus: result,
-        totalPrice: price,
-        perItemPrice: price,
-      });
+    const payment = await this.paymentService.helperCreatePayment({
+      transactionId: id,
+      bankAccountNumber: createPurchaseBookingDto.number,
+      paymentStatus: result,
+      totalPrice: price,
+      perItemPrice: price,
+    });
 
-    let purchasedBookingCreate: FilterQuery<PurchasedBookingDocument> = {
-      bookingId: createPurchaseBookingDto.bookingId,
-      userId: user._id,
-      paymentId: payment._id,
-      date: booking.startTime,
-      bookingType: createPurchaseBookingDto.bookingType,
-      commission,
-    };
-
-    if (createPurchaseBookingDto.bookingType == BookingType.TABLE) {
-      purchasedBookingCreate.tableId = createPurchaseBookingDto.tableId;
-      await table.update({ isBooked: true });
+    if (table) {
+      await this.prisma.bookingTable.update({ where: { id: table.id }, data: { status: 'booked' } });
     }
 
-    let purchasedBooking: PurchasedBookingDocument =
-      await this.purchasedBookingModel.create({
-        ...purchasedBookingCreate,
-      });
-
-    const dataToSend = await this.purchasedBookingModel.populate(
-      [purchasedBooking],
-      [
-        { path: 'paymentId' },
-        { path: 'tableId' },
-        {
-          path: 'bookingId',
-          select: {
-            ...eventMinorDetails,
-            category: 1,
-          },
-          populate: {
-            path: 'category',
-            select: {
-              name: 1,
-            },
-          },
-        },
-      ],
-    );
-
-    // noinspection DuplicatedCode
-    const notification = await this.notificationService.addNotification({
-      notificationType: NotificationType.BOOKING,
-      orderModel: PurchasedBooking.name,
-      orderPayload: purchasedBooking._id.toString(),
-      body: `A new Booking has been purchased by ${user.name}.`,
-    } as NotificationDocument);
-    SocketGateway.emitEvent(
-      'notification',
-      {
-        notificationType: NotificationType.BOOKING,
-        body: `A new Booking has been purchased by ${user.name}.`,
-        orderPayload: purchasedBooking._id,
-        _id: notification._id,
-      },
-      admin._id.toString(),
-    );
-    const responseEmail = await this.emailService.sendMail({
-      template: 'event-ticket',
-      message: {
-        to: [admin.email, booking.vendor?.email, user?.email],
-        subject: 'New Booking Ticket Purchased',
-        attachments: [
-          {
-            filename: 'logo.svg',
-            path: path.join(process.cwd(), 'views', 'logo.svg'),
-            cid: 'logo',
-          },
-        ],
-      },
-      locals: {
-        purchasedOn: moment().format('MMMM DD,YYYY'),
-        userEmail: user.email,
-        userName: user.name,
-        productId: booking?._id,
-        productTitle: booking.name,
-        total: payment?.totalPrice,
-        subTotal: payment?.perItemPrice,
-        noOfItems: payment?.noOfItems,
-        productImage: booking.photos[0],
-        orderType: 'Booking',
+    const purchasedBooking = await this.prisma.purchasedBooking.create({
+      data: {
+        bookingId: createPurchaseBookingDto.bookingId,
+        userId: user.id,
+        paymentId: payment.id,
       },
     });
 
-    return {
-      success: true,
-      msg: 'booking purchased successfuly',
-      data: dataToSend,
-    };
+    const dataToSend = await this.prisma.purchasedBooking.findFirst({
+      where: { id: purchasedBooking.id },
+      include: PURCHASED_BOOKING_INCLUDE,
+    });
+
+    try {
+      const notification = await this.notificationService.addNotification({
+        notificationType: NotificationType.BOOKING,
+        orderModel: 'PurchasedBooking',
+        orderPayload: purchasedBooking.id,
+        body: `A new Booking has been purchased by ${user.name}.`,
+      } as any);
+
+      SocketGateway.emitEvent(
+        'notification',
+        {
+          notificationType: NotificationType.BOOKING,
+          body: `A new Booking has been purchased by ${user.name}.`,
+          orderPayload: purchasedBooking.id,
+          _id: (notification as any)?.id ?? (notification as any)?._id,
+        },
+        admin?.id,
+      );
+    } catch (e) {
+      loggers.error('Notification error: %O', e);
+    }
+
+    try {
+      await this.emailService.sendMail({
+        template: 'event-ticket',
+        message: {
+          to: [admin?.email, (booking as any).vendor?.email, user?.email].filter(Boolean),
+          subject: 'New Booking Ticket Purchased',
+          attachments: [
+            { filename: 'logo.svg', path: path.join(process.cwd(), 'views', 'logo.svg'), cid: 'logo' },
+          ],
+        },
+        locals: {
+          purchasedOn: moment().format('MMMM DD,YYYY'),
+          userEmail: user.email,
+          userName: user.name,
+          productId: booking.id,
+          productTitle: booking.name,
+          total: payment?.totalPrice,
+          subTotal: payment?.perItemPrice,
+          noOfItems: payment?.noOfItems,
+          productImage: booking.photos?.[0],
+          orderType: 'Booking',
+        },
+      });
+    } catch (e) {
+      loggers.error('Email error: %O', e);
+    }
+
+    return { success: true, msg: 'booking purchased successfuly', data: dataToSend };
   }
 
-  async getPurchasedBookings(
-    getbookingssDataDto: GetBookingsDataDto /* | AdminGetServicesDataDto */,
-    userId?: string,
-  ) {
+  async getPurchasedBookings(getbookingssDataDto: GetBookingsDataDto, userId?: string) {
     const { page, limit } = getbookingssDataDto;
-    let totalPages: number;
-    let query: FilterQuery<PurchasedBookingDocument> = {
-      isDeleted: false,
-    };
+    const where: any = {};
+    if (userId) where.userId = userId;
+    if ((getbookingssDataDto as any).bookingId) where.bookingId = (getbookingssDataDto as any).bookingId;
 
-    if (userId) query.userId = new ObjectId(userId);
-    if (getbookingssDataDto?.bookingId)
-      query.bookingId = new ObjectId(getbookingssDataDto.bookingId);
+    const [purchasedBookings, purchasedBookingsCount] = await Promise.all([
+      this.prisma.purchasedBooking.findMany({
+        where,
+        include: PURCHASED_BOOKING_INCLUDE,
+        skip: (page - 1) * limit,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.purchasedBooking.count({ where }),
+    ]);
 
-    const purchasedBookingsCount: number = await this.purchasedBookingModel
-      .find(query)
-      .count();
-    totalPages = Math.ceil(purchasedBookingsCount / limit);
-    loggers.info('DTO........... %O', query);
-    const purchasedBookings: PurchasedBookingDocument[] =
-      await this.purchasedBookingModel
-        .aggregate(bookingHistoryAggregation(query))
-        .skip((page - 1) * limit)
-        .limit(limit);
-    if (purchasedBookings.length == 0) {
-      return {
-        success: false,
-        msg: 'not any Bookings purchased yet',
-        data: [],
-      };
+    if (purchasedBookings.length === 0) {
+      return { success: false, msg: 'not any Bookings purchased yet', data: [] };
     }
+
     return {
       success: true,
       msg: 'purchased services fetched successfuly',
       data: purchasedBookings,
       page,
       limit,
-      totalPages,
+      totalPages: Math.ceil(purchasedBookingsCount / limit),
     };
   }
 
   async getPurchasedBooking(id: string, userId: string = null) {
-    if (
-      (!userId && !mongoose.isValidObjectId(userId)) ||
-      !mongoose.isValidObjectId(id)
-    ) {
-      throw new HttpException('Invalid request data', HttpStatus.BAD_REQUEST);
-    }
-    let query: FilterQuery<PurchasedBookingDocument> = {
-      bookingId: new ObjectId(id),
-    };
+    const where: any = { bookingId: id };
+    if (userId) where.userId = userId;
 
-    if (userId) {
-      query.isDeleted = false;
-      query.userId = userId;
-    }
+    const purchasedData = await this.prisma.purchasedBooking.findFirst({
+      where,
+      include: PURCHASED_BOOKING_INCLUDE,
+    });
 
-    let purchasedData: any[] = await this.purchasedBookingModel.aggregate(
-      singleBookingHistory(query),
-    );
-    if (!purchasedData || purchasedData.length === 0) {
-      return {
-        success: true,
-        message: 'You have not purchased this booking yet.',
-        data: {},
-      };
+    if (!purchasedData) {
+      return { success: true, message: 'You have not purchased this booking yet.', data: {} };
     }
-    return {
-      success: true,
-      message: 'purchased booking fetched successfuly',
-      data: purchasedData[0],
-    };
+    return { success: true, message: 'purchased booking fetched successfuly', data: purchasedData };
   }
 }

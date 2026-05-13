@@ -11,7 +11,7 @@ import {
   IsMongoId,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
-import { RegisterRole, Role } from '../../schemas/enums/role';
+import { UserRole } from '@prisma/client';
 import { CountryCodes } from '../../shared/countries';
 import {
   IsMatchConfirmPassword,
@@ -21,11 +21,10 @@ import {
   MinUpperCase,
 } from '../../decorators/validation.decorators';
 import { faker } from '@faker-js/faker';
-import { IUser } from '../../schemas/interfaces/user';
 
-export class UserRoleType {}
+export type UserRoleType = UserRole;
 
-export class RegisterUserDto implements IUser {
+export class RegisterUserDto {
   @ApiProperty({
     required: true,
     default: faker.name.fullName(),
@@ -146,17 +145,17 @@ export class RegisterUserDto implements IUser {
   city: string;
 
   @ApiProperty({
-    title: 'Role',
+    title: 'UserRole',
     description: 'Is Mandatory',
     type: 'string',
     examples: ['USER'],
     required: true,
-    default: RegisterRole.USER,
-    enum: RegisterRole,
+    default: UserRole.USER,
+    enum: UserRole,
   })
   @IsOptional()
-  @IsEnum(RegisterRole, { message: 'Invalid role provided.' })
-  role: RegisterRole;
+  @IsEnum(UserRole, { message: 'Invalid role provided.' })
+  role: UserRole;
 
   @IsOptional()
   @ApiProperty({
@@ -181,7 +180,7 @@ export class LoginDto {
   @ApiProperty()
   @IsOptional()
   @IsString()
-  role: string = RegisterRole.USER;
+  role: string = UserRole.USER;
 
   @ApiProperty()
   @IsOptional()
@@ -367,5 +366,5 @@ export class LoginVendorDto {
   @ApiProperty()
   @IsOptional()
   @IsString()
-  role: string = Role.VENDOR;
+  role: string = UserRole.VENDOR;
 }

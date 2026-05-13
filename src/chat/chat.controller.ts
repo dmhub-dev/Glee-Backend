@@ -13,8 +13,7 @@ import { CreateChatDto } from './dto/create-chat.dto';
 import { UpdateChatDto } from './dto/update-chat.dto';
 import { CurrentUser } from '@src/auth/jwt.strategy';
 import { ApiResponses } from '@src/shared/response';
-import { Role } from '@src/schemas/enums/role';
-import { UserDocument } from '@src/schemas/user.shema';
+import { UserRole } from '@prisma/client';
 import { SocketGateway } from '@src/socket/socket.gateway';
 import { loggers } from '@src/interceptors/logger.enums';
 
@@ -22,30 +21,29 @@ import { loggers } from '@src/interceptors/logger.enums';
 export class ChatController {
   constructor(private readonly chatService: ChatService) {}
 
-  @ApiResponses(true, [Role.USER])
+  @ApiResponses(true, [UserRole.USER])
   @Post()
-  create(@Body() createChatDto: CreateChatDto, @CurrentUser() user) {
+  create(@Body() createChatDto: CreateChatDto, @CurrentUser() user: any) {
     return this.chatService.create(createChatDto, user);
   }
 
-  @ApiResponses(true, [Role.USER])
+  @ApiResponses(true, [UserRole.USER])
   @Get()
   async findAll(
-    @CurrentUser('_id') from,
+    @CurrentUser('id') from,
     @Query('to') to: string,
-    @CurrentUser() user: UserDocument,
+    @CurrentUser() user: any,
   ) {
-    const resData = await this.chatService.findAll(from, to, user);
+    const resData = await this.chatService.findAll(from, to);
     loggers.info('O index........', resData?.data[0]);
     SocketGateway.emitEvent('init', { data: resData?.data, from, to }, to);
     return resData;
   }
 
   @Get('block/:userId')
-  blockUser(@Param('userId') id: string, @CurrentUser() me) {
+  blockUser(@Param('userId') id: string, @CurrentUser() me: any) {
     try {
-      me.blockedUsersList.push(id);
-      me.save();
+      me.blockedUsersList = [...(me.blockedUsersList || []), id];
       return {
         success: true,
         message: 'User blocked successfully',

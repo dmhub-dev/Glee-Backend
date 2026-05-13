@@ -9,7 +9,7 @@ import {
   Query,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { Role } from 'src/schemas/enums/role';
+import { UserRole } from '@prisma/client';
 import { ApiResponses } from 'src/shared/response';
 import { BookingsService } from './bookings.service';
 import { RetrieveBookingDto } from './dto/retrieve-bookings.dto';
@@ -19,7 +19,7 @@ import { RetrieveBookingDto } from './dto/retrieve-bookings.dto';
 export class BookingsController {
   constructor(private readonly bookingsService: BookingsService) {}
 
-  @ApiResponses(true, [Role.USER])
+  @ApiResponses(true, [UserRole.USER])
   @Get()
   findAll(@Query() query: RetrieveBookingDto) {
     let { limit, page } = query;
@@ -33,13 +33,13 @@ export class BookingsController {
     );
   }
 
-  @ApiResponses(true, [Role.USER])
+  @ApiResponses(true, [UserRole.USER])
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.bookingsService.findOne(id, { isDeleted: false });
   }
 
-  @ApiResponses(true, [Role.USER])
+  @ApiResponses(true, [UserRole.USER])
   @Get('tables/:bookingId')
   getTables(@Param('bookingId') id: string) {
     return this.bookingsService.getTables(id);

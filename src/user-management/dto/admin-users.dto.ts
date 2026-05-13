@@ -15,7 +15,7 @@ import { ApiProperty } from '@nestjs/swagger';
 import { UserFiter } from '../enums/user-type.enum';
 import { Transform } from 'class-transformer';
 import { toBoolean } from 'src/shared/cast.helper';
-import { AccountStatus } from '../../schemas/enums/status';
+import { AccountStatus } from '@prisma/client';
 import { CountryCodes } from 'src/shared/countries';
 import { faker } from '@faker-js/faker';
 import { PaginationQueryDto } from '@src/event/dto/pagination-query.dto';

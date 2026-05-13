@@ -6,10 +6,8 @@ import {
   IsOptional,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
-
-import { IEventSchedule } from './../../schemas/interfaces/event.ticekt.d';
 import { Transform } from 'class-transformer';
-import { EventStatus } from '@src/schemas/enums/status';
+import { EntityStatus as EventStatus } from '@prisma/client';
 import { toJson } from '@src/shared/cast.helper';
 
 export class EventScheduleDto {

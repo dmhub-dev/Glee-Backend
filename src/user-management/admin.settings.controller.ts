@@ -14,23 +14,19 @@ import {
 import { ApiConsumes, ApiTags } from '@nestjs/swagger';
 import { UserManagementService } from './user-management.service';
 import { ApiResponses } from '../shared/response';
-import { Role } from '../schemas/enums/role';
+import { UserRole } from '@prisma/client';
 import { UserDto } from './dto/admin-users.dto';
 import { CurrentUser } from '../auth/jwt.strategy';
-import { UserDocument } from '../schemas/user.shema';
 import {
   AddContactInfoDTO,
   UpdateAdminProfileDto,
   UpdateContactInfoDTO,
   UploadImageDto,
 } from './dto/settings.dto';
-import { ObjectId } from 'bson';
-import { getArray } from '@src/shared/utils';
 import {
   ApiImageFile,
   UploadType,
 } from '@src/decorators/check-mime-type.decorator';
-import { loggers } from '@src/interceptors/logger.enums';
 
 @Controller('admin/settings')
 @ApiTags('Admin-Settings')
@@ -38,60 +34,38 @@ export class AdminSettingsController {
   constructor(private readonly userManagementService: UserManagementService) {}
 
   @Get('profile')
-  @ApiResponses(true, [Role.ADMIN])
-  getProfile(@CurrentUser() admin: UserDocument) {
-    return admin.toPublicData();
+  @ApiResponses(true, [UserRole.ADMIN])
+  getProfile(@CurrentUser() admin: any) {
+    return admin;
   }
 
   @Patch('profile')
-  @ApiResponses(true, [Role.ADMIN])
+  @ApiResponses(true, [UserRole.ADMIN])
   async updateProfile(
     @Body() payload: UpdateAdminProfileDto,
-    @CurrentUser() admin: UserDocument,
+    @CurrentUser() admin: any,
   ) {
-    if (admin.role !== Role.ADMIN)
+    if (admin.role !== UserRole.ADMIN)
       throw new HttpException(
         'You are not authorized to update profile',
         HttpStatus.BAD_REQUEST,
       );
-    if (typeof payload === 'object') {
-      Object.keys(payload).map((k) => (admin[k] = payload[k]));
-    }
-    let data = await admin.save();
-    return {
-      success: true,
-      data: data.toPublicData(),
-    };
+    return this.userManagementService.updateProfile(payload as any, admin.id);
   }
 
   @Post('contact/info')
-  @ApiResponses(true, [Role.ADMIN])
+  @ApiResponses(true, [UserRole.ADMIN])
   async createContactInfo(
-    @CurrentUser() admin: UserDocument,
+    @CurrentUser() admin: any,
     @Body() info: AddContactInfoDTO,
   ) {
-    const dataToPush = {
-      ...info,
-      _id: new ObjectId(),
-    };
-    const data = await admin.update(
-      {
-        $push: {
-          adminContactInfo: dataToPush,
-        },
-      },
-      { new: true },
-    );
-    return {
-      success: true,
-      data,
-    };
+    return this.userManagementService.updateContactInfo(admin, '', info);
   }
 
   @Patch('contact/info/:id')
-  @ApiResponses(true, [Role.ADMIN])
+  @ApiResponses(true, [UserRole.ADMIN])
   async updateContactInfo(
-    @CurrentUser() admin: UserDocument,
+    @CurrentUser() admin: any,
     @Body() info: UpdateContactInfoDTO,
     @Param('id') _id: string,
   ) {
@@ -99,9 +73,9 @@ export class AdminSettingsController {
   }
 
   @Delete('contact/info/:id')
-  @ApiResponses(true, [Role.ADMIN])
+  @ApiResponses(true, [UserRole.ADMIN])
   async deleteContactInfo(
-    @CurrentUser() admin: UserDocument,
+    @CurrentUser() admin: any,
     @Param('id') _id: string,
   ) {
     if (!admin.adminContactInfo)
@@ -109,15 +83,12 @@ export class AdminSettingsController {
         success: false,
         message: 'No Contact Info found.',
       };
-
-    loggers.info('_id           . ', _id);
     return this.userManagementService.deleteContactInfo(admin, _id);
   }
 
   @Get('contact/info')
-  @ApiResponses(true, [Role.ADMIN])
-  async getContactInfo(@CurrentUser() admin: UserDocument) {
-    loggers.info('admin contact info %O', admin);
+  @ApiResponses(true, [UserRole.ADMIN])
+  async getContactInfo(@CurrentUser() admin: any) {
     if (!admin.adminContactInfo)
       return {
         success: false,
@@ -131,10 +102,10 @@ export class AdminSettingsController {
   }
 
   @Get('contact/info/:id')
-  @ApiResponses(true, [Role.ADMIN])
+  @ApiResponses(true, [UserRole.ADMIN])
   async getOneContactInfo(
-    @CurrentUser() admin: UserDocument,
-    @Param('_id') _id,
+    @CurrentUser() admin: any,
+    @Param('id') _id,
   ) {
     if (!admin.adminContactInfo)
       return {
@@ -142,8 +113,7 @@ export class AdminSettingsController {
         message: 'No Contact Info found.',
       };
 
-    const data =
-      getArray(admin.adminContactInfo).filter((v) => v._id === _id)[0] || {};
+    const data = (admin.adminContactInfo || []).filter((v) => v._id === _id)[0] || {};
 
     return {
       success: true,
@@ -152,11 +122,11 @@ export class AdminSettingsController {
   }
 
   @Post('upload')
-  @ApiResponses(true, [Role.ADMIN])
+  @ApiResponses(true, [UserRole.ADMIN])
   @ApiConsumes('multipart/form-data')
   @ApiImageFile('file', { type: UploadType.SINGLE })
   async uploadImage(
-    @CurrentUser() admin: UserDocument,
+    @CurrentUser() admin: any,
     @UploadedFile('file') file,
     @Body() data: UploadImageDto,
   ) {

@@ -15,7 +15,10 @@ import {
   IsCVC,
   IsExpMonthYear,
 } from '../../../decorators/card.validation.decorator';
-import { BookingType } from 'src/schemas/enums/bookingType-enum';
+
+enum BookingType {
+  VENUE = 'VENUE',
+}
 
 export class CreatePurchaseBookingDto {
   @ApiProperty()

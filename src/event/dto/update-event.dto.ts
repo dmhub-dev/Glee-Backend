@@ -17,7 +17,7 @@ import {
   IsArray,
 } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
-import { EventStatus } from '@src/schemas/enums/status';
+import { EntityStatus as EventStatus } from '@prisma/client';
 import { toJson } from '@src/shared/cast.helper';
 
 export class UpdateEventDto {

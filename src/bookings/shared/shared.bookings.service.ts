@@ -1,32 +1,24 @@
 import { Injectable } from '@nestjs/common';
-import { InjectModel } from '@nestjs/mongoose';
-import { FilterQuery, Model, QueryOptions, UpdateQuery } from 'mongoose';
-import { Booking, BookingDocument } from 'src/schemas/booking.schema';
-import {
-  PurchasedBooking,
-  PurchasedBookingDocument,
-} from 'src/schemas/purchased-booking.schema';
-import { bookingEarning } from '@src/bookings/aggregation/booking.aggregate';
+import { PrismaService } from '@src/prisma/prisma.service';
 
 @Injectable()
 export class BookingSharedService {
-  constructor(
-    @InjectModel(Booking.name)
-    private bookingModel: Model<BookingDocument>,
-    @InjectModel(PurchasedBooking.name)
-    private purchasesBookingModel: Model<PurchasedBookingDocument>,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  // Helper Functions
-  // ===================================================================================================================
-
-  async helperBookingFindById(_id: string) {
-    return this.bookingModel
-      .findById({ _id, isDeleted: false })
-      .populate('vendor', 'email');
+  async helperBookingFindById(id: string) {
+    return this.prisma.booking.findFirst({
+      where: { id, isDeleted: false },
+      include: { vendor: true },
+    });
   }
 
-  async calculateBookingsEarning(id) {
-    return this.purchasesBookingModel.aggregate(bookingEarning(id));
+  async calculateBookingsEarning(bookingId: string) {
+    const items = await this.prisma.purchasedBooking.findMany({
+      where: { bookingId },
+      include: { payment: true },
+    });
+    if (!items.length) return [];
+    const grandTotal = items.reduce((sum, t) => sum + Number(t.payment?.totalPrice ?? 0), 0);
+    return [{ _id: bookingId, grandTotal, adminEarning: 0, vendorEarning: grandTotal }];
   }
 }

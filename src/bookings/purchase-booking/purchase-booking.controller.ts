@@ -12,9 +12,8 @@ import { PurchaseBookingService } from './purchase-booking.service';
 import { CreatePurchaseBookingDto } from './dto/create-purchase-booking.dto';
 import { ApiTags } from '@nestjs/swagger';
 import { ApiResponses } from 'src/shared/response';
-import { Role } from 'src/schemas/enums/role';
+import { UserRole } from '@prisma/client';
 import { CurrentUser } from 'src/auth/jwt.strategy';
-import { User, UserDocument } from 'src/schemas/user.shema';
 import { GetBookingsDataDto } from './dto/public.purchased-booking.dto';
 
 @ApiTags('Public And User Purchased Bookings Routes')
@@ -24,40 +23,40 @@ export class PurchaseBookingController {
     private readonly purchaseBookingService: PurchaseBookingService,
   ) {}
 
-  @ApiResponses(true, [Role.USER])
+  @ApiResponses(true, [UserRole.USER])
   @Post('purchases')
   create(
     @Body() createPurchasedBookingDto: CreatePurchaseBookingDto,
-    @CurrentUser() user: UserDocument,
+    @CurrentUser() user: any,
   ) {
     const [expMonth, expYear]: (string | number)[] =
       createPurchasedBookingDto.exp.split('/');
     return this.purchaseBookingService.purchase(
       createPurchasedBookingDto,
-      user._id,
+      user.id,
       expMonth,
       expYear,
     );
   }
 
-  @ApiResponses(true, [Role.USER])
+  @ApiResponses(true, [UserRole.USER])
   @Get()
   getAllThePurchasedBookings(
     @Query() getbookingssDataDto: GetBookingsDataDto,
-    @CurrentUser() user: User,
+    @CurrentUser() user: any,
   ) {
     return this.purchaseBookingService.getPurchasedBookings(
       getbookingssDataDto,
-      user._id,
+      user.id,
     );
   }
 
-  @ApiResponses(true, [Role.USER])
+  @ApiResponses(true, [UserRole.USER])
   @Get('single/:bookingId')
   getPurchasedBooking(
     @Param('bookingId') id: string,
-    @CurrentUser() CurrentUser: UserDocument,
+    @CurrentUser() currentUser: any,
   ) {
-    return this.purchaseBookingService.getPurchasedBooking(id, CurrentUser._id);
+    return this.purchaseBookingService.getPurchasedBooking(id, currentUser.id);
   }
 }

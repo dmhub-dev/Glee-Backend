@@ -1,79 +1,59 @@
 import { Injectable } from '@nestjs/common';
-import { InjectModel } from '@nestjs/mongoose';
-import { FilterQuery, Model } from 'mongoose';
-import { Events, EventsDocument } from '@src/schemas/events.schema';
-import { Booking, BookingDocument } from '@src/schemas/booking.schema';
-import { Service, ServiceDocument } from '@src/schemas/services.schema';
+import { PrismaService } from '@src/prisma/prisma.service';
 import * as moment from 'moment';
-import { User, UserDocument } from '@src/schemas/user.shema';
-import {
-  bookingEarningStatsAggregation,
-  eventEarningStatsAggregation,
-  serviceEarningStatsAggregation,
-} from '@src/common.api/aggregation/stats.aggregate';
 
 @Injectable()
 export class CommonApi {
-  constructor(
-    @InjectModel(Events.name)
-    private readonly EventModel: Model<EventsDocument>,
-    @InjectModel(Booking.name)
-    private readonly BookingModel: Model<BookingDocument>,
-    @InjectModel(Service.name)
-    private readonly ServiceModel: Model<ServiceDocument>,
-    @InjectModel(User.name)
-    private readonly UserModel: Model<UserDocument>,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async appSearchApi(search: string) {
-    const eventQuery: FilterQuery<EventsDocument> = {
-      $text: {
-        $search: search,
-      },
+    const searchFilter = {
+      contains: search,
+      mode: 'insensitive' as const,
     };
-    const serviceQuery: FilterQuery<ServiceDocument> = {
-      $text: {
-        $search: search,
-      },
-    };
-    const bookingQuery: FilterQuery<BookingDocument> = {
-      $text: {
-        $search: search,
-      },
-    };
-    const events = await this.EventModel.find(
-      {
-        ...eventQuery,
-        'date.end': {
-          $gte: moment().toDate(),
+
+    const [events, services, bookings] = await Promise.all([
+      this.prisma.event.findMany({
+        where: {
+          AND: [
+            { name: searchFilter },
+            { endDate: { gte: moment().toDate() } },
+            { isDeleted: false },
+          ],
         },
-      },
-      {
-        name: 1,
-        price: 1,
-        location: 1,
-        date: 1,
-        bannerImages: 1,
-      },
-    ).lean();
-    const services = await this.ServiceModel.find(serviceQuery, {
-      name: 1,
-      price: 1,
-      address: 1,
-      vendor: 1,
-      photos: 1,
-    })
-      .populate('vendor', {
-        name: 1,
-      })
-      .lean();
-    const bookings = await this.BookingModel.find(bookingQuery, {
-      name: 1,
-      price: 1,
-      address: 1,
-      capacity: 1,
-      photos: 1,
-    }).lean();
+        select: {
+          id: true,
+          name: true,
+          price: true,
+          location: true,
+          startDate: true,
+          endDate: true,
+          bannerImages: true,
+        },
+        take: 10,
+      }),
+      this.prisma.service.findMany({
+        where: {
+          AND: [{ name: searchFilter }, { isDeleted: false }],
+        },
+        include: { vendor: { select: { name: true } } },
+        take: 10,
+      }),
+      this.prisma.booking.findMany({
+        where: {
+          AND: [{ name: searchFilter }, { isDeleted: false }],
+        },
+        select: {
+          id: true,
+          name: true,
+          price: true,
+          address: true,
+          capacity: true,
+          photos: true,
+        },
+        take: 10,
+      }),
+    ]);
 
     return {
       success: true,
@@ -86,31 +66,29 @@ export class CommonApi {
   }
 
   async dashboardStates() {
-    const eventCount = await this.EventModel.count({ isDeleted: false });
-    const serviceCount = await this.ServiceModel.count({ isDeleted: false });
-    const bookingCount = await this.BookingModel.count({ isDeleted: false });
-    const userCount = await this.UserModel.count({ isDeleted: false });
-    let eventEarning = 0,
-      serviceEarning = 0,
-      bookingEarning = 0;
-    const eventAgg: any[] = await this.EventModel.aggregate(
-      eventEarningStatsAggregation(),
-    );
-    const serviceAgg: any[] = await this.ServiceModel.aggregate(
-      serviceEarningStatsAggregation(),
-    );
-    const bookingAgg: any[] = await this.BookingModel.aggregate(
-      bookingEarningStatsAggregation(),
-    );
-    if (eventAgg.length > 0) {
-      eventEarning = eventAgg[0].totalEarning;
-    }
-    if (serviceAgg.length > 0) {
-      serviceEarning = serviceAgg[0].totalEarning;
-    }
-    if (bookingAgg.length > 0) {
-      bookingEarning = bookingAgg[0].totalEarning;
-    }
+    const [eventCount, serviceCount, bookingCount, userCount] = await Promise.all([
+      this.prisma.event.count({ where: { isDeleted: false } }),
+      this.prisma.service.count({ where: { isDeleted: false } }),
+      this.prisma.booking.count({ where: { isDeleted: false } }),
+      this.prisma.user.count({ where: { isDeleted: false } }),
+    ]);
+
+    const [eventTickets, purchasedServices, purchasedBookings] = await Promise.all([
+      this.prisma.eventTicket.findMany({
+        where: { event: { isDeleted: false } },
+        select: { totalPrice: true },
+      }),
+      this.prisma.purchasedService.findMany({
+        include: { payment: true },
+      }),
+      this.prisma.purchasedBooking.findMany({
+        include: { payment: true },
+      }),
+    ]);
+
+    const eventEarning = eventTickets.reduce((sum, item) => sum + Number(item.totalPrice), 0);
+    const serviceEarning = purchasedServices.reduce((sum, item) => sum + Number(item.payment?.totalPrice ?? 0), 0);
+    const bookingEarning = purchasedBookings.reduce((sum, item) => sum + Number(item.payment?.totalPrice ?? 0), 0);
 
     return {
       success: true,

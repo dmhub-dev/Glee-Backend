@@ -1,20 +1,16 @@
-import { CategoryDocument } from '../schemas/categories.schema';
 import { faker } from '@faker-js/faker';
-import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
 import { Injectable } from '@nestjs/common';
-import { Service, ServiceDocument } from '../schemas/services.schema';
 import {
   SeederCategoryIdsArrayType,
   SeederVendorIdsArrayType,
 } from '../types/seeder.type';
 import { SeederService } from './seeder.service';
+import { PrismaService } from '@src/prisma/prisma.service';
 
 @Injectable()
 export class ServiceSeeder {
   constructor(
-    @InjectModel(Service.name)
-    private ServiceModel: Model<ServiceDocument>,
+    private readonly prisma: PrismaService,
     private seederService: SeederService,
   ) {}
 
@@ -25,7 +21,7 @@ export class ServiceSeeder {
   createDocument(
     categories: SeederCategoryIdsArrayType,
     vendors: SeederVendorIdsArrayType,
-  ): ServiceDocument {
+  ) {
     return {
       name: faker.name.firstName(),
       vendor: faker.helpers.arrayElement(vendors),
@@ -53,7 +49,7 @@ export class ServiceSeeder {
       price: faker.datatype.number({ max: 100000, min: 1000 }),
       isDeleted: false,
       deletedAt: new Date(),
-    } as ServiceDocument;
+    } as any;
   }
 
   /**
@@ -63,10 +59,8 @@ export class ServiceSeeder {
   async createDummyEvents() {
     let categories = await this.seederService.getRandomCategory();
     let vendors = await this.seederService.getRandomVendors();
-    return await this.ServiceModel.insertMany(
-      Array.from({ length: 50 }).map(() =>
-        this.createDocument(categories, vendors),
-      ),
-    );
+    return this.prisma.service.createMany({
+      data: Array.from({ length: 50 }).map(() => this.createDocument(categories, vendors)) as any[],
+    });
   }
 }

@@ -11,7 +11,7 @@ import {
   MaxLength,
   MinLength,
 } from 'class-validator';
-import { AccountStatusUser } from 'src/schemas/enums/status';
+
 import { CountryCodes } from 'src/shared/countries';
 import { MinDigits, MinUpperCase } from '@src/decorators/validation.decorators';
 
