@@ -97,7 +97,7 @@ export class AuthController {
   @ApiResponses(false)
   public async login(@Body() loginUserDto: LoginDto): Promise<any> {
     const getRole = await this.authService.getRoleByAuth(loginUserDto);
-    loginUserDto.role = getRole.role;
+    loginUserDto.role = getRole.role?.name as UserRole;
     if (!loginUserDto.role || loginUserDto.role === UserRole.USER) {
       if (!loginUserDto.playerId)
         throw new HttpException('Player Id is missing', HttpStatus.BAD_REQUEST);

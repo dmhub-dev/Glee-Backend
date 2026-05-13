@@ -1,6 +1,6 @@
 import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
 import { PrismaService } from '@src/prisma/prisma.service';
-import { UserRole } from '@prisma/client';
+import { UserRole, User } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { JwtService } from '@nestjs/jwt';
 import { comparePasswords } from '../shared/utils';
@@ -54,7 +54,7 @@ export class UsersService {
 
   async findByLogin({ email, password, role }: LoginDto) {
     const user = await this.prisma.user.findFirst({
-      where: { email, role: role as UserRole, isDeleted: false },
+      where: { email, role: { name: role as UserRole }, isDeleted: false },
       include: { city: true, state: true, country: true },
     });
 
@@ -82,6 +82,7 @@ export class UsersService {
   async getRoleByAuth({ email, password }: LoginDto) {
     const user = await this.prisma.user.findFirst({
       where: { email, isDeleted: false },
+      include: { role: true },
     });
     if (!user) throw new HttpException('User does not exist', HttpStatus.UNAUTHORIZED);
 
@@ -99,7 +100,7 @@ export class UsersService {
 
   async findByVendorLogin({ email, password, role }: LoginVendorDto) {
     const user = await this.prisma.user.findFirst({
-      where: { email, role: role as UserRole, isDeleted: false },
+      where: { email, role: { name: role as UserRole }, isDeleted: false },
       include: { vendor: true, city: true, state: true, country: true },
     });
     if (!user) throw new HttpException('User does not exist', HttpStatus.UNAUTHORIZED);
@@ -143,11 +144,11 @@ export class UsersService {
         name: (dto as any).username,
         password,
         email: dto.email,
-        role: UserRole.VENDOR,
+        role: { connect: { name: UserRole.VENDOR } },
         isActive: 'INACTIVE' as any,
         vendorId,
         notificationIds: [],
-      },
+      } as any,
     });
   }
 

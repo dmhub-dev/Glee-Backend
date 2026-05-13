@@ -27,7 +27,7 @@ export class EventTicketsService {
   async create(createEventTicketDto: CreateEventTicketDto, expMonth: any, expYear: any) {
     const event = await this.eventSharedService.helperEventFindById(createEventTicketDto.eventId);
     const user = await this.userService.findOne({ id: createEventTicketDto.userId });
-    const admin = await this.prisma.user.findFirst({ where: { role: 'ADMIN', isDeleted: false } });
+    const admin = await this.prisma.user.findFirst({ where: { role: { name: 'ADMIN' }, isDeleted: false } });
 
     let commission = 0;
     if (admin?.margin && typeof +`${admin.margin}` === 'number' && !Number.isNaN(admin.margin)) {

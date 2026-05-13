@@ -43,7 +43,7 @@ export class PurchasedServiceService {
     const user = await this.userService.findOne({ id: userId });
     if (!user) throw new HttpException('User not found...', HttpStatus.UNAUTHORIZED);
 
-    const admin = await this.prisma.user.findFirst({ where: { role: 'ADMIN', isDeleted: false } });
+    const admin = await this.prisma.user.findFirst({ where: { role: { name: 'ADMIN' }, isDeleted: false } });
 
     const totalPriceCalculated = Number(service.price) * createPurchasedServiceDto.totalPersons * 100;
 

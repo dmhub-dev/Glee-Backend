@@ -39,7 +39,7 @@ async function main() {
       name: 'Super Admin',
       email: 'admin@glee.com',
       password,
-      role: 'ADMIN',
+      role: { connect: { name: 'ADMIN' } },
       isActive: 'ACTIVE',
       profileStatus: true,
       notificationStatus: true,

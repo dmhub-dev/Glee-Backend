@@ -112,7 +112,7 @@ export class AuthService {
   async register(userDto: RegisterUserDto, file?: Express.Multer.File) {
     try {
       const admin = await this.prisma.user.findFirst({
-        where: { role: UserRole.ADMIN },
+        where: { role: { name: UserRole.ADMIN } },
         select: { email: true },
       });
       const userInDb = await this.usersService.findOne({ email: userDto.email });
@@ -272,7 +272,7 @@ export class AuthService {
   async registerVendor(registerVendorDto: RegisterVendorDto, file?: Express.Multer.File) {
     try {
       const admin = await this.prisma.user.findFirst({
-        where: { role: UserRole.ADMIN },
+        where: { role: { name: UserRole.ADMIN } },
         select: { email: true },
       });
       const userInDb = await this.usersService.findOne({ email: registerVendorDto.email });
