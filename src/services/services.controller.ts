@@ -1,3 +1,6 @@
+import { AllowAny } from "@src/config/auth-guard";
+import { Permissions } from "@src/auth/rbac/permissions.decorator";
+import { Permission } from "@src/auth/rbac/permissions.enum";
 import { Controller, Get, Param, Query } from '@nestjs/common';
 import { ServicesService } from './services.service';
 import { ApiResponses } from '../shared/response';
@@ -15,7 +18,8 @@ export class ServicesController {
    * Route: /services/
    * Method: GET
    */
-  @ApiResponses(true, [UserRole.USER])
+  @Permissions(Permission.SERVICES_READ)
+  @ApiResponses(true)
   @Get()
   findAll(
     @Query() query: RetrieveServiceDto,
@@ -35,7 +39,8 @@ export class ServicesController {
    * Route: /services/
    * Method: GET
    */
-  @ApiResponses(false, [UserRole.USER])
+  @Permissions(Permission.SERVICES_READ)
+  @ApiResponses(false)
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.servicesService.findOne(id, { isDeleted: false });

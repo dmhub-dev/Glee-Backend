@@ -1,3 +1,6 @@
+import { AllowAny } from "@src/config/auth-guard";
+import { Permissions } from "@src/auth/rbac/permissions.decorator";
+import { Permission } from "@src/auth/rbac/permissions.enum";
 import {
   Controller,
   Get,
@@ -44,7 +47,8 @@ export class AdminServiceController {
    * Route: /services/
    * Method: POST
    */
-  @ApiResponses(true, [UserRole.ADMIN])
+  @Permissions(Permission.SERVICES_CREATE)
+  @ApiResponses(true)
   @ApiConsumes('multipart/form-data')
   @ApiImageFile('files', { type: UploadType.ARRAY })
   @Post('services')
@@ -56,7 +60,8 @@ export class AdminServiceController {
   }
 
   @Version('2')
-  @ApiResponses(true, [UserRole.VENDOR])
+  @Permissions(Permission.SERVICES_CREATE)
+  @ApiResponses(true)
   @ApiConsumes('multipart/form-data')
   @ApiImageFile('files', { type: UploadType.ARRAY })
   @Post('services')
@@ -71,7 +76,8 @@ export class AdminServiceController {
    * Method: PATCH
    */
   @Patch('services/:id')
-  @ApiResponses(true, [UserRole.ADMIN])
+  @Permissions(Permission.SERVICES_UPDATE)
+  @ApiResponses(true)
   @ApiConsumes('multipart/form-data')
   @ApiImageFile('files', { type: UploadType.ARRAY })
   update(
@@ -84,7 +90,8 @@ export class AdminServiceController {
 
   @Version('2')
   @Patch('services/:id')
-  @ApiResponses(true, [UserRole.VENDOR])
+  @Permissions(Permission.SERVICES_UPDATE)
+  @ApiResponses(true)
   @ApiConsumes('multipart/form-data')
   @ApiImageFile('files', { type: UploadType.ARRAY })
   updateVendorService(
@@ -96,7 +103,8 @@ export class AdminServiceController {
   }
 
   @Patch('service/details/update/:serviceid')
-  @ApiResponses(true, [UserRole.ADMIN])
+  @Permissions(Permission.SERVICES_UPDATE)
+  @ApiResponses(true)
   addAndDeleteServiceDetails(
     @Param('serviceid') id: string,
     @Body() updateServiceDetailsDto: UpdateServiceDetailsDto,
@@ -107,20 +115,23 @@ export class AdminServiceController {
     );
   }
 
-  @ApiResponses(true, [UserRole.ADMIN])
+  @Permissions(Permission.SERVICES_READ)
+  @ApiResponses(true)
   @Get('services')
   findAll(@Query() query: RetrieveServiceAdminDto) {
     return this.servicesService.findAll(query);
   }
 
   @Version('2')
-  @ApiResponses(true, [UserRole.VENDOR])
+  @Permissions(Permission.SERVICES_READ)
+  @ApiResponses(true)
   @Get('services')
   findAllByVendor(@CurrentUser() user,@Query() query: RetrieveServiceAdminDto) {
     return this.servicesService.findAllByVendor(query,user);
   }
 
-  @ApiResponses(true, [UserRole.ADMIN])
+  @Permissions(Permission.SERVICES_READ)
+  @ApiResponses(true)
   @Get('services/earning/:id')
   serviceEarning(@Param('id') id) {
     return this.servicesService.serviceEarning(id);
@@ -130,7 +141,8 @@ export class AdminServiceController {
    * Route: /services/
    * Method: GET
    */
-  @ApiResponses(false, [UserRole.ADMIN])
+  @Permissions(Permission.SERVICES_READ)
+  @ApiResponses(false)
   @Get('service/:id')
   findOne(
     @Param('id') id: string,
@@ -143,7 +155,8 @@ export class AdminServiceController {
    * Route: /services/images
    * Method: DELETE
    */
-  @ApiResponses(true, [UserRole.ADMIN])
+  @Permissions(Permission.SERVICES_DELETE)
+  @ApiResponses(true)
   @Delete('services/images')
   deleteImage(@Query() deleteImagetDto: DeleteImageDto) {
     return this.servicesService.deleteServiceImages(deleteImagetDto);
@@ -155,7 +168,8 @@ export class AdminServiceController {
    */
   @Delete('services/:id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiResponses(true, [UserRole.ADMIN])
+  @Permissions(Permission.SERVICES_DELETE)
+  @ApiResponses(true)
   remove(@Param('id') id: string) {
     return this.servicesService.remove(id);
   }
@@ -166,7 +180,8 @@ export class AdminServiceController {
    */
   @Delete('services/permanent/:id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiResponses(true, [UserRole.ADMIN])
+  @Permissions(Permission.SERVICES_READ)
+  @ApiResponses(true)
   removePermanent(@Param('id') id: string) {
     return this.servicesService.removePermanent(id);
   }
@@ -176,7 +191,8 @@ export class AdminServiceController {
    * Method: GET
    */
   @Get('services/table/auto-fill')
-  @ApiResponses(true, [UserRole.ADMIN])
+  @Permissions(Permission.SERVICES_DELETE)
+  @ApiResponses(true)
   addData() {
     return this.servicesService.dbDataFiller();
   }
@@ -186,7 +202,8 @@ export class AdminServiceController {
    * Method: DELETE
    */
   @Delete('services/table/clear')
-  @ApiResponses(true, [UserRole.ADMIN])
+  @Permissions(Permission.SERVICES_DELETE)
+  @ApiResponses(true)
   clearEventCL() {
     return this.servicesService.clearEventCL();
   }
