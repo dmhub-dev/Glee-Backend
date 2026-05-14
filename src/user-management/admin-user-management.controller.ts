@@ -1,3 +1,5 @@
+import { Permissions } from '@src/auth/rbac/permissions.decorator';
+import { Permission } from '@src/auth/rbac/permissions.enum';
 import {
   Controller,
   Get,
@@ -30,12 +32,14 @@ import {
 export class AdminUserManagementController {
   constructor(private readonly userManagementService: UserManagementService) {}
 
+  @Permissions(Permission.USERS_READ)
   @ApiResponses(true, [UserRole.ADMIN])
   @Get()
   findAll(@Query() userQueryDto: UserDto) {
     return this.userManagementService.findAll(userQueryDto);
   }
 
+  @Permissions(Permission.USERS_UPDATE)
   @ApiResponses(true, [UserRole.ADMIN])
   @Post('set-commission')
   addCommission(
@@ -48,12 +52,14 @@ export class AdminUserManagementController {
     );
   }
 
+  @Permissions(Permission.USERS_READ)
   @ApiResponses(true, [UserRole.ADMIN])
   @Get('get-commission')
   getCommission(@CurrentUser() currentUser: any) {
     return this.userManagementService.getCommission(currentUser.id);
   }
 
+  @Permissions(Permission.USERS_UPDATE)
   @ApiResponses(true, [UserRole.ADMIN])
   @Patch('update')
   @ApiConsumes('multipart/form-data')
@@ -71,6 +77,7 @@ export class AdminUserManagementController {
     );
   }
 
+  @Permissions(Permission.USERS_UPDATE)
   @ApiResponses(true, [UserRole.ADMIN])
   @Patch('update/user-status-notification')
   updateStatusAndNotification(
@@ -85,18 +92,21 @@ export class AdminUserManagementController {
     );
   }
 
+  @Permissions(Permission.USERS_DELETE)
   @ApiResponses(true, [UserRole.ADMIN])
   @Delete('delete/soft/:userId')
   softDelete(@Param('userId') userId: string) {
     return this.userManagementService.softDelete(userId);
   }
 
+  @Permissions(Permission.USERS_DELETE)
   @ApiResponses(true, [UserRole.ADMIN])
   @Delete('delete/permanent/:userId')
   permanentDelete(@Param('userId') userId: string) {
     return this.userManagementService.remove(userId);
   }
 
+  @Permissions(Permission.USERS_READ)
   @ApiResponses(true, [UserRole.ADMIN])
   @Get(':id')
   findOne(@Param('id') id: string) {
