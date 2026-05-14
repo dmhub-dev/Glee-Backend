@@ -1,3 +1,5 @@
+import { Permissions } from '@src/auth/rbac/permissions.decorator';
+import { Permission } from '@src/auth/rbac/permissions.enum';
 import {
   Controller,
   Get,
@@ -51,6 +53,7 @@ export class AdminBookingController {
    * Route: /services/
    * Method: POST
    */
+  @Permissions(Permission.BOOKINGS_CREATE)
   @ApiResponses(true, [UserRole.ADMIN])
   @ApiConsumes('multipart/form-data')
   @ApiImageFile('files', { type: UploadType.ARRAY })
@@ -65,6 +68,7 @@ export class AdminBookingController {
   vendor booking
    */
   @Version('2')
+  @Permissions(Permission.BOOKINGS_CREATE)
   @ApiResponses(true, [UserRole.VENDOR])
   @ApiConsumes('multipart/form-data')
   @ApiImageFile('files', { type: UploadType.ARRAY })
@@ -79,12 +83,14 @@ export class AdminBookingController {
 
 
   @Post('bookings/tables')
+  @Permissions(Permission.BOOKINGS_CREATE)
   @ApiResponses(true, [UserRole.ADMIN])
   createTables(@Body() body: CreateBookingTableDto) {
     return this.bookingsService.createTables(body);
   }
 
   @Patch('bookings/tables/:id')
+  @Permissions(Permission.BOOKINGS_UPDATE)
   @ApiResponses(true, [UserRole.ADMIN])
   updateTable(
     @Param('id') id: string,
@@ -94,6 +100,7 @@ export class AdminBookingController {
   }
 
   @Delete('bookings/tables/:id')
+  @Permissions(Permission.BOOKINGS_DELETE)
   @ApiResponses(true, [UserRole.ADMIN])
   deleteTable(@Param('id') id: string) {
     return this.bookingsService.deleteBookingTable(id);
@@ -104,6 +111,7 @@ export class AdminBookingController {
    * Method: PATCH
    */
   @Patch('bookings/:id')
+  @Permissions(Permission.BOOKINGS_UPDATE)
   @ApiResponses(true, [UserRole.ADMIN])
   @ApiConsumes('multipart/form-data')
   @ApiImageFile('files', { type: UploadType.ARRAY })
@@ -118,6 +126,7 @@ export class AdminBookingController {
   // vendor patch
   @Version('2')
   @Patch('bookings/:id')
+  @Permissions(Permission.BOOKINGS_UPDATE)
   @ApiResponses(true, [UserRole.VENDOR])
   @ApiConsumes('multipart/form-data')
   @ApiImageFile('files', { type: UploadType.ARRAY })
@@ -141,12 +150,14 @@ export class AdminBookingController {
   //   );
   // }
 
+  @Permissions(Permission.BOOKINGS_UPDATE)
   @ApiResponses(true, [UserRole.ADMIN])
   @Delete('booking/images')
   deleteImage(@Query() deleteImagetDto: DeleteImageDto) {
     return this.bookingsService.deleteBookingImages(deleteImagetDto);
   }
 
+  @Permissions(Permission.BOOKINGS_READ)
   @ApiResponses(true, [UserRole.ADMIN])
   @Get('bookings')
   findAll(@Query() query: RetrieveBookingAdminDto) {
@@ -158,6 +169,7 @@ export class AdminBookingController {
    * @param query
    */
   @Version('2')
+  @Permissions(Permission.BOOKINGS_READ)
   @ApiResponses(true, [UserRole.VENDOR])
   @Get('bookings')
   findAllByVendorId(@CurrentUser() user,@Query() query: RetrieveBookingAdminDto) {
@@ -168,6 +180,7 @@ export class AdminBookingController {
   //  * Route: /services/
   //  * Method: GET
   //  */
+  @Permissions(Permission.BOOKINGS_READ)
   @ApiResponses(false, [UserRole.ADMIN])
   @Get('booking/:id')
   findOne(
@@ -177,6 +190,7 @@ export class AdminBookingController {
     return this.bookingsService.findOne(id, retrieveBookingSingleAdminDto);
   }
 
+  @Permissions(Permission.BOOKINGS_READ)
   @ApiResponses(true, [UserRole.ADMIN])
   @Get('booking/earning/:id')
   bookingEarniing(@Param('id') id) {
@@ -184,6 +198,7 @@ export class AdminBookingController {
   }
 
   @Version('2')
+  @Permissions(Permission.BOOKINGS_READ)
   @ApiResponses(false, [UserRole.VENDOR])
   @Get('booking/:id')
   findOneVendorModule(
@@ -194,6 +209,7 @@ export class AdminBookingController {
   }
 
   @Version('2')
+  @Permissions(Permission.BOOKINGS_READ)
   @ApiResponses(true, [UserRole.VENDOR])
   @Get('booking/earning/:id')
   bookingEarniingVendorModule(@Param('id') id:string) {
@@ -206,6 +222,7 @@ export class AdminBookingController {
   //  * Method: DELETE
   //  */
   @Delete('booking/:id')
+  @Permissions(Permission.BOOKINGS_DELETE)
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiResponses(true, [UserRole.ADMIN])
   remove(@Param('id') id: string) {
@@ -217,6 +234,7 @@ export class AdminBookingController {
   //  * Method: DELETE
   //  */
   @Delete('bookings/permanent/:id')
+  @Permissions(Permission.BOOKINGS_DELETE)
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiResponses(true, [UserRole.ADMIN])
   removePermanent(@Param('id') id: string) {
@@ -226,6 +244,7 @@ export class AdminBookingController {
   // vendor
   @Version('2')
   @Delete('bookings/permanent/:id')
+  @Permissions(Permission.BOOKINGS_DELETE)
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiResponses(true, [UserRole.VENDOR])
   removePermanentVendor(@Param('id') id: string) {

@@ -1,3 +1,5 @@
+import { Permissions } from "@src/auth/rbac/permissions.decorator";
+import { Permission } from "@src/auth/rbac/permissions.enum";
 import {
   Controller,
   Get,
@@ -19,7 +21,8 @@ import { RetrieveBookingDto } from './dto/retrieve-bookings.dto';
 export class BookingsController {
   constructor(private readonly bookingsService: BookingsService) {}
 
-  @ApiResponses(true, [UserRole.USER])
+  @Permissions(Permission.BOOKINGS_READ)
+  @ApiResponses(true)
   @Get()
   findAll(@Query() query: RetrieveBookingDto) {
     let { limit, page } = query;
@@ -33,13 +36,15 @@ export class BookingsController {
     );
   }
 
-  @ApiResponses(true, [UserRole.USER])
+  @Permissions(Permission.BOOKINGS_READ)
+  @ApiResponses(true)
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.bookingsService.findOne(id, { isDeleted: false });
   }
 
-  @ApiResponses(true, [UserRole.USER])
+  @Permissions(Permission.BOOKINGS_READ)
+  @ApiResponses(true)
   @Get('tables/:bookingId')
   getTables(@Param('bookingId') id: string) {
     return this.bookingsService.getTables(id);
