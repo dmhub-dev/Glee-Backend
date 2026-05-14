@@ -88,7 +88,7 @@ export class UserManagementService {
 
   async findAll(userQueryDto: UserDto) {
     const where: any = {
-      role: UserRole.USER,
+      role: { name: UserRole.USER },
       isDeleted: false,
     };
 
