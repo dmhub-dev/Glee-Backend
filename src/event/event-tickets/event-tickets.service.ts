@@ -1,14 +1,16 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { NotificationType } from '@prisma/client';
+import { Decimal } from '@prisma/client/runtime/library';
 import { EmailService } from '@src/email-server/email.service';
 import { loggers } from '@src/interceptors/logger.enums';
 import { NotificationService } from '@src/notification/notification.service';
 import { PrismaService } from '@src/prisma/prisma.service';
+import { PayStackService } from '@src/paystack/paystack.service';
+import { PurchasingType } from '@src/paystack/paystack.types';
 import { SocketGateway } from '@src/socket/socket.gateway';
-import * as moment from 'moment';
+import moment from 'moment';
 import * as path from 'path';
 import { UsersService } from '../../users/users.service';
-import { PaymentMethods, PaymentService } from '../../payment/payment.service';
 import { EventSharedService } from '../shared/shared.event.service';
 import { CreateEventTicketDto } from './dto/create-event-ticket.dto';
 import { PaginationQueryDto } from './dto/pagination-query.dto';
@@ -18,111 +20,117 @@ export class EventTicketsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly eventSharedService: EventSharedService,
-    private readonly paymentService: PaymentService,
     private readonly userService: UsersService,
     private readonly emailService: EmailService,
     private readonly notificationService: NotificationService,
-  ) {}
+    private readonly payStackService: PayStackService,
+  ) {
+    // Register this service as the event ticket webhook handler
+    this.payStackService.eventTicketsHandler = this;
+  }
 
-  async create(createEventTicketDto: CreateEventTicketDto, expMonth: any, expYear: any) {
+  async create(createEventTicketDto: CreateEventTicketDto, currentUser: any) {
+    const userId = createEventTicketDto.userId || currentUser.id;
     const event = await this.eventSharedService.helperEventFindById(createEventTicketDto.eventId);
-    const user = await this.userService.findOne({ id: createEventTicketDto.userId });
-    const admin = await this.prisma.user.findFirst({ where: { role: { name: 'ADMIN' }, isDeleted: false } });
-
-    let commission = 0;
-    if (admin?.margin && typeof +`${admin.margin}` === 'number' && !Number.isNaN(admin.margin)) {
-      commission = admin.margin;
+    if (!event) throw new HttpException('Event not found', HttpStatus.BAD_REQUEST);
+    if (!event.availableTickets || event.availableTickets <= 0) {
+      throw new HttpException('No tickets available', HttpStatus.BAD_REQUEST);
     }
 
-    if (!event) throw new HttpException('Event not found...', HttpStatus.BAD_REQUEST);
-    if (!event.availableTickets || event.availableTickets <= 0) throw new HttpException('No ticket available', HttpStatus.BAD_REQUEST);
-    if (!user) throw new HttpException('User not found...', HttpStatus.UNAUTHORIZED);
+    const user = await this.userService.findOne({ id: userId });
+    if (!user) throw new HttpException('User not found', HttpStatus.UNAUTHORIZED);
 
-    let isReachMaxLimit = 0;
-    if (event.maxTicketPurchased) {
-      const purchasedTickets = await this.prisma.eventTicket.findMany({
-        where: { userId: user.id, eventId: event.id },
-        include: { payment: true },
+    let price = Number(event.price);
+    if (createEventTicketDto.ticketCategoryId) {
+      const category = await this.prisma.ticketCategory.findUnique({
+        where: { id: createEventTicketDto.ticketCategoryId },
       });
-      purchasedTickets.forEach(t => { isReachMaxLimit += (t.payment as any)?.noOfItems ?? 0; });
-      if (event.maxTicketPurchased - isReachMaxLimit < createEventTicketDto.noOfTickets) {
-        throw new HttpException(
-          `You have ${event.maxTicketPurchased - isReachMaxLimit} tickets remaining to purchase`,
-          HttpStatus.BAD_REQUEST,
-        );
-      }
+      if (category) price = Number(category.price);
     }
 
-    const { status: result, id } = await this.paymentService.createPaymentCharges(
-      PaymentMethods.ONE_TIME,
-      {
-        amount: Number(event.price) * createEventTicketDto.noOfTickets * 100,
-        currency: 'USD',
-        receipt_email: user.email,
-        description: `Stripe Charge Of Amount ${Number(event.price) * createEventTicketDto.noOfTickets} for One Time Payment. ${createEventTicketDto.noOfTickets} number of tickets are purchased. Per ticket price is ${event.price}`,
-      },
-      {
-        cardDetails: {
-          number: createEventTicketDto.number,
-          exp_month: expMonth,
-          exp_year: expYear,
-          cvc: createEventTicketDto.cvc,
-          address_state: createEventTicketDto?.addressState,
-          address_zip: createEventTicketDto?.addressZip,
-        },
-      },
-    );
+    const totalPrice = price * createEventTicketDto.noOfTickets;
 
-    if (result === 'failed') throw new HttpException('Payment failed....', HttpStatus.BAD_REQUEST);
-    if (result === 'pending') return { success: true, status: 'pending' };
+    const metadata = {
+      purchasingType: PurchasingType.EVENT_TICKET,
+      eventId: event.id,
+      noOfTickets: createEventTicketDto.noOfTickets,
+      ticketCategoryId: createEventTicketDto.ticketCategoryId,
+      preOrderMenu: createEventTicketDto.preOrderMenu,
+      userId,
+    };
 
-    const payment = await this.paymentService.helperCreatePayment({
-      transactionId: id,
-      bankAccountNumber: createEventTicketDto.number,
-      paymentStatus: result,
-      totalPrice: Number(event.price) * createEventTicketDto.noOfTickets,
-      perItemPrice: Number(event.price),
-      noOfItems: createEventTicketDto.noOfTickets,
+    const paymentIntent = await this.payStackService.createPaymentIntent({
+      email: user.email,
+      amount: Math.round(totalPrice),
+      metaData: metadata,
+    });
+
+    return { success: true, data: paymentIntent };
+  }
+
+  async createPurchasedEventTicket(metadata: any, paystackReference: string) {
+    const existing = await this.prisma.payment.findUnique({ where: { paystackReference } });
+    if (existing) return;
+
+    const event = await this.eventSharedService.helperEventFindById(metadata.eventId);
+    if (!event) return;
+
+    let price = Number(event.price);
+    if (metadata.ticketCategoryId) {
+      const category = await this.prisma.ticketCategory.findUnique({ where: { id: metadata.ticketCategoryId } });
+      if (category) price = Number(category.price);
+    }
+
+    const totalPrice = price * (metadata.noOfTickets ?? 1);
+
+    const payment = await this.prisma.payment.create({
+      data: {
+        userId: metadata.userId,
+        paystackReference,
+        paymentStatus: 'SUCCEEDED',
+        paymentMethod: 'PAYSTACK',
+        totalPrice: new Decimal(totalPrice),
+        perItemPrice: new Decimal(price),
+        noOfItems: metadata.noOfTickets ?? 1,
+        isPaid: true,
+        isAvailable: false,
+      },
     });
 
     const eventTicket = await this.prisma.eventTicket.create({
       data: {
-        eventId: createEventTicketDto.eventId,
-        userId: createEventTicketDto.userId,
+        eventId: metadata.eventId,
+        userId: metadata.userId,
         paymentId: payment.id,
-        quantity: createEventTicketDto.noOfTickets,
-        totalPrice: Number(event.price) * createEventTicketDto.noOfTickets,
+        ticketCategoryId: metadata.ticketCategoryId,
+        quantity: metadata.noOfTickets ?? 1,
+        totalPrice: new Decimal(totalPrice),
+        preOrderMenu: metadata.preOrderMenu,
       },
     });
 
     await this.prisma.event.update({
       where: { id: event.id },
-      data: { availableTickets: { decrement: payment.noOfItems } },
+      data: { availableTickets: { decrement: metadata.noOfTickets ?? 1 } },
     });
 
-    const dataToSend = await this.prisma.eventTicket.findFirst({
-      where: { id: eventTicket.id },
-      include: { payment: true, event: { include: { category: true } }, user: true },
-    });
+    const admin = await this.prisma.user.findFirst({ where: { role: { name: 'ADMIN' }, isDeleted: false } });
+    const user = await this.userService.findOne({ id: metadata.userId });
 
     try {
       const notification = await this.notificationService.addNotification({
         notificationType: NotificationType.EVENT_TICKET,
         orderModel: 'EventTicket',
         orderPayload: eventTicket.id,
-        body: `A new Event has been purchased by ${user.name}.`,
+        body: `A new Event Ticket has been purchased by ${user?.name}.`,
       } as any);
 
-      SocketGateway.emitEvent(
-        'notification',
-        {
-          notificationType: NotificationType.EVENT_TICKET,
-          body: `A new Event has been purchased by ${user.name}.`,
-          orderPayload: eventTicket.id,
-          _id: (notification as any)?._id ?? (notification as any)?.id,
-        },
-        admin?.id,
-      );
+      SocketGateway.emitEvent('notification', {
+        notificationType: NotificationType.EVENT_TICKET,
+        body: `A new Event Ticket has been purchased by ${user?.name}.`,
+        orderPayload: eventTicket.id,
+        _id: (notification as any)?.id,
+      }, admin?.id);
     } catch (e) {
       loggers.error('Notification error: %O', e);
     }
@@ -131,21 +139,19 @@ export class EventTicketsService {
       await this.emailService.sendMail({
         template: 'event-ticket',
         message: {
-          to: [admin?.email, (event as any).vendor?.email, user?.email].filter(Boolean),
+          to: [admin?.email, user?.email].filter(Boolean),
           subject: 'New Event Ticket Purchased',
-          attachments: [
-            { filename: 'logo.svg', path: path.join(process.cwd(), 'views', 'logo.svg'), cid: 'logo' },
-          ],
+          attachments: [{ filename: 'logo.svg', path: path.join(process.cwd(), 'views', 'logo.svg'), cid: 'logo' }],
         },
         locals: {
           purchasedOn: moment().format('MMMM DD,YYYY'),
-          userEmail: user.email,
-          userName: user.name,
+          userEmail: user?.email,
+          userName: user?.name,
           productId: event.id,
           productTitle: event.name,
-          total: payment.totalPrice,
-          subTotal: payment.perItemPrice,
-          noOfItems: payment.noOfItems,
+          total: totalPrice,
+          subTotal: price,
+          noOfItems: metadata.noOfTickets ?? 1,
           productImage: event.bannerImages?.[0],
           orderType: 'Event',
         },
@@ -153,8 +159,14 @@ export class EventTicketsService {
     } catch (e) {
       loggers.error('Email error: %O', e);
     }
+  }
 
-    return { success: true, data: dataToSend };
+  async createEventTicketViaPaystack(data: any) {
+    const metadata = data.metadata;
+    return this.createPurchasedEventTicket({
+      ...metadata,
+      depositAmount: metadata.depositAmount,
+    }, data.reference);
   }
 
   async findAll(page = 1, limit = 10, filter?: any) {
@@ -165,13 +177,11 @@ export class EventTicketsService {
       this.prisma.eventTicket.count({ where }),
     ]);
 
-    if (tickets.length === 0) {
-      return { success: false, message: 'Not any ticket sold yet', data: [] };
-    }
+    if (tickets.length === 0) return { success: false, message: 'No tickets sold yet', data: [] };
 
     return {
       success: true,
-      message: 'All Tickets are Fetched Successfuly',
+      message: 'Tickets fetched successfully',
       data: tickets,
       totalPages: Math.ceil(ticketsCount / limit),
       page,
@@ -184,10 +194,8 @@ export class EventTicketsService {
       where: { id },
       include: { event: true, payment: true, user: true },
     });
-    if (!ticket) {
-      return { success: false, message: 'There is no Ticket with this id', data: {} };
-    }
-    return { success: true, status: 200, message: 'Ticket Fetched Successfuly', data: ticket };
+    if (!ticket) return { success: false, message: 'No ticket found', data: {} };
+    return { success: true, message: 'Ticket fetched successfully', data: ticket };
   }
 
   async findTicketsByUserID(userId: string, queryData: any) {
@@ -203,18 +211,14 @@ export class EventTicketsService {
       take: limit,
     });
 
-    if (tickets.length === 0) {
-      return { success: true, message: 'This user have not bought any ticket yet', data: [] };
-    }
+    if (tickets.length === 0) return { success: true, message: 'No tickets bought yet', data: [] };
 
     const grouped: Record<string, any> = {};
     tickets.forEach(t => {
       const eid = t.eventId;
-      if (!grouped[eid]) {
-        grouped[eid] = { event: t.event, tickets: [], noOfTicketsPurchased: 0, totalPrice: 0 };
-      }
+      if (!grouped[eid]) grouped[eid] = { event: t.event, tickets: [], noOfTicketsPurchased: 0, totalPrice: 0 };
       grouped[eid].tickets.push(t);
-      grouped[eid].noOfTicketsPurchased += (t.payment as any)?.noOfItems ?? 0;
+      grouped[eid].noOfTicketsPurchased += t.payment?.noOfItems ?? 0;
       grouped[eid].totalPrice += Number(t.payment?.totalPrice ?? 0);
     });
 
@@ -224,80 +228,36 @@ export class EventTicketsService {
       lastTicketPurchasedOn: g.tickets[g.tickets.length - 1]?.createdAt,
     }));
 
-    return {
-      success: true,
-      data,
-      totalPages: Math.ceil(data.length / limit),
-      page,
-      limit,
-      totalBoughtTicket: data.length,
-    };
+    return { success: true, data, totalPages: Math.ceil(data.length / limit), page, limit };
   }
 
   async getAvailableTicktesOfEvent(queryData: PaginationQueryDto) {
     const { page, limit, eventId } = queryData;
-
-    const event = await this.prisma.event.findFirst({
-      where: { id: eventId, isDeleted: false, status: 'ACTIVE' },
-    });
-    if (!event) {
-      return { success: false, message: 'There is no Event exists with given description', data: [] };
-    }
+    const event = await this.prisma.event.findFirst({ where: { id: eventId, isDeleted: false, status: 'ACTIVE' } });
+    if (!event) return { success: false, message: 'Event not found', data: [] };
 
     const [tickets, ticketsCount] = await Promise.all([
-      this.prisma.eventTicket.findMany({
-        where: { eventId },
-        include: { user: true, event: true },
-        skip: (page - 1) * limit,
-        take: limit,
-      }),
+      this.prisma.eventTicket.findMany({ where: { eventId }, include: { user: true }, skip: (page - 1) * limit, take: limit }),
       this.prisma.eventTicket.count({ where: { eventId } }),
     ]);
 
-    const ticketsCapacity = event.capacity;
-    const totalPages = Math.ceil(ticketsCount / limit);
-    const ticketsAvailable = (ticketsCapacity ?? 0) - ticketsCount;
-
-    if (ticketsAvailable <= 0) {
-      return {
-        success: true,
-        message: 'This Event is full no any Tickets avaliable',
-        data: tickets,
-        ticketsCapicity: ticketsCapacity,
-        ticketsSold: ticketsCount,
-        ticketsAvailable: 0,
-        totalPages,
-        page,
-        limit,
-      };
-    }
-
+    const ticketsAvailable = (event.capacity ?? 0) - ticketsCount;
     return {
       success: true,
-      status: 200,
-      message: `${ticketsAvailable} are avaliable`,
-      data: { ticketsCapacity, ticketsSold: ticketsCount, TicketsAvaliable: ticketsAvailable, Tickets: tickets, totalPages, page, limit },
+      data: { ticketsCapacity: event.capacity, ticketsSold: ticketsCount, ticketsAvailable, tickets, totalPages: Math.ceil(ticketsCount / limit), page, limit },
     };
   }
 
-  async remove(eventId: string = null, userId: string = null) {
+  async remove(eventId?: string, userId?: string) {
     const where: any = {};
-    if (eventId) {
-      const event = await this.eventSharedService.helperSingleEventFilter({ id: eventId, isDeleted: false });
-      if (!event) throw new HttpException('There is no event with this id', HttpStatus.BAD_REQUEST);
-      where.eventId = eventId;
-    }
-    if (userId) {
-      const user = await this.userService.findOne({ id: userId });
-      if (!user) throw new HttpException('There is no user with provided data', HttpStatus.BAD_REQUEST);
-      where.userId = userId;
-    }
+    if (eventId) where.eventId = eventId;
+    if (userId) where.userId = userId;
     await this.prisma.eventTicket.deleteMany({ where });
   }
 
   async removeTicket(id: string) {
     const ticket = await this.prisma.eventTicket.findFirst({ where: { id } });
-    if (!ticket) throw new HttpException('There is no ticket with this id', HttpStatus.BAD_REQUEST);
+    if (!ticket) throw new HttpException('Ticket not found', HttpStatus.BAD_REQUEST);
     await this.prisma.eventTicket.delete({ where: { id } });
   }
 

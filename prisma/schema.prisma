@@ -45,11 +45,42 @@ enum PaymentStatus {
   FAILED
 }
 
+enum PaymentMethod {
+  PAYSTACK
+  WALLET
+  CASH
+}
+
+enum TransactionType {
+  CREDIT
+  DEBIT
+}
+
 enum NotificationType {
   CHAT
   EVENT_TICKET
   SERVICE
   BOOKING
+}
+
+enum MediaType {
+  IMAGE
+  VIDEO
+}
+
+enum MediaStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum MediaAccess {
+  PUBLIC
+  PRIVATE
+}
+
+enum BookingType {
+  STANDARD
+  TABLE
 }
 
 // ─── Core ─────────────────────────────────────────────────────────────────────
@@ -84,6 +115,8 @@ model User {
   haveNewNotification Boolean       @default(false)
   isDeleted           Boolean       @default(false)
   deletedAt           DateTime?
+  playerId            String?
+  walletOtpToken      String?
   createdAt           DateTime      @default(now())
   updatedAt           DateTime      @updatedAt
 
@@ -96,6 +129,9 @@ model User {
   purchasedServices   PurchasedService[]
   purchasedBookings   PurchasedBooking[]
   payments            Payment[]
+  wallet              Wallet?
+  reminders           Reminder[]
+  bankAccounts        UserBankAccount[]
 
   @@index([email])
   @@index([isDeleted])
@@ -132,6 +168,9 @@ model Vendor {
   events   Event[]
   services Service[]
   bookings Booking[]
+  payments Payment[]
+  media    Media[]
+  payouts  Payout[]
 
   @@index([isDeleted])
 }
@@ -169,6 +208,7 @@ model Event {
   longitude          Float?
   bannerImages       String[]
   photos             String[]
+  floorPlan          String?
   startDate          DateTime?
   endDate            DateTime?
   status             EntityStatus @default(ACTIVE)
@@ -178,8 +218,11 @@ model Event {
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt
 
-  schedules EventSchedule[]
-  tickets   EventTicket[]
+  schedules        EventSchedule[]
+  tickets          EventTicket[]
+  ticketCategories TicketCategory[]
+  artists          Artist[]
+  preOrderMenus    PreOrderMenu[]
 
   @@index([isDeleted])
   @@index([vendorId])
@@ -194,19 +237,41 @@ model EventSchedule {
   createdAt DateTime @default(now())
 }
 
+model TicketCategory {
+  id        String   @id @default(cuid())
+  eventId   String
+  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  name      String
+  price     Decimal  @db.Decimal(10, 2)
+  capacity  Int?
+  available Int?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tickets EventTicket[]
+}
+
 model EventTicket {
-  id         String   @id @default(cuid())
-  eventId    String
-  event      Event    @relation(fields: [eventId], references: [id])
-  userId     String
-  user       User     @relation(fields: [userId], references: [id])
-  quantity   Int      @default(1)
-  totalPrice Decimal  @db.Decimal(10, 2)
-  paymentId  String?
-  payment    Payment? @relation(fields: [paymentId], references: [id])
-  createdAt  DateTime @default(now())
+  id               String          @id @default(cuid())
+  eventId          String
+  event            Event           @relation(fields: [eventId], references: [id])
+  userId           String
+  user             User            @relation(fields: [userId], references: [id])
+  ticketCategoryId String?
+  ticketCategory   TicketCategory? @relation(fields: [ticketCategoryId], references: [id])
+  quantity         Int             @default(1)
+  totalPrice       Decimal         @db.Decimal(10, 2)
+  paymentId        String?
+  payment          Payment?        @relation("TicketPayment", fields: [paymentId], references: [id])
+  depositPaymentId String?
+  depositPayment   Payment?        @relation("TicketDepositPayment", fields: [depositPaymentId], references: [id])
+  depositAmount    Decimal?        @db.Decimal(10, 2)
+  depositPaid      Boolean         @default(false)
+  preOrderMenu     Json?
+  createdAt        DateTime        @default(now())
 
   notifications Notification[]
+  qrCodes       QrCode[]
 }
 
 // ─── Services ─────────────────────────────────────────────────────────────────
@@ -238,14 +303,20 @@ model Service {
 }
 
 model PurchasedService {
-  id        String   @id @default(cuid())
-  serviceId String
-  service   Service  @relation(fields: [serviceId], references: [id])
-  userId    String
-  user      User     @relation(fields: [userId], references: [id])
-  paymentId String?
-  payment   Payment? @relation(fields: [paymentId], references: [id])
-  createdAt DateTime @default(now())
+  id               String    @id @default(cuid())
+  serviceId        String
+  service          Service   @relation(fields: [serviceId], references: [id])
+  userId           String
+  user             User      @relation(fields: [userId], references: [id])
+  paymentId        String?
+  payment          Payment?  @relation("ServicePayment", fields: [paymentId], references: [id])
+  depositPaymentId String?
+  depositPayment   Payment?  @relation("ServiceDepositPayment", fields: [depositPaymentId], references: [id])
+  depositAmount    Decimal?  @db.Decimal(10, 2)
+  depositPaid      Boolean   @default(false)
+  quantity         Int       @default(1)
+  date             DateTime?
+  createdAt        DateTime  @default(now())
 
   notifications Notification[]
 }
@@ -277,6 +348,7 @@ model Booking {
 
   tables            BookingTable[]
   purchasedBookings PurchasedBooking[]
+  preOrderMenus     PreOrderMenu[]
 
   @@index([isDeleted])
   @@index([vendorId])
@@ -294,14 +366,21 @@ model BookingTable {
 }
 
 model PurchasedBooking {
-  id        String   @id @default(cuid())
-  bookingId String
-  booking   Booking  @relation(fields: [bookingId], references: [id])
-  userId    String
-  user      User     @relation(fields: [userId], references: [id])
-  paymentId String?
-  payment   Payment? @relation(fields: [paymentId], references: [id])
-  createdAt DateTime @default(now())
+  id               String      @id @default(cuid())
+  bookingId        String
+  booking          Booking     @relation(fields: [bookingId], references: [id])
+  userId           String
+  user             User        @relation(fields: [userId], references: [id])
+  paymentId        String?
+  payment          Payment?    @relation("BookingPayment", fields: [paymentId], references: [id])
+  depositPaymentId String?
+  depositPayment   Payment?    @relation("BookingDepositPayment", fields: [depositPaymentId], references: [id])
+  depositAmount    Decimal?    @db.Decimal(10, 2)
+  depositPaid      Boolean     @default(false)
+  bookingType      BookingType @default(STANDARD)
+  tableId          String?
+  preOrderMenu     Json?
+  createdAt        DateTime    @default(now())
 
   notifications Notification[]
 }
@@ -311,19 +390,175 @@ model PurchasedBooking {
 model Payment {
   id                String        @id @default(cuid())
   transactionId     String?       @unique
+  paystackReference String?       @unique
   bankAccountNumber String?
   paymentStatus     PaymentStatus @default(PENDING)
+  paymentMethod     PaymentMethod @default(PAYSTACK)
   noOfItems         Int           @default(1)
   totalPrice        Decimal       @db.Decimal(10, 2)
   perItemPrice      Decimal       @db.Decimal(10, 2)
+  commission        Float         @default(0)
+  isPaid            Boolean       @default(false)
+  isAvailable       Boolean       @default(false)
   userId            String?
   user              User?         @relation(fields: [userId], references: [id])
+  vendorId          String?
+  vendor            Vendor?       @relation(fields: [vendorId], references: [id])
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
 
-  eventTickets      EventTicket[]
-  purchasedServices PurchasedService[]
-  purchasedBookings PurchasedBooking[]
+  eventTickets      EventTicket[]      @relation("TicketPayment")
+  depositedTickets  EventTicket[]      @relation("TicketDepositPayment")
+  purchasedServices PurchasedService[] @relation("ServicePayment")
+  depositedServices PurchasedService[] @relation("ServiceDepositPayment")
+  purchasedBookings PurchasedBooking[] @relation("BookingPayment")
+  depositedBookings PurchasedBooking[] @relation("BookingDepositPayment")
+  walletHistory     WalletPaymentHistory[]
+}
+
+// ─── Wallet ───────────────────────────────────────────────────────────────────
+
+model Wallet {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  user        User     @relation(fields: [userId], references: [id])
+  points      Float    @default(0)
+  refPrice    Float    @default(0)
+  refCurrency String   @default("USD")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  paymentHistory WalletPaymentHistory[]
+}
+
+model WalletPaymentHistory {
+  id        String          @id @default(cuid())
+  walletId  String
+  wallet    Wallet          @relation(fields: [walletId], references: [id])
+  paymentId String?
+  payment   Payment?        @relation(fields: [paymentId], references: [id])
+  points    Float
+  type      TransactionType @default(CREDIT)
+  createdAt DateTime        @default(now())
+}
+
+// ─── QR Codes ─────────────────────────────────────────────────────────────────
+
+model QrCode {
+  id            String      @id @default(cuid())
+  code          String      @unique
+  eventTicketId String?
+  eventTicket   EventTicket? @relation(fields: [eventTicketId], references: [id])
+  isUsed        Boolean     @default(false)
+  createdAt     DateTime    @default(now())
+}
+
+// ─── Payout ───────────────────────────────────────────────────────────────────
+
+model Payout {
+  id          String   @id @default(cuid())
+  vendorId    String
+  vendor      Vendor   @relation(fields: [vendorId], references: [id])
+  amount      Decimal  @db.Decimal(10, 2)
+  isPaid      Boolean  @default(false)
+  periodStart DateTime
+  periodEnd   DateTime
+  createdAt   DateTime @default(now())
+}
+
+// ─── Pre-Order Menus ──────────────────────────────────────────────────────────
+
+model PreOrderMenu {
+  id        String   @id @default(cuid())
+  eventId   String?
+  event     Event?   @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  bookingId String?
+  booking   Booking? @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  name      String
+  price     Decimal  @db.Decimal(10, 2)
+  available Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ─── Artist ───────────────────────────────────────────────────────────────────
+
+model Artist {
+  id           String   @id @default(cuid())
+  eventId      String?
+  event        Event?   @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  name         String
+  profileImage String?
+  images       String[]
+  videos       String[]
+  isDeleted    Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// ─── Media ────────────────────────────────────────────────────────────────────
+
+model Media {
+  id        String      @id @default(cuid())
+  url       String
+  type      MediaType
+  status    MediaStatus @default(ACTIVE)
+  access    MediaAccess @default(PUBLIC)
+  vendorId  String?
+  vendor    Vendor?     @relation(fields: [vendorId], references: [id])
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+}
+
+// ─── Currency ─────────────────────────────────────────────────────────────────
+
+model Currency {
+  id           String   @id @default(cuid())
+  code         String   @unique
+  name         String
+  exchangeRate Float
+  isEnabled    Boolean  @default(true)
+  isDeleted    Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// ─── Language ─────────────────────────────────────────────────────────────────
+
+model Language {
+  id        String   @id @default(cuid())
+  code      String   @unique
+  name      String
+  isEnabled Boolean  @default(true)
+  isDeleted Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ─── Reminder ─────────────────────────────────────────────────────────────────
+
+model Reminder {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  title       String
+  body        String?
+  scheduledAt DateTime
+  isSent      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+}
+
+// ─── User Bank Account ────────────────────────────────────────────────────────
+
+model UserBankAccount {
+  id            String   @id @default(cuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id])
+  bankName      String
+  accountName   String
+  accountNumber String
+  isDefault     Boolean  @default(false)
+  createdAt     DateTime @default(now())
 }
 
 // ─── Chat & Notifications ─────────────────────────────────────────────────────
@@ -402,9 +637,9 @@ model Role {
 
 model Permission {
   id          String           @id @default(cuid())
-  name        String           @unique  // e.g. "events:create"
-  module      String                    // e.g. "events"
-  action      String                    // e.g. "create"
+  name        String           @unique
+  module      String
+  action      String
   description String?
   roles       RolePermission[]
 

@@ -27,5 +27,10 @@
         "src/public/*"
       ]
     }
-  }
+  },
+  "exclude": [
+    "node_modules",
+    "dist",
+    "Release:prod"
+  ]
 }

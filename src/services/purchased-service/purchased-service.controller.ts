@@ -1,9 +1,8 @@
-import { Controller, Get, Post, Body, Query, Param } from '@nestjs/common';
-import { PurchasedServiceService } from './purchased-service.service';
-import { CreatePurchasedServiceDto } from './dto/create-purchased-service.dto';
+import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { ApiResponses } from 'src/shared/response';
 import { CurrentUser } from 'src/auth/jwt.strategy';
+import { ApiResponses } from 'src/shared/response';
+import { CreatePurchasedServicePaystackDto, PurchasedServiceService } from './purchased-service.service';
 import { GetServicesDataDto } from './dto/public.purchased-service.dto';
 
 @ApiTags('Public and User Purchased-service Routes')
@@ -13,20 +12,19 @@ export class PurchasedServiceController {
 
   @ApiResponses(true, ['USER'])
   @Post('purchases')
-  create(@Body() createPurchasedServiceDto: CreatePurchasedServiceDto, @CurrentUser() user: any) {
-    const [expMonth, expYear]: (string | number)[] = createPurchasedServiceDto.exp.split('/');
-    return this.purchasedServiceService.purchase(createPurchasedServiceDto, user.id, expMonth as string, expYear as string);
+  create(@Body() dto: CreatePurchasedServicePaystackDto, @CurrentUser() user: any) {
+    return this.purchasedServiceService.purchase(dto, user.id);
   }
 
   @ApiResponses(true, ['USER'])
   @Get()
-  getAllThePurchasedServices(@Query() getServicesDataDto: GetServicesDataDto, @CurrentUser() user: any) {
-    return this.purchasedServiceService.getPurchasedServices(getServicesDataDto, user.id);
+  getAllThePurchasedServices(@Query() dto: GetServicesDataDto, @CurrentUser() user: any) {
+    return this.purchasedServiceService.getPurchasedServices(dto, user.id);
   }
 
   @ApiResponses(true, ['USER'])
-  @Get('single/:purhaseId')
-  getPurchasedService(@Param('purhaseId') id: string, @CurrentUser() currentUser: any) {
+  @Get('single/:purchaseId')
+  getPurchasedService(@Param('purchaseId') id: string, @CurrentUser() currentUser: any) {
     return this.purchasedServiceService.getPurchasedService(id, currentUser.id);
   }
 }

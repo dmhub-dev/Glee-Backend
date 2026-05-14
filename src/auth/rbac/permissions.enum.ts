@@ -57,6 +57,14 @@ export const Permission = {
   CHAT_READ:   'chat:read',
   CHAT_CREATE: 'chat:create',
 
+  // Wallet
+  WALLET_READ:   'wallet:read',
+  WALLET_TOPUP:  'wallet:topup',
+  WALLET_DEDUCT: 'wallet:deduct',
+
+  // Settings
+  SETTINGS_MANAGE: 'settings:manage',
+
   // System
   SYSTEM_GOVERN:    'system:govern',
   PRICING_OVERRIDE: 'pricing:override',

@@ -4,10 +4,10 @@ import { PurchaseBookingController } from './purchase-booking.controller';
 import { AdminPurchasedBookingController } from './Admin.purchase-booking';
 import { BookingSharedModule } from '../shared/shared.bookings.module';
 import { UsersModule } from 'src/users/users.module';
-import { PaymentModule } from 'src/payment/payment.module';
+import { PaystackModule } from '@src/paystack/paystack.module';
 
 @Module({
-  imports: [UsersModule, BookingSharedModule, PaymentModule],
+  imports: [UsersModule, BookingSharedModule, PaystackModule],
   controllers: [PurchaseBookingController, AdminPurchasedBookingController],
   providers: [PurchaseBookingService],
 })

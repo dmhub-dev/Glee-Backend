@@ -1,57 +1,28 @@
-import {
-  IsCreditCard,
-  IsMongoId,
-  IsNotEmpty,
-  IsNumber,
-  IsOptional,
-} from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
-import {
-  IsCountryCode,
-  IsCustomizePostalCode,
-  IsCVC,
-  IsExpMonthYear,
-} from '../../../decorators/card.validation.decorator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsNotEmpty, IsNumber, IsOptional, IsString, Min } from 'class-validator';
 
 export class CreateEventTicketDto {
   @ApiProperty()
-  @IsMongoId({ message: 'Invalid Event Id Provided...' })
-  @IsNotEmpty({ message: 'Event Field should not be empty...' })
+  @IsString()
+  @IsNotEmpty()
   eventId: string;
 
-  @ApiProperty()
-  @IsMongoId({ message: 'Invalid User Id Provided...' })
+  @ApiPropertyOptional()
+  @IsString()
   @IsOptional()
-  userId: string;
+  userId?: string;
 
-  @ApiProperty()
-  @IsCreditCard({ message: 'Invalid Credit Card provided...' })
-  @IsNotEmpty({ message: 'Credit Card Field should not be empty...' })
-  number: string;
-
-  @ApiProperty()
-  @IsExpMonthYear({ message: 'Invalid expiry date provided...' })
-  @IsNotEmpty({ message: 'Expiry date Field should not be empty...' })
-  exp: string;
-
-  @ApiProperty()
-  @IsCVC({ message: 'Invalid cvc year provided...' })
-  @IsNotEmpty({ message: 'CVC Field should not be empty...' })
-  cvc: string;
-
-  @ApiProperty()
-  @IsOptional()
-  @IsCountryCode({ message: 'Invalid Address State Field provided...' })
-  addressState: string;
-
-  @ApiProperty()
-  @IsOptional()
-  @IsCustomizePostalCode('addressState', {
-    message: 'Invalid Postal Code Field provided...',
-  })
-  addressZip: string;
-
-  @ApiProperty()
+  @ApiProperty({ default: 1 })
   @IsNumber()
+  @Min(1)
   noOfTickets: number = 1;
+
+  @ApiPropertyOptional()
+  @IsString()
+  @IsOptional()
+  ticketCategoryId?: string;
+
+  @ApiPropertyOptional({ type: 'array', items: { type: 'object' } })
+  @IsOptional()
+  preOrderMenu?: any[];
 }

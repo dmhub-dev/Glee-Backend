@@ -1,16 +1,17 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { NotificationType } from '@prisma/client';
+import { Decimal } from '@prisma/client/runtime/library';
 import { EmailService } from '@src/email-server/email.service';
 import { loggers } from '@src/interceptors/logger.enums';
 import { NotificationService } from '@src/notification/notification.service';
 import { PrismaService } from '@src/prisma/prisma.service';
+import { PayStackService } from '@src/paystack/paystack.service';
+import { PurchasingType } from '@src/paystack/paystack.types';
 import { SocketGateway } from '@src/socket/socket.gateway';
-import * as moment from 'moment/moment';
+import moment from 'moment';
 import * as path from 'path';
 import { BookingSharedService } from '../shared/shared.bookings.service';
-import { PaymentMethods, PaymentService } from 'src/payment/payment.service';
 import { UsersService } from 'src/users/users.service';
-import { CreatePurchaseBookingDto } from './dto/create-purchase-booking.dto';
 import { GetBookingsDataDto } from './dto/public.purchased-booking.dto';
 
 const PURCHASED_BOOKING_INCLUDE = {
@@ -19,108 +20,113 @@ const PURCHASED_BOOKING_INCLUDE = {
   payment: true,
 };
 
+export class CreatePurchaseBookingPaystackDto {
+  bookingId: string;
+  tableId?: string;
+  bookingType?: string;
+  preOrderMenu?: any[];
+}
+
 @Injectable()
 export class PurchaseBookingService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly bookingSharedService: BookingSharedService,
-    private readonly paymentService: PaymentService,
     private readonly userService: UsersService,
     private readonly emailService: EmailService,
     private readonly notificationService: NotificationService,
-  ) {}
-
-  async purchase(
-    createPurchaseBookingDto: CreatePurchaseBookingDto,
-    userId: string,
-    expMonth: string,
-    expYear: string,
+    private readonly payStackService: PayStackService,
   ) {
-    const booking = await this.bookingSharedService.helperBookingFindById(createPurchaseBookingDto.bookingId);
-    if (!booking) throw new HttpException('booking not find...', HttpStatus.BAD_REQUEST);
+    // Register this service as the booking webhook handler
+    this.payStackService.purchaseBookingHandler = this;
+  }
+
+  async purchase(dto: CreatePurchaseBookingPaystackDto, userId: string) {
+    const booking = await this.bookingSharedService.helperBookingFindById(dto.bookingId);
+    if (!booking) throw new HttpException('Booking not found', HttpStatus.BAD_REQUEST);
 
     const user = await this.userService.findOne({ id: userId });
-    if (!user) throw new HttpException('User not found...', HttpStatus.UNAUTHORIZED);
-
-    const admin = await this.prisma.user.findFirst({ where: { role: { name: 'ADMIN' }, isDeleted: false } });
+    if (!user) throw new HttpException('User not found', HttpStatus.UNAUTHORIZED);
 
     let price = Number(booking.price);
-
-    let table: any = null;
-    const dto = createPurchaseBookingDto as any;
     if (dto.tableId) {
-      table = await this.prisma.bookingTable.findFirst({ where: { id: dto.tableId } });
-      if (!table) throw new HttpException('No table exists with this id...', HttpStatus.BAD_REQUEST);
-      if (table?.status === 'booked') throw new HttpException('This table is already booked...', HttpStatus.BAD_REQUEST);
-      if ((table as any).tablePrice) price = (table as any).tablePrice;
+      const table = await this.prisma.bookingTable.findFirst({ where: { id: dto.tableId } });
+      if (!table) throw new HttpException('Table not found', HttpStatus.BAD_REQUEST);
+      if (table.status === 'booked') throw new HttpException('Table already booked', HttpStatus.BAD_REQUEST);
     }
 
-    const { status: result, id } = await this.paymentService.createPaymentCharges(
-      PaymentMethods.ONE_TIME,
-      {
-        amount: price * 100,
-        currency: 'USD',
-        receipt_email: user.email,
-        description: `Stripe charge of Amount ${price} for One Time Payment`,
-      },
-      {
-        cardDetails: {
-          number: createPurchaseBookingDto.number,
-          exp_month: expMonth,
-          exp_year: expYear,
-          cvc: createPurchaseBookingDto.cvc,
-          address_state: (createPurchaseBookingDto as any).addressState,
-          address_zip: (createPurchaseBookingDto as any).addressZip,
-        },
-      },
-    );
+    const metadata = {
+      purchasingType: PurchasingType.BOOKING,
+      bookingId: dto.bookingId,
+      bookingType: dto.bookingType ?? 'STANDARD',
+      tableId: dto.tableId,
+      preOrderMenu: dto.preOrderMenu,
+      userId,
+    };
 
-    if (result === 'failed') throw new HttpException('payment failed...', HttpStatus.BAD_REQUEST);
-    if (result === 'pending') return { success: true, status: 'pending' };
-
-    const payment = await this.paymentService.helperCreatePayment({
-      transactionId: id,
-      bankAccountNumber: createPurchaseBookingDto.number,
-      paymentStatus: result,
-      totalPrice: price,
-      perItemPrice: price,
+    const paymentIntent = await this.payStackService.createPaymentIntent({
+      email: user.email,
+      amount: Math.round(price),
+      metaData: metadata,
     });
 
-    if (table) {
-      await this.prisma.bookingTable.update({ where: { id: table.id }, data: { status: 'booked' } });
+    return { success: true, data: paymentIntent };
+  }
+
+  async createPurchasedBooking(metadata: any, paystackReference: string) {
+    const existing = await this.prisma.payment.findUnique({ where: { paystackReference } });
+    if (existing) return;
+
+    const booking = await this.bookingSharedService.helperBookingFindById(metadata.bookingId);
+    if (!booking) return;
+
+    const price = Number(booking.price);
+
+    const payment = await this.prisma.payment.create({
+      data: {
+        userId: metadata.userId,
+        paystackReference,
+        paymentStatus: 'SUCCEEDED',
+        paymentMethod: 'PAYSTACK',
+        totalPrice: new Decimal(price),
+        perItemPrice: new Decimal(price),
+        isPaid: true,
+        isAvailable: false,
+      },
+    });
+
+    if (metadata.tableId) {
+      await this.prisma.bookingTable.update({ where: { id: metadata.tableId }, data: { status: 'booked' } });
     }
 
     const purchasedBooking = await this.prisma.purchasedBooking.create({
       data: {
-        bookingId: createPurchaseBookingDto.bookingId,
-        userId: user.id,
+        bookingId: metadata.bookingId,
+        userId: metadata.userId,
         paymentId: payment.id,
+        bookingType: metadata.bookingType ?? 'STANDARD',
+        tableId: metadata.tableId,
+        preOrderMenu: metadata.preOrderMenu,
       },
     });
 
-    const dataToSend = await this.prisma.purchasedBooking.findFirst({
-      where: { id: purchasedBooking.id },
-      include: PURCHASED_BOOKING_INCLUDE,
-    });
+    const admin = await this.prisma.user.findFirst({ where: { role: { name: 'ADMIN' }, isDeleted: false } });
+    const user = await this.userService.findOne({ id: metadata.userId });
 
     try {
       const notification = await this.notificationService.addNotification({
         notificationType: NotificationType.BOOKING,
         orderModel: 'PurchasedBooking',
         orderPayload: purchasedBooking.id,
-        body: `A new Booking has been purchased by ${user.name}.`,
+        body: `A new Booking has been purchased by ${user?.name}.`,
       } as any);
 
-      SocketGateway.emitEvent(
-        'notification',
-        {
-          notificationType: NotificationType.BOOKING,
-          body: `A new Booking has been purchased by ${user.name}.`,
-          orderPayload: purchasedBooking.id,
-          _id: (notification as any)?.id ?? (notification as any)?._id,
-        },
-        admin?.id,
-      );
+      SocketGateway.emitEvent('notification', {
+        notificationType: NotificationType.BOOKING,
+        body: `A new Booking has been purchased by ${user?.name}.`,
+        orderPayload: purchasedBooking.id,
+        _id: (notification as any)?.id,
+      }, admin?.id);
     } catch (e) {
       loggers.error('Notification error: %O', e);
     }
@@ -129,21 +135,19 @@ export class PurchaseBookingService {
       await this.emailService.sendMail({
         template: 'event-ticket',
         message: {
-          to: [admin?.email, (booking as any).vendor?.email, user?.email].filter(Boolean),
-          subject: 'New Booking Ticket Purchased',
-          attachments: [
-            { filename: 'logo.svg', path: path.join(process.cwd(), 'views', 'logo.svg'), cid: 'logo' },
-          ],
+          to: [admin?.email, user?.email].filter(Boolean),
+          subject: 'New Booking Purchased',
+          attachments: [{ filename: 'logo.svg', path: path.join(process.cwd(), 'views', 'logo.svg'), cid: 'logo' }],
         },
         locals: {
           purchasedOn: moment().format('MMMM DD,YYYY'),
-          userEmail: user.email,
-          userName: user.name,
+          userEmail: user?.email,
+          userName: user?.name,
           productId: booking.id,
           productTitle: booking.name,
-          total: payment?.totalPrice,
-          subTotal: payment?.perItemPrice,
-          noOfItems: payment?.noOfItems,
+          total: price,
+          subTotal: price,
+          noOfItems: 1,
           productImage: booking.photos?.[0],
           orderType: 'Booking',
         },
@@ -151,8 +155,10 @@ export class PurchaseBookingService {
     } catch (e) {
       loggers.error('Email error: %O', e);
     }
+  }
 
-    return { success: true, msg: 'booking purchased successfuly', data: dataToSend };
+  async createDepositPurchasedBookingViaPaystack(data: any) {
+    return this.createPurchasedBooking(data.metadata, data.reference);
   }
 
   async getPurchasedBookings(getbookingssDataDto: GetBookingsDataDto, userId?: string) {
@@ -172,13 +178,11 @@ export class PurchaseBookingService {
       this.prisma.purchasedBooking.count({ where }),
     ]);
 
-    if (purchasedBookings.length === 0) {
-      return { success: false, msg: 'not any Bookings purchased yet', data: [] };
-    }
+    if (purchasedBookings.length === 0) return { success: false, msg: 'No bookings purchased yet', data: [] };
 
     return {
       success: true,
-      msg: 'purchased services fetched successfuly',
+      msg: 'Purchased bookings fetched successfully',
       data: purchasedBookings,
       page,
       limit,
@@ -186,7 +190,7 @@ export class PurchaseBookingService {
     };
   }
 
-  async getPurchasedBooking(id: string, userId: string = null) {
+  async getPurchasedBooking(id: string, userId?: string) {
     const where: any = { bookingId: id };
     if (userId) where.userId = userId;
 
@@ -195,9 +199,7 @@ export class PurchaseBookingService {
       include: PURCHASED_BOOKING_INCLUDE,
     });
 
-    if (!purchasedData) {
-      return { success: true, message: 'You have not purchased this booking yet.', data: {} };
-    }
-    return { success: true, message: 'purchased booking fetched successfuly', data: purchasedData };
+    if (!purchasedData) return { success: true, message: 'You have not purchased this booking yet.', data: {} };
+    return { success: true, message: 'Purchased booking fetched successfully', data: purchasedData };
   }
 }

@@ -1,16 +1,17 @@
-import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { NotificationType } from '@prisma/client';
+import { Decimal } from '@prisma/client/runtime/library';
 import { EmailService } from '@src/email-server/email.service';
 import { loggers } from '@src/interceptors/logger.enums';
 import { NotificationService } from '@src/notification/notification.service';
 import { PrismaService } from '@src/prisma/prisma.service';
+import { PayStackService } from '@src/paystack/paystack.service';
+import { PurchasingType } from '@src/paystack/paystack.types';
 import { SocketGateway } from '@src/socket/socket.gateway';
-import * as moment from 'moment';
+import moment from 'moment';
 import * as path from 'path';
 import { ServiceSharedService } from '../Shared/shared.services.service';
 import { UsersService } from 'src/users/users.service';
-import { PaymentMethods, PaymentService } from '../../payment/payment.service';
-import { CreatePurchasedServiceDto } from './dto/create-purchased-service.dto';
 import { GetServicesDataDto } from './dto/public.purchased-service.dto';
 import { AdminGetServicesDataDto } from './dto/admin.purchased-sercvices.dto';
 
@@ -20,96 +21,106 @@ const PURCHASED_SERVICE_INCLUDE = {
   payment: true,
 };
 
+export class CreatePurchasedServicePaystackDto {
+  serviceId: string;
+  totalPersons?: number;
+  date?: string;
+}
+
 @Injectable()
 export class PurchasedServiceService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly servicesSharedService: ServiceSharedService,
-    private readonly paymentService: PaymentService,
     private readonly userService: UsersService,
     private readonly emailService: EmailService,
     private readonly notificationService: NotificationService,
-  ) {}
-
-  async purchase(
-    createPurchasedServiceDto: CreatePurchasedServiceDto,
-    userId: string,
-    expMonth: string,
-    expYear: string,
+    private readonly payStackService: PayStackService,
   ) {
-    const service = await this.servicesSharedService.helperServiceFindById(createPurchasedServiceDto.serviceId);
-    if (!service) throw new HttpException('Service not find...', HttpStatus.BAD_REQUEST);
+    // Register this service as the service webhook handler
+    this.payStackService.purchasedServiceHandler = this;
+  }
+
+  async purchase(dto: CreatePurchasedServicePaystackDto, userId: string) {
+    const service = await this.servicesSharedService.helperServiceFindById(dto.serviceId);
+    if (!service) throw new HttpException('Service not found', HttpStatus.BAD_REQUEST);
 
     const user = await this.userService.findOne({ id: userId });
-    if (!user) throw new HttpException('User not found...', HttpStatus.UNAUTHORIZED);
+    if (!user) throw new HttpException('User not found', HttpStatus.UNAUTHORIZED);
 
-    const admin = await this.prisma.user.findFirst({ where: { role: { name: 'ADMIN' }, isDeleted: false } });
+    const totalPersons = dto.totalPersons ?? 1;
+    const totalPrice = Number(service.price) * totalPersons;
 
-    const totalPriceCalculated = Number(service.price) * createPurchasedServiceDto.totalPersons * 100;
+    const metadata = {
+      purchasingType: PurchasingType.PURCHASED_SERVICE,
+      serviceId: dto.serviceId,
+      totalPerson: totalPersons,
+      price: String(service.price),
+      totalPrice: String(totalPrice),
+      userId,
+      date: dto.date ? new Date(dto.date) : new Date(),
+    };
 
-    const { status: result, id } = await this.paymentService.createPaymentCharges(
-      PaymentMethods.ONE_TIME,
-      {
-        amount: totalPriceCalculated,
-        currency: 'USD',
-        receipt_email: user.email,
-        description: `Stripe charge of Amount ${totalPriceCalculated} for One Time Payment`,
+    const paymentIntent = await this.payStackService.createPaymentIntent({
+      email: user.email,
+      amount: Math.round(totalPrice),
+      metaData: metadata,
+    });
+
+    return { success: true, data: paymentIntent };
+  }
+
+  async createPurchasedService(metadata: any, paystackReference: string) {
+    const existing = await this.prisma.payment.findUnique({ where: { paystackReference } });
+    if (existing) return;
+
+    const service = await this.servicesSharedService.helperServiceFindById(metadata.serviceId);
+    if (!service) return;
+
+    const totalPersons = metadata.totalPerson ?? 1;
+    const totalPrice = Number(service.price) * totalPersons;
+
+    const payment = await this.prisma.payment.create({
+      data: {
+        userId: metadata.userId,
+        paystackReference,
+        paymentStatus: 'SUCCEEDED',
+        paymentMethod: 'PAYSTACK',
+        totalPrice: new Decimal(totalPrice),
+        perItemPrice: new Decimal(service.price),
+        noOfItems: totalPersons,
+        isPaid: true,
+        isAvailable: false,
       },
-      {
-        cardDetails: {
-          number: createPurchasedServiceDto.number,
-          exp_month: expMonth,
-          exp_year: expYear,
-          cvc: createPurchasedServiceDto.cvc,
-          address_state: createPurchasedServiceDto.addressState,
-          address_zip: createPurchasedServiceDto.addressZip,
-        },
-      },
-    );
-
-    if (result === 'failed') throw new HttpException('payment failed...', HttpStatus.BAD_REQUEST);
-    if (result === 'pending') return { success: true, status: 'pending' };
-
-    const payment = await this.paymentService.helperCreatePayment({
-      transactionId: id,
-      bankAccountNumber: createPurchasedServiceDto.number,
-      paymentStatus: result,
-      noOfItems: createPurchasedServiceDto.totalPersons,
-      totalPrice: totalPriceCalculated * 0.01,
-      perItemPrice: Number(service.price),
     });
 
     const purchasedService = await this.prisma.purchasedService.create({
       data: {
-        serviceId: createPurchasedServiceDto.serviceId,
-        userId: user.id,
+        serviceId: metadata.serviceId,
+        userId: metadata.userId,
         paymentId: payment.id,
+        quantity: totalPersons,
+        date: metadata.date ? new Date(metadata.date) : new Date(),
       },
     });
 
-    const dataToSend = await this.prisma.purchasedService.findFirst({
-      where: { id: purchasedService.id },
-      include: PURCHASED_SERVICE_INCLUDE,
-    });
+    const admin = await this.prisma.user.findFirst({ where: { role: { name: 'ADMIN' }, isDeleted: false } });
+    const user = await this.userService.findOne({ id: metadata.userId });
 
     try {
       const notification = await this.notificationService.addNotification({
         notificationType: NotificationType.SERVICE,
         orderModel: 'PurchasedService',
         orderPayload: purchasedService.id,
-        body: `A new Service has been purchased by ${user.name}.`,
+        body: `A new Service has been purchased by ${user?.name}.`,
       } as any);
 
-      SocketGateway.emitEvent(
-        'notification',
-        {
-          notificationType: NotificationType.SERVICE,
-          body: `A new Service has been purchased by ${user.name}.`,
-          orderPayload: purchasedService.id,
-          _id: (notification as any)?.id ?? (notification as any)?._id,
-        },
-        admin?.id,
-      );
+      SocketGateway.emitEvent('notification', {
+        notificationType: NotificationType.SERVICE,
+        body: `A new Service has been purchased by ${user?.name}.`,
+        orderPayload: purchasedService.id,
+        _id: (notification as any)?.id,
+      }, admin?.id);
     } catch (e) {
       loggers.error('Notification error: %O', e);
     }
@@ -118,21 +129,19 @@ export class PurchasedServiceService {
       await this.emailService.sendMail({
         template: 'event-ticket',
         message: {
-          to: [admin?.email, (service as any).vendor?.email, user?.email].filter(Boolean),
-          subject: 'New Service Ticket Purchased',
-          attachments: [
-            { filename: 'logo.svg', path: path.join(process.cwd(), 'views', 'logo.svg'), cid: 'logo' },
-          ],
+          to: [admin?.email, user?.email].filter(Boolean),
+          subject: 'New Service Purchased',
+          attachments: [{ filename: 'logo.svg', path: path.join(process.cwd(), 'views', 'logo.svg'), cid: 'logo' }],
         },
         locals: {
           purchasedOn: moment().format('MMMM DD,YYYY'),
-          userEmail: user.email,
-          userName: user.name,
+          userEmail: user?.email,
+          userName: user?.name,
           productId: service.id,
           productTitle: service.name,
-          total: payment.totalPrice,
-          subTotal: payment.perItemPrice,
-          noOfItems: payment.noOfItems,
+          total: totalPrice,
+          subTotal: Number(service.price),
+          noOfItems: totalPersons,
           productImage: service.photos?.[0],
           orderType: 'Service',
         },
@@ -140,14 +149,9 @@ export class PurchasedServiceService {
     } catch (e) {
       loggers.error('Email error: %O', e);
     }
-
-    return { success: 'true', msg: 'service purchased successfuly', data: dataToSend };
   }
 
-  async getPurchasedServices(
-    getServicesDataDto: GetServicesDataDto | AdminGetServicesDataDto,
-    userId?: string,
-  ) {
+  async getPurchasedServices(getServicesDataDto: GetServicesDataDto | AdminGetServicesDataDto, userId?: string) {
     const { page, limit } = getServicesDataDto;
     const where: any = {};
     if (userId) where.userId = userId;
@@ -164,13 +168,11 @@ export class PurchasedServiceService {
       this.prisma.purchasedService.count({ where }),
     ]);
 
-    if (purchasedServices.length === 0) {
-      return { success: false, msg: 'not any service purchased yet', data: [] };
-    }
+    if (purchasedServices.length === 0) return { success: false, msg: 'No services purchased yet', data: [] };
 
     return {
       success: true,
-      msg: 'purchased services fetched successfuly',
+      msg: 'Purchased services fetched successfully',
       data: purchasedServices,
       page,
       limit,
@@ -178,7 +180,7 @@ export class PurchasedServiceService {
     };
   }
 
-  async getPurchasedService(id: string, userId: string = null) {
+  async getPurchasedService(id: string, userId?: string) {
     const where: any = { id };
     if (userId) where.userId = userId;
 
@@ -187,8 +189,7 @@ export class PurchasedServiceService {
       include: PURCHASED_SERVICE_INCLUDE,
     });
 
-    if (!purchasedData) throw new HttpException('Invalid request data', HttpStatus.BAD_REQUEST);
-
-    return { success: true, msg: 'purchased service fetched successfuly', data: purchasedData };
+    if (!purchasedData) throw new HttpException('Purchased service not found', HttpStatus.BAD_REQUEST);
+    return { success: true, msg: 'Purchased service fetched successfully', data: purchasedData };
   }
 }

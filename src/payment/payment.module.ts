@@ -1,18 +1,9 @@
 import { Module } from '@nestjs/common';
-import { ConfigService } from './ConfigService';
-import { StripeModule } from '../stripe';
-import { ConfigModule } from './ConfigModule';
 import { PaymentService } from './payment.service';
+import { PrismaModule } from '@src/prisma/prisma.module';
 
 @Module({
-  imports: [
-    ConfigModule,
-    StripeModule.forRootAsync({
-      inject: [ConfigService],
-      useFactory: (configService: ConfigService) =>
-        configService.getStripeConfig(),
-    }),
-  ],
+  imports: [PrismaModule],
   providers: [PaymentService],
   exports: [PaymentService],
 })
