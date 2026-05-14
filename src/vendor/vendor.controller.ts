@@ -1,3 +1,5 @@
+import { Permissions } from '@src/auth/rbac/permissions.decorator';
+import { Permission } from '@src/auth/rbac/permissions.enum';
 import {
   Body,
   Controller,
@@ -28,6 +30,7 @@ import { CurrentUser } from '@src/auth/jwt.strategy';
 export class VendorController {
   constructor(private readonly vendorService: VendorService) {}
 
+  @Permissions(Permission.VENDORS_CREATE)
   @ApiResponses(true, [UserRole.ADMIN])
   @Post()
   @ApiConsumes('multipart/form-data')
@@ -39,12 +42,14 @@ export class VendorController {
     return this.vendorService.create(createVendorDto, file);
   }
 
+  @Permissions(Permission.VENDORS_READ)
   @ApiResponses(true, [UserRole.ADMIN])
   @Get()
   findAll(@Query() query: RetrieveVendorAdminDto) {
     return this.vendorService.findAll(query);
   }
 
+  @Permissions(Permission.VENDORS_READ)
   @ApiResponses(true, [UserRole.ADMIN])
   @Get('ticket-listing/:vendorId')
   ticketListingOfVendor(
@@ -54,6 +59,7 @@ export class VendorController {
     return this.vendorService.ticketListingOfSpecificVendor(vendor, admin._id);
   }
   @Version('2')
+  @Permissions(Permission.VENDORS_READ)
   @ApiResponses(true, [UserRole.VENDOR])
   @Get('ticket-listing/:vendorId')
   ticketListingOfVendorRole(
@@ -63,18 +69,21 @@ export class VendorController {
     return this.vendorService.ticketListingOfSpecificVendor(vendor, admin._id);
   }
 
+  @Permissions(Permission.VENDORS_READ)
   @ApiResponses(true, [UserRole.USER, UserRole.ADMIN])
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.vendorService.findOne(id);
   }
 
+  @Permissions(Permission.VENDORS_UPDATE)
   @ApiResponses(true, [UserRole.ADMIN])
   @Patch(':id')
   update(@Param('id') id: string, @Body() updateVendorDto: UpdateVendorDto) {
     return this.vendorService.update(id, updateVendorDto);
   }
 
+  @Permissions(Permission.VENDORS_DELETE)
   @ApiResponses(true, [UserRole.ADMIN])
   @Delete(':id')
   remove(@Param('id') id: string) {
