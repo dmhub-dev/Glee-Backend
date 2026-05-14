@@ -1,3 +1,6 @@
+import { AllowAny } from "@src/config/auth-guard";
+import { Permissions } from "@src/auth/rbac/permissions.decorator";
+import { Permission } from "@src/auth/rbac/permissions.enum";
 import { Controller, Get, Param, Query, Version } from '@nestjs/common';
 import { EventService } from './event.service';
 import { ApiTags } from '@nestjs/swagger';
@@ -13,7 +16,8 @@ import { loggers } from '@src/interceptors/logger.enums';
 export class EventController {
   constructor(private readonly eventService: EventService) {}
 
-  @ApiResponses(true, ['ADMIN', 'USER'])
+  @AllowAny()
+  @ApiResponses(false)
   @Get('nearby')
   nearByEvents(
     @Query() filter: NearByEvents,
@@ -24,20 +28,23 @@ export class EventController {
     return this.eventService.nearByEvents(filter, userId, paginationDto);
   }
 
-  @ApiResponses(false)
+  @Permissions(Permission.EVENTS_READ)
+  @ApiResponses(true)
   @Get()
   findAll(@Query() query: RetrieveEventDto) {
     return this.eventService.findAll(query);
   }
 
   @Version('2')
-  @ApiResponses(true, ['VENDOR'])
+  @Permissions(Permission.EVENTS_READ)
+  @ApiResponses(true)
   @Get()
   findAllByVendorId(@CurrentUser() user, @Query() query: RetrieveEventDto) {
     return this.eventService.findAllByVendorId(query, user);
   }
 
-  @ApiResponses(true, ['USER', 'ADMIN'])
+  @Permissions(Permission.EVENTS_READ)
+  @ApiResponses(true)
   @Get('participants')
   eventParticipant(
     @Query() filter: EventParticipantFilterDto,
@@ -51,7 +58,8 @@ export class EventController {
   }
 
   @Version('2')
-  @ApiResponses(true, ['VENDOR'])
+  @Permissions(Permission.EVENTS_READ)
+  @ApiResponses(true)
   @Get('participants')
   eventParticipantByVendor(
     @Query() filter: EventParticipantFilterDto,
@@ -64,7 +72,8 @@ export class EventController {
     return this.eventService.eventParticipants(query, user);
   }
 
-  @ApiResponses(true, ['ADMIN', 'USER'])
+  @Permissions(Permission.EVENTS_READ)
+  @ApiResponses(true)
   @Get(':id')
   findOne(@Param('id') id: string, @CurrentUser() currentUser) {
     const userId = currentUser?.role === 'USER' ? currentUser.id : null;
@@ -72,7 +81,8 @@ export class EventController {
   }
 
   @Version('2')
-  @ApiResponses(true, ['VENDOR'])
+  @Permissions(Permission.EVENTS_READ)
+  @ApiResponses(true)
   @Get(':id')
   findOneEventByVendorId(@Param('id') id: string, @CurrentUser() currentUser) {
     const userId = currentUser?.role === 'VENDOR' ? currentUser.id : null;

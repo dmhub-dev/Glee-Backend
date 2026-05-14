@@ -1,3 +1,5 @@
+import { Permissions } from "@src/auth/rbac/permissions.decorator";
+import { Permission } from "@src/auth/rbac/permissions.enum";
 import {
   Body,
   Controller,
@@ -32,7 +34,8 @@ export class AdminEventController {
    * @param files
    * @param createEventDto
    */
-  @ApiResponses(true, [UserRole.ADMIN])
+  @Permissions(Permission.EVENTS_CREATE)
+  @ApiResponses(true)
   @ApiConsumes('multipart/form-data')
   @ApiImageFile('files', { type: UploadType.ARRAY })
   @Post()
@@ -44,7 +47,8 @@ export class AdminEventController {
   }
 
   @Version('2')
-  @ApiResponses(true, [UserRole.VENDOR])
+  @Permissions(Permission.EVENTS_CREATE)
+  @ApiResponses(true)
   @ApiConsumes('multipart/form-data')
   @ApiImageFile('files', { type: UploadType.ARRAY })
   @Post()
@@ -63,7 +67,8 @@ export class AdminEventController {
    * @param updateEventDto
    * @param files
    */
-  @ApiResponses(true, [UserRole.ADMIN])
+  @Permissions(Permission.EVENTS_UPDATE)
+  @ApiResponses(true)
   @ApiConsumes('multipart/form-data')
   @ApiImageFile(null, {
     type: UploadType.MULTIPLE,
@@ -92,7 +97,8 @@ export class AdminEventController {
   }
 
   @Version('2')
-  @ApiResponses(true, [UserRole.VENDOR])
+  @Permissions(Permission.EVENTS_UPDATE)
+  @ApiResponses(true)
   @ApiConsumes('multipart/form-data')
   @ApiImageFile(null, {
     type: UploadType.MULTIPLE,
@@ -120,7 +126,8 @@ export class AdminEventController {
     return this.eventService.updateEventVendor(id, updateEventDto, files);
   }
 
-  @ApiResponses(true, [UserRole.ADMIN])
+  @Permissions(Permission.EVENTS_UPDATE)
+  @ApiResponses(true)
   @ApiConsumes('multipart/form-data')
   @ApiImageFile('files', {type: UploadType.ARRAY})
   @Post('upload/images')
@@ -131,20 +138,23 @@ export class AdminEventController {
     return this.eventService.addExtraImages(files, addImagetDto);
   }
 
-  @ApiResponses(true, [UserRole.ADMIN])
+  @Permissions(Permission.EVENTS_READ)
+  @ApiResponses(true)
   @Get('earning/:id')
   eventEarning(@Param('id') id) {
     return this.eventService.eventEarningService(id);
   }
 
   @Version('2')
-  @ApiResponses(true, [UserRole.VENDOR])
+  @Permissions(Permission.EVENTS_READ)
+  @ApiResponses(true)
   @Get('earning/:id')
   eventEarningByVendor(@Param('id') id) {
     return this.eventService.eventEarningService(id);
   }
 
-  @ApiResponses(true, [UserRole.ADMIN])
+  @Permissions(Permission.EVENTS_UPDATE)
+  @ApiResponses(true)
   @Delete('images')
   deleteImage(@Body() deleteImagetDto: DeleteImageDto) {
     return this.eventService.deleteEventImages(deleteImagetDto);
@@ -155,14 +165,16 @@ export class AdminEventController {
    * Method: DELETE
    * @param id
    */
-  @ApiResponses(true, [UserRole.ADMIN])
+  @Permissions(Permission.EVENTS_DELETE)
+  @ApiResponses(true)
   @Delete(':id')
   remove(@Param('id') id: string) {
     return this.eventService.remove(id);
   }
 
   @Version('2')
-  @ApiResponses(true, [UserRole.VENDOR])
+  @Permissions(Permission.EVENTS_DELETE)
+  @ApiResponses(true)
   @Delete(':id')
   removeByVendor(@Param('id') id: string) {
     return this.eventService.remove(id);
@@ -173,7 +185,8 @@ export class AdminEventController {
    * Method: DELETE
    * @param id
    */
-  @ApiResponses(true, [UserRole.ADMIN])
+  @Permissions(Permission.EVENTS_DELETE)
+  @ApiResponses(true)
   @Delete('permanent/:id')
   removepermanent(@Param('id') id: string) {
     return this.eventService.removepermanent(id);
@@ -183,7 +196,8 @@ export class AdminEventController {
    * Route: /admin/event/table/auto-fill
    * Method: GET
    */
-  @ApiResponses(true, [UserRole.ADMIN])
+  @Permissions(Permission.EVENTS_CREATE)
+  @ApiResponses(true)
   @Get('table/auto-fill')
   addData() {
     return this.eventService.dbDataFiller();
@@ -193,7 +207,8 @@ export class AdminEventController {
    * Route: /admin/event/table/clear
    * Method: DELETE
    */
-  @ApiResponses(true, [UserRole.ADMIN])
+  @Permissions(Permission.EVENTS_DELETE)
+  @ApiResponses(true)
   @Delete('table/clear')
   clearEventCL() {
     return this.eventService.clearEventCL();
