@@ -1,3 +1,5 @@
+import { Permissions } from '@src/auth/rbac/permissions.decorator';
+import { Permission } from '@src/auth/rbac/permissions.enum';
 import { Controller, Get, HttpException, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 // import { QueryDto } from 'src/admin/dto/query.dto';
@@ -15,6 +17,7 @@ import { NotificationService } from './notification.service';
 export class NotificationController {
   constructor(private notificationService: NotificationService) {}
 
+  @Permissions(Permission.NOTIFICATIONS_READ)
   @ApiResponses(true, [UserRole.ADMIN, UserRole.USER])
   @Get('/')
   async getUserNotification(

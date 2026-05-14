@@ -1,3 +1,5 @@
+import { Permissions } from '@src/auth/rbac/permissions.decorator';
+import { Permission } from '@src/auth/rbac/permissions.enum';
 import {
   Controller,
   Get,
@@ -21,12 +23,14 @@ import { loggers } from '@src/interceptors/logger.enums';
 export class ChatController {
   constructor(private readonly chatService: ChatService) {}
 
+  @Permissions(Permission.CHAT_CREATE)
   @ApiResponses(true, [UserRole.USER])
   @Post()
   create(@Body() createChatDto: CreateChatDto, @CurrentUser() user: any) {
     return this.chatService.create(createChatDto, user);
   }
 
+  @Permissions(Permission.CHAT_READ)
   @ApiResponses(true, [UserRole.USER])
   @Get()
   async findAll(
@@ -56,11 +60,13 @@ export class ChatController {
     }
   }
 
+  @Permissions(Permission.CHAT_READ)
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.chatService.findOne(id);
   }
 
+  @Permissions(Permission.CHAT_READ)
   @Patch(':id')
   readMessage(@Param('id') id: string) {
     return this.chatService.update(id);

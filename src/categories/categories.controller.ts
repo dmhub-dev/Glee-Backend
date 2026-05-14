@@ -1,3 +1,5 @@
+import { Permissions } from '@src/auth/rbac/permissions.decorator';
+import { Permission } from '@src/auth/rbac/permissions.enum';
 import { Controller, Get, Param } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { ApiResponses } from 'src/shared/response';
@@ -7,12 +9,14 @@ import { CategoriesService } from './categories.service';
 export class CategoriesController {
   constructor(private readonly categoriesService: CategoriesService) {}
 
+  @Permissions(Permission.CATEGORIES_READ)
   @ApiResponses(false)
   @Get()
   findAll() {
     return this.categoriesService.findAll();
   }
 
+  @Permissions(Permission.CATEGORIES_READ)
   @ApiResponses(false)
   @Get(':id')
   findOne(@Param('id') id: string) {

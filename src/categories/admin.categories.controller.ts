@@ -1,3 +1,5 @@
+import { Permissions } from '@src/auth/rbac/permissions.decorator';
+import { Permission } from '@src/auth/rbac/permissions.enum';
 import { Controller, Post, Body, Patch, Param, Delete } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { ApiResponses } from 'src/shared/response';
@@ -11,12 +13,14 @@ import { UserRole } from '@prisma/client';
 export class AdminCategoriesController {
   constructor(private readonly categoriesService: CategoriesService) {}
 
+  @Permissions(Permission.CATEGORIES_CREATE)
   @ApiResponses(true, [UserRole.ADMIN])
   @Post()
   create(@Body() createCategoryDto: CreateCategoryDto) {
     return this.categoriesService.create(createCategoryDto);
   }
 
+  @Permissions(Permission.CATEGORIES_UPDATE)
   @ApiResponses(false)
   @Patch(':id')
   update(
@@ -26,6 +30,7 @@ export class AdminCategoriesController {
     return this.categoriesService.update(id, updateCategoryDto);
   }
 
+  @Permissions(Permission.CATEGORIES_DELETE)
   @ApiResponses(false)
   @Delete(':id')
   remove(@Param('id') id: string) {
