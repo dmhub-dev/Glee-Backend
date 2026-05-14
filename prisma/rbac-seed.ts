@@ -43,6 +43,10 @@ const ALL_PERMISSIONS = [
   { name: 'system:govern',     module: 'system',        action: 'govern' },
   { name: 'pricing:override',  module: 'pricing',       action: 'override' },
   { name: 'pricing:edit',      module: 'pricing',       action: 'edit' },
+  { name: 'wallet:read',       module: 'wallet',        action: 'read' },
+  { name: 'wallet:topup',      module: 'wallet',        action: 'topup' },
+  { name: 'wallet:deduct',     module: 'wallet',        action: 'deduct' },
+  { name: 'settings:manage',   module: 'settings',      action: 'manage' },
 ];
 
 // Permissions each role receives (by permission name)
@@ -60,6 +64,8 @@ const ROLE_PERMISSIONS: Record<UserRole, string[]> = {
     'content:manage',
     'notifications:read',
     'pricing:override','pricing:edit',
+    'settings:manage',
+    'wallet:read','wallet:topup','wallet:deduct',
   ],
   OPERATIONS_MANAGER: [
     'bookings:read','bookings:create','bookings:update','bookings:override',
@@ -122,6 +128,7 @@ const ROLE_PERMISSIONS: Record<UserRole, string[]> = {
     'chat:read','chat:create',
     'categories:read',
     'payments:read',
+    'wallet:read','wallet:topup',
   ],
 };
 

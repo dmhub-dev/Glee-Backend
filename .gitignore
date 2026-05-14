@@ -48,3 +48,5 @@ pnpm-lock.yaml
 *.env
 /docs
 /generated/prisma
+/Release:prod
+rbac-seed.ts
