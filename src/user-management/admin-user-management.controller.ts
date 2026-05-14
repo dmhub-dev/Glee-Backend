@@ -112,4 +112,14 @@ export class AdminUserManagementController {
   findOne(@Param('id') id: string) {
     return this.userManagementService.findOne(id);
   }
+
+  @Permissions(Permission.USERS_ASSIGN_ROLE)
+  @ApiResponses(true, [UserRole.ADMIN])
+  @Patch(':id/role')
+  assignRole(
+    @Param('id') id: string,
+    @Body() body: { role: UserRole },
+  ) {
+    return this.userManagementService.assignRole(id, body.role);
+  }
 }

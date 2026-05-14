@@ -134,7 +134,14 @@ export class UsersService {
   async create(userDto: RegisterUserDto) {
     const { password, country, state, city, ...rest } = userDto as any;
     const hashed = await bcrypt.hash(password, 10);
-    return this.prisma.user.create({ data: { ...rest, password: hashed, notificationIds: [] } });
+    return this.prisma.user.create({
+      data: {
+        ...rest,
+        password: hashed,
+        notificationIds: [],
+        role: { connect: { name: UserRole.USER } },
+      },
+    });
   }
 
   async createVendorAuth(dto: RegisterVendorDto, vendorId: string) {

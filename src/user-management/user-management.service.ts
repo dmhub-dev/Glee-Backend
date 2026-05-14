@@ -290,4 +290,15 @@ export class UserManagementService {
       data: updated.adminContactInfo,
     };
   }
+
+  async assignRole(userId: string, roleName: UserRole) {
+    const role = await this.prisma.role.findUnique({ where: { name: roleName } });
+    if (!role) throw new HttpException(`Role ${roleName} not found`, HttpStatus.BAD_REQUEST);
+
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { role: { connect: { id: role.id } } },
+      select: { id: true, email: true, role: { select: { name: true } } },
+    });
+  }
 }
