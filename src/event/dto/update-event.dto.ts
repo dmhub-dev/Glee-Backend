@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { CreateEventDto, EventScheduleDto } from './create-event.dto';
+import { CreateEventDto, EventScheduleDto, TicketCategoryInputDto } from './create-event.dto';
 import {
   IsNotEmpty,
   IsOptional,
@@ -157,4 +157,19 @@ export class UpdateEventDto {
   @Type(() => EventScheduleDto)
   @Transform(({ value }) => JSON.parse('[' + value + ']'))
   eventSchedule: EventScheduleDto[];
+
+  @Transform(({ value }) => {
+    if (!value) return undefined;
+    try {
+      const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+      return Array.isArray(parsed) ? parsed : undefined;
+    } catch { return undefined; }
+  })
+  @ApiProperty({
+    required: false,
+    type: 'string',
+    description: 'JSON array: [{ "name": "VIP", "price": 1000, "capacity": 50 }]',
+  })
+  @IsOptional()
+  ticketCategories?: TicketCategoryInputDto[];
 }
