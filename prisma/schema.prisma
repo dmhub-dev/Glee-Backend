@@ -96,6 +96,7 @@ model User {
   isActive            AccountStatus @default(ACTIVE)
   profileImage        String?
   token               String?
+  refreshToken        String?
   otp                 Int?
   margin              Float?
   adminContactInfo    Json?
@@ -191,8 +192,8 @@ model Category {
 model Event {
   id                 String       @id @default(cuid())
   name               String
-  vendorId           String
-  vendor             Vendor       @relation(fields: [vendorId], references: [id])
+  vendorId           String?
+  vendor             Vendor?      @relation(fields: [vendorId], references: [id])
   categoryId         String?
   category           Category?    @relation(fields: [categoryId], references: [id])
   description        String?
