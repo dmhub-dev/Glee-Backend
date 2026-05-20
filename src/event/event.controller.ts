@@ -28,7 +28,7 @@ export class EventController {
     return this.eventService.nearByEvents(filter, userId, paginationDto);
   }
 
-  @Permissions(Permission.EVENTS_READ)
+  @AllowAny()
   @ApiResponses(true)
   @Get()
   findAll(@Query() query: RetrieveEventDto) {
@@ -72,11 +72,13 @@ export class EventController {
     return this.eventService.eventParticipants(query, user);
   }
 
-  @Permissions(Permission.EVENTS_READ)
+  @AllowAny()
   @ApiResponses(true)
   @Get(':id')
   findOne(@Param('id') id: string, @CurrentUser() currentUser) {
-    const userId = currentUser?.role === 'USER' ? currentUser.id : null;
+    const userId = (currentUser && typeof currentUser === 'object' && currentUser.role === 'USER')
+      ? currentUser.id
+      : null;
     return this.eventService.findOne(id, userId);
   }
 
