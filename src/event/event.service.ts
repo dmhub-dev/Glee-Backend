@@ -11,7 +11,7 @@ import { RetrieveEventDto } from './dto/retrieve.event.dto';
 import { UpdateEventDto } from './dto/update-event.dto';
 import { EventSharedService } from './shared/shared.event.service';
 
-const EVENT_INCLUDE = { vendor: true, category: true, schedules: true };
+const EVENT_INCLUDE = { vendor: true, category: true, schedules: true, ticketCategories: true };
 
 @Injectable()
 export class EventService {
@@ -28,17 +28,18 @@ export class EventService {
   async create(createEventDto: CreateEventDto, files: Array<Express.Multer.File>) {
     const bannerImages = this.buildPhotoUrls(files);
     const dto = createEventDto as any;
+
     const event = await this.prisma.event.create({
       data: {
         name: createEventDto.name,
-        vendorId: createEventDto.vendor,
-        categoryId: createEventDto.category,
+        vendorId: createEventDto.vendor ?? null,
+        categoryId: createEventDto.category ?? null,
         location: createEventDto.location,
-        city: createEventDto.city,
-        country: createEventDto.country,
+        city: createEventDto.city ?? null,
+        country: createEventDto.country ?? null,
         latitude: createEventDto.latitude ? +createEventDto.latitude : null,
         longitude: createEventDto.longitude ? +createEventDto.longitude : null,
-        price: createEventDto.price,
+        price: createEventDto.price ?? 0,
         capacity: createEventDto.capacity ? +createEventDto.capacity : null,
         maxTicketPurchased: createEventDto.maxTicketPurchased ? +createEventDto.maxTicketPurchased : null,
         availableTickets: createEventDto.capacity ? +createEventDto.capacity : null,
@@ -47,7 +48,28 @@ export class EventService {
         endDate: dto.date?.end ?? null,
       },
     });
-    return { success: true, message: 'event created successfuly!', data: event };
+
+    const tiers = Array.isArray(createEventDto.ticketCategories)
+      ? createEventDto.ticketCategories
+      : [];
+    if (tiers.length > 0) {
+      await this.prisma.ticketCategory.createMany({
+        data: tiers.map(t => ({
+          eventId: event.id,
+          name: t.name,
+          price: t.price,
+          capacity: t.capacity ?? null,
+          available: t.capacity ?? null,
+        })),
+      });
+    }
+
+    const full = await this.prisma.event.findUnique({
+      where: { id: event.id },
+      include: EVENT_INCLUDE,
+    });
+
+    return { success: true, message: 'Event created successfully.', data: full };
   }
 
   async createEventVendor(createEventDto: CreateEventDto, files: Array<Express.Multer.File>) {
@@ -264,8 +286,29 @@ export class EventService {
       }
     }
 
-    const updatedEvent = await this.prisma.event.update({ where: { id }, data });
-    return { success: true, message: 'Event updated Successfuly', data: updatedEvent };
+    await this.prisma.event.update({ where: { id }, data });
+
+    if (Array.isArray(updateEventDto.ticketCategories)) {
+      await this.prisma.ticketCategory.deleteMany({ where: { eventId: id } });
+      if (updateEventDto.ticketCategories.length > 0) {
+        await this.prisma.ticketCategory.createMany({
+          data: updateEventDto.ticketCategories.map(t => ({
+            eventId: id,
+            name: t.name,
+            price: t.price,
+            capacity: t.capacity ?? null,
+            available: t.capacity ?? null,
+          })),
+        });
+      }
+    }
+
+    const full = await this.prisma.event.findUnique({
+      where: { id },
+      include: EVENT_INCLUDE,
+    });
+
+    return { success: true, message: 'Event updated successfully.', data: full };
   }
 
   async updateEventVendor(id: string, updateEventDto: UpdateEventDto, files: any) {
