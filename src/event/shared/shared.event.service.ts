@@ -73,7 +73,8 @@ export class EventSharedService {
     return this.prisma.event.findFirst({ where });
   }
 
-  async getUserPurchasedEventList(userId: string, eventId?: string) {
+  async getUserPurchasedEventList(userId: string | null, eventId?: string) {
+    if (!userId) return [];
     const where: any = { userId };
     if (eventId) where.eventId = eventId;
     return this.prisma.eventTicket.findMany({
