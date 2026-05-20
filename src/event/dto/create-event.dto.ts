@@ -1,121 +1,114 @@
-import {
-  IsEnum,
-  IsMongoId,
-  IsNotEmpty,
-  IsNumber,
-  IsOptional,
-} from 'class-validator';
+import { IsEnum, IsNotEmpty, IsOptional } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import { EntityStatus as EventStatus } from '@prisma/client';
 import { toJson } from '@src/shared/cast.helper';
 
+export class TicketCategoryInputDto {
+  name: string;
+  price: number;
+  capacity?: number;
+}
+
 export class EventScheduleDto {
   @ApiProperty()
-  @IsNotEmpty({ message: 'Note field should not be empty........' })
+  @IsNotEmpty()
   note: string;
 
   @ApiProperty()
-  @IsNotEmpty({ message: 'Time field should not be empty........' })
+  @IsNotEmpty()
   time: Date;
 }
 
 export class CreateEventDto {
   @ApiProperty()
-  @IsNotEmpty({ message: 'Name field should not be empty........' })
+  @IsNotEmpty({ message: 'Name field should not be empty.' })
   name: string;
 
-  @ApiProperty()
-  @IsNotEmpty({ message: 'Country field should not be empty........' })
-  country: string;
+  @ApiProperty({ required: false })
+  @IsOptional()
+  country?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  city?: string;
 
   @ApiProperty()
-  @IsNotEmpty({ message: 'City field should not be empty........' })
-  city: string;
-
-  @ApiProperty()
-  @IsNotEmpty({ message: 'Location field should not be empty........' })
+  @IsNotEmpty({ message: 'Location field should not be empty.' })
   location: string;
 
-  @ApiProperty()
-  // @IsNumber()
-  @IsNotEmpty({ message: 'Latitude field should not be empty........' })
-  latitude: number;
+  @ApiProperty({ required: false })
+  @IsOptional()
+  latitude?: number;
 
-  @ApiProperty()
-  // @IsNumber()
-  @IsNotEmpty({ message: 'Longitude field should not be empty........' })
-  longitude: number;
+  @ApiProperty({ required: false })
+  @IsOptional()
+  longitude?: number;
 
   @Transform(({ value }) => toJson(value))
   @ApiProperty({
+    required: false,
     name: 'date',
     type: 'object',
     properties: {
-      start: {
-        type: 'string',
-        format: 'date-time',
-      },
-      end: {
-        type: 'string',
-        format: 'date-time',
-      },
+      start: { type: 'string', format: 'date-time' },
+      end: { type: 'string', format: 'date-time' },
     },
   })
-  @IsNotEmpty({ message: 'Start Date field should not be empty........' })
-  // @ValidateDate()
-  date: {
-    start: Date;
-    end: Date;
-  };
+  @IsOptional()
+  date?: { start: Date; end: Date };
 
-  @ApiProperty()
-  @IsMongoId({ message: 'Provided invalid vendor id........' })
-  @IsNotEmpty({ message: 'Business field should not be empty........' })
-  vendor: string;
+  @ApiProperty({ required: false })
+  @IsOptional()
+  vendor?: string;
 
-  @ApiProperty()
-  @IsNotEmpty({ message: 'Capacity field should not be empty........' })
-  capacity: number;
+  @ApiProperty({ required: false })
+  @IsOptional()
+  capacity?: number;
 
-  @ApiProperty()
-  @IsNotEmpty({
-    message: 'Max Ticket Purchase field should not be empty........',
-  })
-  maxTicketPurchased: number;
+  @ApiProperty({ required: false })
+  @IsOptional()
+  maxTicketPurchased?: number;
 
-  @ApiProperty()
-  @IsNotEmpty({ message: 'Price field should not be empty........' })
-  price: number;
+  @ApiProperty({ required: false })
+  @IsOptional()
+  price?: number;
 
-  @ApiProperty()
-  @IsMongoId({ message: 'Provided invalid category id........' })
-  @IsNotEmpty({ message: 'Event Type field should not be empty........' })
-  category: string;
+  @ApiProperty({ required: false })
+  @IsOptional()
+  category?: string;
 
-  @ApiProperty({
-    required: false,
-    enum: EventStatus,
-    default: EventStatus.ACTIVE,
-  })
+  @ApiProperty({ required: false, enum: EventStatus, default: EventStatus.ACTIVE })
   @IsOptional()
   @IsEnum(EventStatus, { message: 'Invalid Event Status' })
-  isActive: string;
+  isActive?: string;
 
   @ApiProperty({
     name: 'files',
+    required: false,
     type: 'array',
-    items: {
-      type: 'string',
-      format: 'binary',
-    },
+    items: { type: 'string', format: 'binary' },
   })
-  bannerImages: string[];
+  @IsOptional()
+  bannerImages?: string[];
 
-  @ApiProperty({
-    isArray: true,
-    type: [EventScheduleDto],
+  @ApiProperty({ required: false, isArray: true, type: [EventScheduleDto] })
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (!value) return [];
+    try { return JSON.parse('[' + value + ']'); } catch { return []; }
   })
-  @Transform(({ value }) => JSON.parse('[' + value + ']'))
-  eventSchedule: EventScheduleDto[];
+  eventSchedule?: EventScheduleDto[];
+
+  @Transform(({ value }) => {
+    if (!value) return [];
+    try { return toJson(value); } catch { return []; }
+  })
+  @ApiProperty({
+    required: false,
+    type: 'string',
+    description: 'JSON array: [{ "name": "VIP", "price": 1000, "capacity": 50 }]',
+  })
+  @IsOptional()
+  ticketCategories?: TicketCategoryInputDto[];
 }
