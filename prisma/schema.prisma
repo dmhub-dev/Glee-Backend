@@ -129,6 +129,15 @@ model Event {
   @@index([isDeleted])
 }
 
+// ─── Categories ───────────────────────────────────────────────────────────────
+
+model Category {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 // ─── Locations ────────────────────────────────────────────────────────────────
 
 model Location {
