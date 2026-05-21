@@ -3,6 +3,7 @@ import { NotificationType } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { EmailService } from '@src/email-server/email.service';
 import { loggers } from '@src/interceptors/logger.enums';
+import * as QRCode from 'qrcode';
 import { NotificationService } from '@src/notification/notification.service';
 import { PrismaService } from '@src/prisma/prisma.service';
 import { PayStackService } from '@src/paystack/paystack.service';
@@ -136,23 +137,37 @@ export class EventTicketsService {
     }
 
     try {
+      const ticketRef = eventTicket.id;
+      const qrDataUrl = await QRCode.toDataURL(ticketRef, {
+        width: 200,
+        margin: 2,
+        color: { dark: '#FF2D8F', light: '#131328' },
+      });
+      const qrBuffer = Buffer.from(qrDataUrl.replace(/^data:image\/png;base64,/, ''), 'base64');
+
       await this.emailService.sendMail({
         template: 'event-ticket',
         message: {
-          to: [admin?.email, user?.email].filter(Boolean),
-          subject: 'New Event Ticket Purchased',
-          attachments: [{ filename: 'logo.svg', path: path.join(process.cwd(), 'views', 'logo.svg'), cid: 'logo' }],
+          to: [user?.email].filter(Boolean),
+          subject: `Your ticket for ${event.name} — Glee`,
+          attachments: [
+            { filename: 'logo.svg', path: path.join(process.cwd(), 'views', 'logo.svg'), cid: 'logo' },
+            { filename: 'qrcode.png', content: qrBuffer, encoding: 'base64', cid: 'qrcode' },
+          ],
         },
         locals: {
-          purchasedOn: moment().format('MMMM DD,YYYY'),
+          purchasedOn: moment().format('MMMM DD, YYYY'),
           userEmail: user?.email,
           userName: user?.name,
-          productId: event.id,
+          ticketId: eventTicket.id,
           productTitle: event.name,
-          total: totalPrice,
-          subTotal: price,
+          eventDate: event.startDate ? moment(event.startDate).format('dddd, MMMM DD, YYYY') : null,
+          eventTime: event.startDate ? moment(event.startDate).format('h:mm A') : null,
+          eventVenue: event.location ?? null,
+          total: totalPrice.toLocaleString(),
+          subTotal: price.toLocaleString(),
           noOfItems: metadata.noOfTickets ?? 1,
-          productImage: event.bannerImages?.[0],
+          productImage: event.bannerImages?.[0] ?? null,
           orderType: 'Event',
         },
       });

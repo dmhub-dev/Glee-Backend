@@ -6,396 +6,515 @@
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <meta name="x-apple-disable-message-reformatting">
   <meta content="telephone=no" name="format-detection">
-  <title>Your Glee Ticket — {{productTitle}}</title>
-  <!--[if !mso]><!-->
+  <title>Your Ticket — {{productTitle}}</title>
   <style type="text/css">
-    /* ── Reset ── */
     body, table, td, a { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
-    table, td { mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
-    img { -ms-interpolation-mode: bicubic; border: 0; height: auto; line-height: 100%; outline: none; text-decoration: none; display: block; }
-    * { box-sizing: border-box; }
+    table, td { mso-table-lspace: 0pt; mso-table-rspace: 0pt; border-collapse: collapse; }
+    img { -ms-interpolation-mode: bicubic; border: 0; outline: none; text-decoration: none; }
+    body { margin: 0; padding: 0; background-color: #07070F; }
 
-    /* ── Outer wrapper ── */
-    .email-wrapper {
-      background-color: #090912;
-      padding: 32px 16px;
-      width: 100%;
+    a { color: #FF2D8F; text-decoration: none; }
+
+    /* ── Outer shell ── */
+    .shell {
+      background-color: #07070F;
+      padding: 40px 20px 48px;
     }
 
-    /* ── Main container ── */
-    .email-container {
-      max-width: 600px;
-      margin: 0 auto;
-      background-color: #090912;
-    }
-
-    /* ── Header ── */
-    .email-header {
-      background-color: #0E0E1C;
-      border-bottom: 3px solid #FF2D8F;
-      padding: 22px 32px;
+    /* ── Logo bar ── */
+    .logo-bar {
       text-align: center;
-      border-radius: 12px 12px 0 0;
-    }
-    .email-header img {
-      height: 34px;
-      width: auto;
-      margin: 0 auto;
+      padding-bottom: 28px;
     }
 
-    /* ── Hero banner ── */
+    /* ── Hero ── */
+    .hero-wrap {
+      border-radius: 16px 16px 0 0;
+      overflow: hidden;
+      line-height: 0;
+      position: relative;
+    }
     .hero-img {
       width: 100%;
-      max-height: 240px;
-      object-fit: cover;
       display: block;
+      max-height: 260px;
+      object-fit: cover;
     }
-
-    /* ── Ticket body ── */
-    .ticket-body {
-      background-color: #0E0E1C;
-      border-left: 1px solid rgba(120, 110, 220, 0.14);
-      border-right: 1px solid rgba(120, 110, 220, 0.14);
+    .hero-overlay {
+      background: linear-gradient(to bottom, rgba(7,7,15,0) 30%, rgba(7,7,15,0.92) 100%);
+      padding: 0 32px 28px;
+      margin-top: -80px;
+      position: relative;
     }
-
-    /* ── Greeting ── */
-    .greeting-wrap {
-      padding: 28px 32px 4px;
-    }
-    .greeting-hi {
-      color: #EEEEF8;
-      font-family: Arial, Helvetica, sans-serif;
-      font-size: 17px;
-      font-weight: 400;
-      line-height: 1.6;
-      margin: 0 0 6px 0;
-    }
-    .greeting-hi strong {
+    .hero-eyebrow {
       color: #FF2D8F;
-    }
-    .greeting-sub {
-      color: #8888B0;
-      font-family: Arial, Helvetica, sans-serif;
-      font-size: 14px;
-      line-height: 1.6;
-      margin: 0;
-    }
-
-    /* ── Ticket card ── */
-    .ticket-card-wrap {
-      padding: 20px 32px;
-    }
-    .ticket-card {
-      background-color: #131328;
-      border: 1px solid rgba(120, 110, 220, 0.20);
-      border-radius: 12px;
-      overflow: hidden;
-    }
-
-    /* Card pink header */
-    .ticket-card-header {
-      background: linear-gradient(135deg, #FF2D8F 0%, #C4006A 100%);
-      padding: 18px 22px;
-    }
-    .ticket-type-label {
-      color: rgba(255, 255, 255, 0.80);
       font-family: Arial, Helvetica, sans-serif;
       font-size: 11px;
       font-weight: 700;
-      letter-spacing: 2px;
+      letter-spacing: 2.5px;
       text-transform: uppercase;
-      margin: 0 0 5px 0;
+      margin: 0 0 6px;
     }
-    .ticket-event-name {
+    .hero-title {
       color: #FFFFFF;
-      font-family: Georgia, 'Times New Roman', Times, serif;
-      font-size: 21px;
+      font-family: Georgia, 'Times New Roman', serif;
+      font-size: 26px;
       font-weight: 700;
       margin: 0;
-      line-height: 1.25;
+      line-height: 1.2;
+    }
+    .hero-meta {
+      color: rgba(255,255,255,0.65);
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 13px;
+      margin: 8px 0 0;
+    }
+    .hero-meta strong { color: rgba(255,255,255,0.90); }
+
+    /* No hero fallback header */
+    .fallback-header {
+      background: linear-gradient(135deg, #14142A 0%, #1C1040 100%);
+      border-radius: 16px 16px 0 0;
+      padding: 32px 32px 28px;
+      border-bottom: 3px solid #FF2D8F;
+    }
+    .fallback-eyebrow {
+      color: #FF2D8F;
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 2.5px;
+      text-transform: uppercase;
+      margin: 0 0 8px;
+    }
+    .fallback-title {
+      color: #FFFFFF;
+      font-family: Georgia, 'Times New Roman', serif;
+      font-size: 24px;
+      font-weight: 700;
+      margin: 0 0 8px;
+    }
+    .fallback-meta {
+      color: rgba(255,255,255,0.60);
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 13px;
+      margin: 0;
+    }
+    .fallback-meta strong { color: rgba(255,255,255,0.85); }
+
+    /* ── Greeting strip ── */
+    .greeting-strip {
+      background-color: #0E0E20;
+      padding: 22px 32px;
+      border-left: 1px solid rgba(120,110,220,0.14);
+      border-right: 1px solid rgba(120,110,220,0.14);
+    }
+    .greeting-text {
+      color: #DDDDF4;
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 15px;
+      line-height: 1.6;
+      margin: 0 0 4px;
+    }
+    .greeting-text strong { color: #FF2D8F; }
+    .greeting-sub {
+      color: #7070A0;
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 13px;
+      line-height: 1.55;
+      margin: 0;
     }
 
-    /* Card detail rows */
-    .ticket-details {
-      padding: 20px 22px 8px;
+    /* ── Ticket ── */
+    .ticket-outer {
+      background-color: #0E0E20;
+      border-left: 1px solid rgba(120,110,220,0.14);
+      border-right: 1px solid rgba(120,110,220,0.14);
+      padding: 0 24px 24px;
     }
-    .detail-label {
-      color: #8888B0;
+    .ticket-inner {
+      background-color: #12122A;
+      border: 1px solid rgba(140,120,255,0.18);
+      border-radius: 14px;
+      overflow: hidden;
+    }
+
+    /* Ticket top bar */
+    .ticket-topbar {
+      background: linear-gradient(110deg, #FF2D8F 0%, #B5006E 100%);
+      padding: 16px 24px;
+    }
+    .ticket-topbar-label {
+      color: rgba(255,255,255,0.75);
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      margin: 0 0 4px;
+    }
+    .ticket-topbar-name {
+      color: #FFFFFF;
+      font-family: Georgia, 'Times New Roman', serif;
+      font-size: 19px;
+      font-weight: 700;
+      margin: 0;
+    }
+
+    /* Ticket body: left details + right QR */
+    .ticket-body-wrap {
+      padding: 20px 24px;
+    }
+    .ticket-detail-label {
+      color: #6060A0;
       font-family: Arial, Helvetica, sans-serif;
       font-size: 10px;
       font-weight: 700;
       letter-spacing: 1.5px;
       text-transform: uppercase;
-      margin: 0 0 4px 0;
+      margin: 0 0 3px;
     }
-    .detail-value {
-      color: #EEEEF8;
+    .ticket-detail-value {
+      color: #DDDDF4;
       font-family: Arial, Helvetica, sans-serif;
       font-size: 14px;
       font-weight: 600;
-      margin: 0 0 18px 0;
+      margin: 0 0 16px;
     }
+    .ticket-detail-value.small { font-size: 12px; word-break: break-all; }
 
-    /* Dashed divider */
-    .ticket-dash {
-      border: 0;
-      border-top: 2px dashed rgba(120, 110, 220, 0.25);
-      margin: 4px 22px 0;
-    }
-
-    /* Booking reference */
-    .reference-wrap {
-      padding: 18px 22px 20px;
+    /* QR panel */
+    .qr-panel {
+      background-color: #131328;
+      border: 1px solid rgba(140,120,255,0.16);
+      border-radius: 10px;
+      padding: 14px;
       text-align: center;
     }
-    .reference-label {
-      color: #8888B0;
+    .qr-panel img {
+      width: 120px;
+      height: 120px;
+      border-radius: 6px;
+      display: block;
+      margin: 0 auto;
+    }
+    .qr-hint {
+      color: #6060A0;
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 10px;
+      letter-spacing: 0.5px;
+      margin: 8px 0 0;
+      text-align: center;
+    }
+
+    /* Dashed tear line */
+    .tear-line {
+      border: 0;
+      border-top: 2px dashed rgba(140,120,255,0.20);
+      margin: 0 24px;
+    }
+
+    /* Booking reference stub */
+    .ref-stub {
+      padding: 16px 24px 20px;
+      text-align: center;
+    }
+    .ref-stub-label {
+      color: #6060A0;
       font-family: Arial, Helvetica, sans-serif;
       font-size: 10px;
       font-weight: 700;
       letter-spacing: 2px;
       text-transform: uppercase;
-      margin: 0 0 10px 0;
+      margin: 0 0 8px;
     }
-    .reference-code {
+    .ref-stub-code {
       color: #FF2D8F;
       font-family: 'Courier New', Courier, monospace;
-      font-size: 20px;
+      font-size: 13px;
       font-weight: 700;
-      letter-spacing: 4px;
+      letter-spacing: 3px;
       margin: 0;
       word-break: break-all;
     }
 
-    /* ── Order summary ── */
-    .summary-wrap {
-      padding: 4px 32px 20px;
+    /* ── Summary ── */
+    .summary-outer {
+      background-color: #0E0E20;
+      border-left: 1px solid rgba(120,110,220,0.14);
+      border-right: 1px solid rgba(120,110,220,0.14);
+      padding: 0 24px 24px;
     }
-    .summary-title {
-      color: #8888B0;
+    .summary-box {
+      background-color: #12122A;
+      border: 1px solid rgba(140,120,255,0.14);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    .summary-header {
+      padding: 12px 18px;
+      border-bottom: 1px solid rgba(140,120,255,0.10);
+    }
+    .summary-header-text {
+      color: #6060A0;
       font-family: Arial, Helvetica, sans-serif;
       font-size: 10px;
       font-weight: 700;
       letter-spacing: 1.5px;
       text-transform: uppercase;
-      margin: 0 0 12px 0;
+      margin: 0;
     }
-    .summary-table {
-      width: 100%;
-      border-collapse: collapse;
+    .summary-row {
+      padding: 10px 18px;
+      border-bottom: 1px solid rgba(140,120,255,0.08);
     }
-    .summary-row td {
+    .summary-row-label {
+      color: #7070A0;
       font-family: Arial, Helvetica, sans-serif;
       font-size: 13px;
-      padding: 9px 0;
-      border-bottom: 1px solid rgba(120, 110, 220, 0.10);
     }
-    .summary-row td:first-child { color: #8888B0; }
-    .summary-row td:last-child { color: #EEEEF8; font-weight: 600; text-align: right; }
-    .total-row td {
+    .summary-row-value {
+      color: #DDDDF4;
       font-family: Arial, Helvetica, sans-serif;
-      padding: 13px 0 4px;
+      font-size: 13px;
+      font-weight: 600;
+      text-align: right;
     }
-    .total-row td:first-child {
-      color: #EEEEF8;
-      font-size: 15px;
+    .summary-total-row {
+      padding: 12px 18px;
+    }
+    .summary-total-label {
+      color: #DDDDF4;
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 14px;
       font-weight: 700;
     }
-    .total-row td:last-child {
+    .summary-total-value {
       color: #FF2D8F;
-      font-size: 18px;
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 17px;
       font-weight: 700;
       text-align: right;
     }
 
-    /* ── Important notice ── */
-    .notice-wrap {
-      margin: 0 32px 28px;
-      background-color: rgba(255, 45, 143, 0.07);
-      border: 1px solid rgba(255, 45, 143, 0.22);
+    /* ── Notice ── */
+    .notice-outer {
+      background-color: #0E0E20;
+      border-left: 1px solid rgba(120,110,220,0.14);
+      border-right: 1px solid rgba(120,110,220,0.14);
+      padding: 0 24px 28px;
+    }
+    .notice-box {
+      background-color: rgba(255,45,143,0.06);
+      border: 1px solid rgba(255,45,143,0.20);
       border-radius: 8px;
-      padding: 14px 18px;
+      padding: 14px 16px;
     }
     .notice-text {
-      color: #B890A0;
-      font-family: Arial, Helvetica, sans-serif;
-      font-size: 13px;
-      line-height: 1.65;
-      margin: 0;
-    }
-    .notice-text strong { color: #FF2D8F; }
-    .notice-text em { color: #EEEEF8; font-style: normal; font-weight: 600; }
-
-    /* ── Footer ── */
-    .email-footer {
-      background-color: #070710;
-      border: 1px solid rgba(120, 110, 220, 0.10);
-      border-top: 0;
-      border-radius: 0 0 12px 12px;
-      padding: 22px 32px;
-      text-align: center;
-    }
-    .footer-line {
-      color: #8888B0;
+      color: #A07090;
       font-family: Arial, Helvetica, sans-serif;
       font-size: 12px;
       line-height: 1.7;
-      margin: 0 0 6px 0;
+      margin: 0;
     }
-    .footer-link {
-      color: #FF2D8F;
-      font-weight: 700;
-      text-decoration: none;
+    .notice-text strong { color: #FF2D8F; }
+    .notice-text em { color: #DDDDF4; font-style: normal; font-weight: 600; }
+
+    /* ── Footer ── */
+    .email-footer {
+      background-color: #050509;
+      border: 1px solid rgba(120,110,220,0.10);
+      border-top: none;
+      border-radius: 0 0 16px 16px;
+      padding: 24px 32px;
+      text-align: center;
     }
+    .footer-text {
+      color: #6060A0;
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 12px;
+      line-height: 1.7;
+      margin: 0 0 4px;
+    }
+    .footer-link { color: #FF2D8F; font-weight: 700; text-decoration: none; }
     .footer-copy {
-      color: rgba(136, 136, 176, 0.45);
+      color: rgba(96,96,160,0.40);
       font-family: Arial, Helvetica, sans-serif;
       font-size: 11px;
       margin: 14px 0 0;
     }
 
-    /* ── Responsive ── */
     @media screen and (max-width: 480px) {
-      .email-header, .greeting-wrap, .ticket-card-wrap, .summary-wrap, .notice-wrap, .email-footer {
+      .shell { padding: 20px 10px 32px !important; }
+      .hero-overlay, .fallback-header, .greeting-strip,
+      .ticket-outer, .summary-outer, .notice-outer, .email-footer {
         padding-left: 16px !important;
         padding-right: 16px !important;
       }
-      .notice-wrap { margin-left: 16px !important; margin-right: 16px !important; }
-      .ticket-event-name { font-size: 17px !important; }
-      .reference-code { font-size: 16px !important; letter-spacing: 2px !important; }
+      .hero-title, .fallback-title { font-size: 19px !important; }
+      .ticket-topbar { padding: 14px 16px !important; }
+      .ticket-body-wrap { padding: 16px !important; }
+      .qr-panel img { width: 100px !important; height: 100px !important; }
     }
   </style>
-  <!--<![endif]-->
 </head>
+<body>
+<div class="shell">
+  <table width="600" cellpadding="0" cellspacing="0" border="0" align="center" style="max-width:600px;width:100%;">
+  <tbody><tr><td>
 
-<body style="margin:0;padding:0;background-color:#090912;">
+    <!-- Logo -->
+    <div class="logo-bar">
+      <img src="cid:logo" alt="Glee" style="height:32px;width:auto;">
+    </div>
 
-  <div class="email-wrapper">
-    <table class="email-container" cellpadding="0" cellspacing="0" border="0" width="600" align="center">
-      <tbody>
-      <tr>
-        <td>
+    <!-- ── HERO / HEADER ── -->
+    {{#if productImage}}
+    <div class="hero-wrap">
+      <img src="{{productImage}}" alt="{{productTitle}}" class="hero-img">
+      <div class="hero-overlay">
+        <p class="hero-eyebrow">Event Ticket &nbsp;·&nbsp; {{orderType}}</p>
+        <p class="hero-title">{{productTitle}}</p>
+        {{#if eventDate}}
+        <p class="hero-meta"><strong>{{eventDate}}</strong>{{#if eventTime}} &nbsp;·&nbsp; {{eventTime}}{{/if}}{{#if eventVenue}} &nbsp;·&nbsp; {{eventVenue}}{{/if}}</p>
+        {{/if}}
+      </div>
+    </div>
+    {{else}}
+    <div class="fallback-header">
+      <p class="fallback-eyebrow">Event Ticket &nbsp;·&nbsp; {{orderType}}</p>
+      <p class="fallback-title">{{productTitle}}</p>
+      {{#if eventDate}}
+      <p class="fallback-meta"><strong>{{eventDate}}</strong>{{#if eventTime}} &nbsp;·&nbsp; {{eventTime}}{{/if}}{{#if eventVenue}} &nbsp;·&nbsp; {{eventVenue}}{{/if}}</p>
+      {{/if}}
+    </div>
+    {{/if}}
 
-          <!-- ── HEADER ── -->
-          <div class="email-header">
-            <img src="cid:logo" alt="Glee" style="height:34px;width:auto;margin:0 auto;">
-          </div>
+    <!-- ── GREETING ── -->
+    <div class="greeting-strip">
+      <p class="greeting-text">Hey <strong>{{userName}}</strong>, you're in! Your ticket is confirmed.</p>
+      <p class="greeting-sub">Present the QR code below at the venue entrance. See you on the dance floor.</p>
+    </div>
 
-          <!-- ── HERO BANNER ── -->
-          {{#if productImage}}
-          <div style="line-height:0;">
-            <img src="{{productImage}}" alt="{{productTitle}}" class="hero-img" style="width:100%;max-height:240px;object-fit:cover;display:block;">
-          </div>
-          {{/if}}
+    <!-- ── TICKET CARD ── -->
+    <div class="ticket-outer">
+      <div class="ticket-inner">
 
-          <!-- ── TICKET BODY ── -->
-          <div class="ticket-body">
+        <!-- Top gradient bar -->
+        <div class="ticket-topbar">
+          <p class="ticket-topbar-label">{{orderType}} Ticket &nbsp;·&nbsp; {{noOfItems}}× Entry</p>
+          <p class="ticket-topbar-name">{{productTitle}}</p>
+        </div>
 
-            <!-- Greeting -->
-            <div class="greeting-wrap">
-              <p class="greeting-hi">Hey <strong>{{userName}}</strong>, you're going to Glee! 🎉</p>
-              <p class="greeting-sub">Your ticket is confirmed. Show your booking reference at the door — on your phone or printed. See you on the dance floor.</p>
-            </div>
+        <!-- Details + QR side by side -->
+        <div class="ticket-body-wrap">
+          <table width="100%" cellpadding="0" cellspacing="0">
+            <tbody><tr>
+              <!-- Left: attendee details -->
+              <td valign="top" style="width:58%;padding-right:16px;">
+                <p class="ticket-detail-label">Attendee</p>
+                <p class="ticket-detail-value">{{userName}}</p>
 
-            <!-- Ticket card -->
-            <div class="ticket-card-wrap">
-              <div class="ticket-card">
+                <p class="ticket-detail-label">Email</p>
+                <p class="ticket-detail-value small">{{userEmail}}</p>
 
-                <!-- Pink gradient header -->
-                <div class="ticket-card-header">
-                  <p class="ticket-type-label">{{orderType}} Ticket &nbsp;·&nbsp; {{noOfItems}}× Entry</p>
-                  <p class="ticket-event-name">{{productTitle}}</p>
+                <p class="ticket-detail-label">Purchase Date</p>
+                <p class="ticket-detail-value">{{purchasedOn}}</p>
+
+                {{#if eventDate}}
+                <p class="ticket-detail-label">Date</p>
+                <p class="ticket-detail-value">{{eventDate}}</p>
+                {{/if}}
+
+                {{#if eventVenue}}
+                <p class="ticket-detail-label">Venue</p>
+                <p class="ticket-detail-value">{{eventVenue}}</p>
+                {{/if}}
+
+                <p class="ticket-detail-label">Quantity</p>
+                <p class="ticket-detail-value" style="margin-bottom:0;">{{noOfItems}} Ticket{{#if (gt noOfItems 1)}}s{{/if}}</p>
+              </td>
+
+              <!-- Right: QR code -->
+              <td valign="top" style="width:42%;">
+                <div class="qr-panel">
+                  <img src="cid:qrcode" alt="Entry QR Code">
+                  <p class="qr-hint">Scan at entrance</p>
                 </div>
+              </td>
+            </tr></tbody>
+          </table>
+        </div>
 
-                <!-- Details grid -->
-                <div class="ticket-details">
-                  <table width="100%" cellpadding="0" cellspacing="0">
-                    <tbody>
-                    <tr>
-                      <td width="50%" valign="top">
-                        <p class="detail-label">Attendee</p>
-                        <p class="detail-value">{{userName}}</p>
-                      </td>
-                      <td width="50%" valign="top">
-                        <p class="detail-label">Email</p>
-                        <p class="detail-value" style="font-size:13px;word-break:break-all;">{{userEmail}}</p>
-                      </td>
-                    </tr>
-                    <tr>
-                      <td width="50%" valign="top">
-                        <p class="detail-label">Purchase Date</p>
-                        <p class="detail-value">{{purchasedOn}}</p>
-                      </td>
-                      <td width="50%" valign="top">
-                        <p class="detail-label">Quantity</p>
-                        <p class="detail-value">{{noOfItems}} Ticket{{#if (gt noOfItems 1)}}s{{/if}}</p>
-                      </td>
-                    </tr>
-                    </tbody>
-                  </table>
-                </div>
+        <!-- Dashed tear line -->
+        <hr class="tear-line">
 
-                <!-- Dashed separator -->
-                <hr class="ticket-dash">
+        <!-- Reference stub -->
+        <div class="ref-stub">
+          <p class="ref-stub-label">Ticket ID</p>
+          <p class="ref-stub-code">{{ticketId}}</p>
+        </div>
 
-                <!-- Booking reference -->
-                <div class="reference-wrap">
-                  <p class="reference-label">Booking Reference</p>
-                  <p class="reference-code">{{productId}}</p>
-                </div>
+      </div>
+    </div><!-- /ticket-outer -->
 
-              </div>
-            </div>
+    <!-- ── ORDER SUMMARY ── -->
+    <div class="summary-outer" style="padding-top:16px;">
+      <div class="summary-box">
+        <div class="summary-header">
+          <p class="summary-header-text">Order Summary</p>
+        </div>
+        <table width="100%" cellpadding="0" cellspacing="0">
+          <tbody>
+          <tr>
+            <td class="summary-row">
+              <table width="100%" cellpadding="0" cellspacing="0"><tbody><tr>
+                <td class="summary-row-label">{{productTitle}}</td>
+                <td class="summary-row-value">{{noOfItems}} ticket{{#if (gt noOfItems 1)}}s{{/if}}</td>
+              </tr></tbody></table>
+            </td>
+          </tr>
+          <tr>
+            <td class="summary-row">
+              <table width="100%" cellpadding="0" cellspacing="0"><tbody><tr>
+                <td class="summary-row-label">Subtotal</td>
+                <td class="summary-row-value">KES {{subTotal}}</td>
+              </tr></tbody></table>
+            </td>
+          </tr>
+          <tr>
+            <td class="summary-total-row">
+              <table width="100%" cellpadding="0" cellspacing="0"><tbody><tr>
+                <td class="summary-total-label">Total Paid</td>
+                <td class="summary-total-value">KES {{total}}</td>
+              </tr></tbody></table>
+            </td>
+          </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
 
-            <!-- Order summary -->
-            <div class="summary-wrap">
-              <p class="summary-title">Order Summary</p>
-              <table class="summary-table">
-                <tbody>
-                <tr class="summary-row">
-                  <td>{{productTitle}}</td>
-                  <td>{{noOfItems}} ticket{{#if (gt noOfItems 1)}}s{{/if}}</td>
-                </tr>
-                <tr class="summary-row">
-                  <td>Subtotal</td>
-                  <td>KES {{subTotal}}</td>
-                </tr>
-                <tr class="total-row">
-                  <td>Total Paid</td>
-                  <td>KES {{total}}</td>
-                </tr>
-                </tbody>
-              </table>
-            </div>
+    <!-- ── NOTICE ── -->
+    <div class="notice-outer" style="padding-top:12px;">
+      <div class="notice-box">
+        <p class="notice-text">
+          <strong>Entry rules:</strong> Show your QR code at the venue gate.
+          Ticket ID <em>{{ticketId}}</em> is valid for <em>{{noOfItems}} person{{#if (gt noOfItems 1)}}s{{/if}}</em> — one-time entry only.
+          This ticket is non-transferable. Doors close 30 minutes after event start.
+        </p>
+      </div>
+    </div>
 
-            <!-- Important notice -->
-            <div class="notice-wrap">
-              <p class="notice-text">
-                <strong>Important:</strong> Your reference <em>{{productId}}</em> is your entry pass.
-                Present it at the venue entrance — on your phone or printed. This ticket is
-                non-transferable and valid for one-time entry only.
-              </p>
-            </div>
+    <!-- ── FOOTER ── -->
+    <div class="email-footer">
+      <p class="footer-text">Need help? <a href="mailto:support@gleeapp.co" class="footer-link">support@gleeapp.co</a></p>
+      <p class="footer-text" style="margin:0;">Follow the night &nbsp;·&nbsp; <a href="https://instagram.com/gleeapp" class="footer-link">@gleeapp</a></p>
+      <p class="footer-copy">© 2026 Glee. All rights reserved. This is an automated message — please do not reply.</p>
+    </div>
 
-          </div><!-- /ticket-body -->
-
-          <!-- ── FOOTER ── -->
-          <div class="email-footer">
-            <p class="footer-line">Questions? We've got you —
-              <a href="mailto:support@gleeapp.co" class="footer-link">support@gleeapp.co</a>
-            </p>
-            <p class="footer-line" style="margin:0;">
-              Follow the night &nbsp;·&nbsp;
-              <a href="https://instagram.com/gleeapp" class="footer-link">@gleeapp</a>
-            </p>
-            <p class="footer-copy">© 2026 Glee. All rights reserved.</p>
-          </div>
-
-        </td>
-      </tr>
-      </tbody>
-    </table>
-  </div>
-
+  </td></tr></tbody>
+  </table>
+</div>
 </body>
 </html>
