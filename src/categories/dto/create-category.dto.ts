@@ -1,12 +1,4 @@
-import {
-  IsNotEmpty,
-  IsOptional,
-  IsNumber,
-  IsString,
-  MinLength,
-  MaxLength,
-  isNotEmpty,
-} from 'class-validator';
+import { IsNotEmpty, IsString } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class CreateCategoryDto {
@@ -14,9 +6,4 @@ export class CreateCategoryDto {
   @IsNotEmpty()
   @IsString()
   name: string;
-
-  @ApiProperty()
-  @IsNotEmpty()
-  @IsString()
-  color: string;
 }

@@ -1,22 +1,9 @@
-import {
-  IsNotEmpty,
-  IsOptional,
-  IsNumber,
-  IsString,
-  MinLength,
-  MaxLength,
-  isNotEmpty,
-} from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import { IsOptional, IsString } from 'class-validator';
+import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class UpdateCategoryDto {
-  @ApiProperty()
+  @ApiPropertyOptional()
   @IsOptional()
   @IsString()
-  name: string;
-
-  @ApiProperty()
-  @IsOptional()
-  @IsString()
-  color: string;
+  name?: string;
 }
