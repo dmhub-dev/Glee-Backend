@@ -10,10 +10,12 @@ import { PayStackService } from '@src/paystack/paystack.service';
 import { PurchasingType } from '@src/paystack/paystack.types';
 import { SocketGateway } from '@src/socket/socket.gateway';
 import moment from 'moment';
+import * as crypto from 'crypto';
 import * as path from 'path';
 import { UsersService } from '../../users/users.service';
 import { EventSharedService } from '../shared/shared.event.service';
 import { CreateEventTicketDto } from './dto/create-event-ticket.dto';
+import { CreateGuestTicketDto } from './dto/create-guest-ticket.dto';
 import { PaginationQueryDto } from './dto/pagination-query.dto';
 
 @Injectable()
@@ -62,6 +64,52 @@ export class EventTicketsService {
 
     const paymentIntent = await this.payStackService.createPaymentIntent({
       email: user.email,
+      amount: Math.round(totalPrice),
+      metaData: metadata,
+    });
+
+    return { success: true, data: paymentIntent };
+  }
+
+  async initiateGuestPurchase(dto: CreateGuestTicketDto) {
+    const event = await this.eventSharedService.helperEventFindById(dto.eventId);
+    if (!event) throw new HttpException('Event not found', HttpStatus.BAD_REQUEST);
+
+    let price = Number(event.price);
+    if (dto.ticketCategoryId) {
+      const category = await this.prisma.ticketCategory.findUnique({
+        where: { id: dto.ticketCategoryId },
+      });
+      if (category) price = Number(category.price);
+    }
+
+    const randomPassword = crypto.randomBytes(32).toString('hex');
+
+    const user = await this.prisma.user.upsert({
+      where: { email: dto.guestEmail },
+      update: {},
+      create: {
+        name: dto.guestName,
+        email: dto.guestEmail,
+        phone: dto.guestPhone,
+        password: randomPassword,
+        notificationIds: [],
+        role: { connect: { name: 'USER' as any } },
+      },
+    });
+
+    const totalPrice = price * dto.noOfTickets;
+
+    const metadata = {
+      purchasingType: PurchasingType.EVENT_TICKET,
+      eventId: dto.eventId,
+      noOfTickets: dto.noOfTickets,
+      ticketCategoryId: dto.ticketCategoryId,
+      userId: user.id,
+    };
+
+    const paymentIntent = await this.payStackService.createPaymentIntent({
+      email: dto.guestEmail,
       amount: Math.round(totalPrice),
       metaData: metadata,
     });
