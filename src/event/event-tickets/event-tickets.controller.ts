@@ -3,6 +3,7 @@ import { ApiTags } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
 import { CurrentUser } from '../../auth/jwt.strategy';
 import { ApiResponses } from 'src/shared/response';
+import { AllowAny } from 'src/config/auth-guard';
 import { EventTicketsService } from './event-tickets.service';
 import { CreateEventTicketDto } from './dto/create-event-ticket.dto';
 import { CreateGuestTicketDto } from './dto/create-guest-ticket.dto';
@@ -22,6 +23,7 @@ export class EventTicketsController {
     return this.eventTicketsService.create(createEventTicketDto, currentUser);
   }
 
+  @AllowAny()
   @Post('initiate-guest')
   initiateGuestPurchase(@Body() dto: CreateGuestTicketDto) {
     return this.eventTicketsService.initiateGuestPurchase(dto);
