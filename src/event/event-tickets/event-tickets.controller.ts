@@ -7,6 +7,7 @@ import { AllowAny } from 'src/config/auth-guard';
 import { EventTicketsService } from './event-tickets.service';
 import { CreateEventTicketDto } from './dto/create-event-ticket.dto';
 import { CreateGuestTicketDto } from './dto/create-guest-ticket.dto';
+import { ConfirmPurchaseDto } from './dto/confirm-purchase.dto';
 import { PaginationQueryDto } from './dto/pagination-query.dto';
 
 @Controller('event/tickets/')
@@ -27,6 +28,12 @@ export class EventTicketsController {
   @Post('initiate-guest')
   initiateGuestPurchase(@Body() dto: CreateGuestTicketDto) {
     return this.eventTicketsService.initiateGuestPurchase(dto);
+  }
+
+  @AllowAny()
+  @Post('confirm-purchase')
+  confirmPurchase(@Body() dto: ConfirmPurchaseDto) {
+    return this.eventTicketsService.confirmPurchase(dto);
   }
 
   @ApiResponses(true, [UserRole.USER])

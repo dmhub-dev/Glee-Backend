@@ -16,6 +16,7 @@ import { UsersService } from '../../users/users.service';
 import { EventSharedService } from '../shared/shared.event.service';
 import { CreateEventTicketDto } from './dto/create-event-ticket.dto';
 import { CreateGuestTicketDto } from './dto/create-guest-ticket.dto';
+import { ConfirmPurchaseDto } from './dto/confirm-purchase.dto';
 import { PaginationQueryDto } from './dto/pagination-query.dto';
 
 @Injectable()
@@ -115,6 +116,16 @@ export class EventTicketsService {
     });
 
     return { success: true, data: paymentIntent };
+  }
+
+  async confirmPurchase(dto: ConfirmPurchaseDto) {
+    const result = await this.payStackService.verifyTransaction(dto.verificationToken);
+    const paystackData = (result as any)?.paystack?.data;
+    if (!paystackData || paystackData.status !== 'success') {
+      throw new HttpException('Payment not verified', HttpStatus.BAD_REQUEST);
+    }
+    await this.createPurchasedEventTicket(paystackData.metadata, paystackData.reference);
+    return { success: true, message: 'Ticket confirmed' };
   }
 
   async createPurchasedEventTicket(metadata: any, paystackReference: string) {
