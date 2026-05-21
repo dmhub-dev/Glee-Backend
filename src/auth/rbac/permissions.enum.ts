@@ -65,6 +65,12 @@ export const Permission = {
   // Settings
   SETTINGS_MANAGE: 'settings:manage',
 
+  // Location
+  LOCATION_READ:   'location:read',
+  LOCATION_CREATE: 'location:create',
+  LOCATION_UPDATE: 'location:update',
+  LOCATION_DELETE: 'location:delete',
+
   // System
   SYSTEM_GOVERN:    'system:govern',
   PRICING_OVERRIDE: 'pricing:override',
