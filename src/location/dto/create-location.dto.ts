@@ -56,9 +56,9 @@ export class CreateLocationDto {
   @IsBoolean()
   isParkingAvailable?: boolean;
 
-  @ApiPropertyOptional({ type: [String], description: 'Array of existing Media record IDs' })
+  @ApiPropertyOptional({ type: [String], description: 'Array of picture URLs' })
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
-  mediaIds?: string[];
+  pictures?: string[];
 }

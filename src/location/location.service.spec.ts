@@ -59,9 +59,8 @@ describe('LocationService', () => {
           longitude: dto.longitude,
           floorPlanImageUrl: undefined,
           isParkingAvailable: false,
-          locationPictures: { connect: [] },
+          pictures: [],
         },
-        include: { locationPictures: true },
       });
       expect(result.success).toBe(true);
       expect(result.data).toEqual(created);

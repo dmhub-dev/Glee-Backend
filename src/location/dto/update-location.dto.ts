@@ -55,9 +55,9 @@ export class UpdateLocationDto {
   @IsBoolean()
   isParkingAvailable?: boolean;
 
-  @ApiPropertyOptional({ type: [String], description: 'Replace location pictures with these Media IDs' })
+  @ApiPropertyOptional({ type: [String], description: 'Replace location pictures with these URLs' })
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
-  mediaIds?: string[];
+  pictures?: string[];
 }

@@ -10,24 +10,19 @@ export class LocationService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(dto: CreateLocationDto) {
-    const { mediaIds, ...fields } = dto;
-
     const location = await this.prisma.location.create({
       data: {
-        name: fields.name,
-        address: fields.address,
-        capacity: fields.capacity,
-        isIndoors: fields.isIndoors ?? false,
-        isOutdoors: fields.isOutdoors ?? false,
-        latitude: fields.latitude,
-        longitude: fields.longitude,
-        floorPlanImageUrl: fields.floorPlanImageUrl,
-        isParkingAvailable: fields.isParkingAvailable ?? false,
-        locationPictures: {
-          connect: (mediaIds ?? []).map((id) => ({ id })),
-        },
+        name: dto.name,
+        address: dto.address,
+        capacity: dto.capacity,
+        isIndoors: dto.isIndoors ?? false,
+        isOutdoors: dto.isOutdoors ?? false,
+        latitude: dto.latitude,
+        longitude: dto.longitude,
+        floorPlanImageUrl: dto.floorPlanImageUrl,
+        isParkingAvailable: dto.isParkingAvailable ?? false,
+        pictures: dto.pictures ?? [],
       },
-      include: { locationPictures: true },
     });
 
     return { success: true, message: 'Location created successfully', data: location };
@@ -56,7 +51,6 @@ export class LocationService {
     const [locations, total] = await this.prisma.$transaction([
       this.prisma.location.findMany({
         where,
-        include: { locationPictures: true },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
@@ -74,7 +68,6 @@ export class LocationService {
   async findOne(id: string) {
     const location = await this.prisma.location.findUnique({
       where: { id },
-      include: { locationPictures: true },
     });
 
     if (!location) {
@@ -85,20 +78,10 @@ export class LocationService {
   }
 
   async update(id: string, dto: UpdateLocationDto) {
-    const { mediaIds, ...fields } = dto;
-
     const updated = await this.prisma.location
       .update({
         where: { id },
-        data: {
-          ...fields,
-          ...(mediaIds !== undefined && {
-            locationPictures: {
-              set: mediaIds.map((mid) => ({ id: mid })),
-            },
-          }),
-        },
-        include: { locationPictures: true },
+        data: dto,
       })
       .catch(() => null);
 
