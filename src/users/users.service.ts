@@ -55,7 +55,7 @@ export class UsersService {
   async findByLogin({ email, password, role }: LoginDto) {
     const user = await this.prisma.user.findFirst({
       where: { email, role: { name: role as UserRole }, isDeleted: false },
-      include: { city: true, state: true, country: true },
+      include: { role: true },
     });
 
     if (!user) throw new HttpException('User does not exist', HttpStatus.UNAUTHORIZED);
@@ -70,13 +70,17 @@ export class UsersService {
       );
     }
 
-    const token = await this._createToken(user);
+    const { accessToken, refreshToken } = await this._createToken(user);
     await this.prisma.user.update({
       where: { id: user.id },
-      data: { token: token.accessToken, profileStatus: true },
+      data: { token: accessToken, refreshToken, profileStatus: true },
     });
 
-    return this._toAuthData({ ...user, token: token.accessToken });
+    return {
+      user: this._toUserDto(user),
+      accessToken,
+      refreshToken,
+    };
   }
 
   async getRoleByAuth({ email, password }: LoginDto) {
@@ -101,7 +105,7 @@ export class UsersService {
   async findByVendorLogin({ email, password, role }: LoginVendorDto) {
     const user = await this.prisma.user.findFirst({
       where: { email, role: { name: role as UserRole }, isDeleted: false },
-      include: { vendor: true, city: true, state: true, country: true },
+      include: { role: true, vendor: true },
     });
     if (!user) throw new HttpException('User does not exist', HttpStatus.UNAUTHORIZED);
 
@@ -115,20 +119,33 @@ export class UsersService {
       );
     }
 
-    const token = await this._createToken(user);
+    const { accessToken, refreshToken } = await this._createToken(user);
     await this.prisma.user.update({
       where: { id: user.id },
-      data: { token: token.accessToken, profileStatus: true },
+      data: { token: accessToken, refreshToken, profileStatus: true },
     });
 
-    return this._toAuthData({ ...user, token: token.accessToken });
+    return {
+      user: this._toUserDto(user),
+      accessToken,
+      refreshToken,
+    };
   }
 
   async findByPayload(payload: { userId: string }) {
-    return this.prisma.user.findFirst({
+    const user = await this.prisma.user.findFirst({
       where: { id: payload.userId, isDeleted: false },
-      select: USER_PUBLIC_FIELDS,
+      include: {
+        role: {
+          include: {
+            permissions: { include: { permission: true } },
+          },
+        },
+      },
     });
+    if (!user) return null;
+    const permissions = user.role?.permissions.map(rp => rp.permission.name) ?? [];
+    return { ...user, permissions };
   }
 
   async create(userDto: RegisterUserDto) {
@@ -192,23 +209,60 @@ export class UsersService {
     return { success: true, message: 'Otp has been verified', data };
   }
 
-  private async _createToken(user: Pick<User, 'id' | 'email'> & { roleId?: string | null }) {
-    const expiresIn = process.env.EXPIRESIN;
-    let permissions: string[] = [];
-    if (user.roleId) {
-      const roleWithPerms = await this.prisma.role.findUnique({
-        where: { id: user.roleId },
-        include: { permissions: { include: { permission: true } } },
-      });
-      permissions = roleWithPerms?.permissions.map(rp => rp.permission.name) ?? [];
+  async refreshAccessToken(incomingRefreshToken: string) {
+    const user = await this.prisma.user.findFirst({
+      where: { refreshToken: incomingRefreshToken, isDeleted: false },
+      include: { role: true },
+    });
+    if (!user) throw new HttpException('Invalid refresh token', HttpStatus.UNAUTHORIZED);
+    if (user.isActive === 'INACTIVE') {
+      throw new HttpException('Account is inactive', HttpStatus.UNAUTHORIZED);
     }
-    const payload = { userId: user.id, email: user.email, permissions };
-    const accessToken = this.jwtService.sign(payload);
-    return { expiresIn, accessToken };
+    const { accessToken, refreshToken } = await this._createToken(user);
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { token: accessToken, refreshToken },
+    });
+    return { accessToken, refreshToken };
   }
 
-  private _toAuthData(user: any) {
-    const fields = Object.keys(USER_AUTH_FIELDS);
-    return fields.reduce((acc, k) => ({ ...acc, [k]: user[k] }), {});
+  private async _createToken(user: Pick<User, 'id' | 'name' | 'email'> & { roleId?: string | null; role?: { name: string } | null }) {
+    const roleName = (user.role?.name ?? '') as UserRole;
+    const payload = {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: roleName,
+      isSuperAdmin: roleName === UserRole.SUPER_ADMIN,
+      isAdmin: roleName === UserRole.ADMIN,
+      isOperationsManager: roleName === UserRole.OPERATIONS_MANAGER,
+      isCommercialManager: roleName === UserRole.COMMERCIAL_MANAGER,
+      isFinance: roleName === UserRole.FINANCE,
+      isVendor: roleName === UserRole.VENDOR,
+      isVendorStaff: roleName === UserRole.VENDOR_STAFF,
+      isCustomerSupport: roleName === UserRole.CUSTOMER_SUPPORT,
+      isContentManager: roleName === UserRole.CONTENT_MANAGER,
+      isUser: roleName === UserRole.USER,
+    };
+    const accessToken = this.jwtService.sign(payload, {
+      expiresIn: process.env.EXPIRESIN ?? '1d',
+    });
+    const refreshToken = this.jwtService.sign({ id: user.id }, {
+      expiresIn: process.env.REFRESH_EXPIRESIN ?? '30d',
+    });
+    return { accessToken, refreshToken };
+  }
+
+  private _toUserDto(user: any) {
+    return {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role?.name ?? null,
+      profileImage: user.profileImage ?? null,
+      vendorId: user.vendorId ?? null,
+      profileStatus: user.profileStatus,
+      notificationStatus: user.notificationStatus,
+    };
   }
 }

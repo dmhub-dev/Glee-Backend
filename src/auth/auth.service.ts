@@ -173,23 +173,30 @@ export class AuthService {
 
   async login(loginUserDto: LoginDto) {
     try {
-      const user = await this.usersService.findByLogin(loginUserDto);
-      if ((user as any).role === UserRole.USER) {
+      const result = await this.usersService.findByLogin(loginUserDto);
+      if (result.user.role === UserRole.USER) {
         const oneSignalResponse = await this.oneSignalService.addUserToNotificationList(
-          (user as any).id.toString(),
+          result.user.id,
           (loginUserDto as any).playerId,
         );
-
         if (!oneSignalResponse.success)
           throw new HttpException(oneSignalResponse.message, HttpStatus.BAD_REQUEST);
-        else
-          return { success: true, data: { ...user, oneSignalData: oneSignalResponse.data } };
+        return { ...result, user: { ...result.user, oneSignalData: oneSignalResponse.data } };
       }
-      return user;
+      return result;
     } catch (err) {
       if (err.status === 401) throw new HttpException(err.message, HttpStatus.UNAUTHORIZED);
       if (err instanceof HttpException) throw err;
       throw new HttpException(err.message, HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+
+  async refreshToken(token: string) {
+    try {
+      return await this.usersService.refreshAccessToken(token);
+    } catch (err) {
+      if (err instanceof HttpException) throw err;
+      throw new HttpException('Invalid refresh token', HttpStatus.UNAUTHORIZED);
     }
   }
 

@@ -115,6 +115,15 @@ export class AuthController {
     return await this.authService.loginVendor(loginVendorDto);
   }
 
+  @Post('refresh')
+  @ApiResponses(false)
+  public async refresh(@Body() body: { refreshToken: string }): Promise<any> {
+    if (!body.refreshToken) {
+      throw new HttpException('Refresh token is required', HttpStatus.BAD_REQUEST);
+    }
+    return this.authService.refreshToken(body.refreshToken);
+  }
+
   /**
    * Route: /forgot-password
    * @param forgotPasswordDto

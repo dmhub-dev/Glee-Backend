@@ -2,7 +2,6 @@ import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { EntityStatus } from '@prisma/client';
 import { PrismaService } from '@src/prisma/prisma.service';
-import { deleteImages } from '../shared/utils';
 import { AddImageDto, DeleteImageDto } from './dto/add-image.dto';
 import { CreateEventDto } from './dto/create-event.dto';
 import { NearByEvents } from './dto/nearby-events.dto';
@@ -10,6 +9,7 @@ import { PaginationQueryDto } from './dto/pagination-query.dto';
 import { RetrieveEventDto } from './dto/retrieve.event.dto';
 import { UpdateEventDto } from './dto/update-event.dto';
 import { EventSharedService } from './shared/shared.event.service';
+import { S3Service } from '../shared/s3.service';
 
 const EVENT_INCLUDE = { vendor: true, category: true, schedules: true, ticketCategories: true };
 
@@ -19,14 +19,11 @@ export class EventService {
     private readonly prisma: PrismaService,
     private readonly eventSharedService: EventSharedService,
     private readonly config: ConfigService,
+    private readonly s3: S3Service,
   ) {}
 
-  private buildPhotoUrls(files: Express.Multer.File[]): string[] {
-    return (files ?? []).map(f => `${this.config.get('APP_URL')}/upload/${f.filename}`);
-  }
-
   async create(createEventDto: CreateEventDto, files: Array<Express.Multer.File>) {
-    const bannerImages = this.buildPhotoUrls(files);
+    const bannerImages = await this.s3.uploadMany(files);
     const dto = createEventDto as any;
 
     const event = await this.prisma.event.create({
@@ -169,7 +166,7 @@ export class EventService {
   }
 
   async addExtraImages(files: Array<Express.Multer.File>, addImagetDto: AddImageDto) {
-    const photos = this.buildPhotoUrls(files);
+    const photos = await this.s3.uploadMany(files);
     const updatedEvent = await this.prisma.event.update({
       where: { id: addImagetDto.eventId },
       data: { photos: { push: photos } },
@@ -186,7 +183,7 @@ export class EventService {
 
   async deleteEventImages(deleteImagetDto: DeleteImageDto) {
     try {
-      await deleteImages(deleteImagetDto.imageUrls);
+      await Promise.all(deleteImagetDto.imageUrls.map(url => this.s3.delete(url)));
       const event = await this.prisma.event.findUnique({ where: { id: deleteImagetDto.eventId } });
       if (!event) {
         throw new HttpException({ success: false, message: 'event does not exists' }, HttpStatus.FORBIDDEN);
@@ -267,10 +264,12 @@ export class EventService {
     if (updateEventDto.longitude) data.longitude = +updateEventDto.longitude;
 
     if (uploadImages?.files?.length) {
-      data.bannerImages = [...(eventToUpdate.bannerImages ?? []), ...this.buildPhotoUrls(uploadImages.files)];
+      const uploaded = await this.s3.uploadMany(uploadImages.files);
+      data.bannerImages = [...(eventToUpdate.bannerImages ?? []), ...uploaded];
     }
     if (uploadImages?.photos?.length) {
-      data.photos = [...(eventToUpdate.photos ?? []), ...this.buildPhotoUrls(uploadImages.photos)];
+      const uploaded = await this.s3.uploadMany(uploadImages.photos);
+      data.photos = [...(eventToUpdate.photos ?? []), ...uploaded];
     }
 
     if (updateEventDto.capacity) {
