@@ -9,7 +9,8 @@ import { PrismaService } from '@src/prisma/prisma.service';
 import { PayStackService } from '@src/paystack/paystack.service';
 import { PurchasingType } from '@src/paystack/paystack.types';
 import { SocketGateway } from '@src/socket/socket.gateway';
-import moment from 'moment';
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const moment = require('moment') as typeof import('moment');
 import * as crypto from 'crypto';
 import * as path from 'path';
 import { UsersService } from '../../users/users.service';
