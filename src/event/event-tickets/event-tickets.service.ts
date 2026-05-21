@@ -236,7 +236,7 @@ export class EventTicketsService {
           productTitle: event.name,
           eventDate: event.startDate ? moment(event.startDate).format('dddd, MMMM DD, YYYY') : null,
           eventTime: event.startDate ? moment(event.startDate).format('h:mm A') : null,
-          eventVenue: event.location ?? null,
+          eventVenue: event.locationName ?? null,
           total: totalPrice.toLocaleString(),
           subTotal: price.toLocaleString(),
           noOfItems: noOfTickets,

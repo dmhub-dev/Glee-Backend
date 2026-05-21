@@ -31,7 +31,7 @@ export class EventService {
         name: createEventDto.name,
         vendorId: createEventDto.vendor ?? null,
         categoryId: createEventDto.category ?? null,
-        location: createEventDto.location,
+        locationName: createEventDto.location,
         city: createEventDto.city ?? null,
         country: createEventDto.country ?? null,
         latitude: createEventDto.latitude ? +createEventDto.latitude : null,
@@ -257,7 +257,7 @@ export class EventService {
     }
 
     const data: any = {};
-    const simple = ['name', 'location', 'city', 'state', 'country', 'description', 'price', 'maxTicketPurchased', 'status'];
+    const simple = ['name', 'locationName', 'city', 'state', 'country', 'description', 'price', 'maxTicketPurchased', 'status'];
     simple.forEach(k => { if ((updateEventDto as any)[k] !== undefined) data[k] = (updateEventDto as any)[k]; });
 
     if (updateEventDto.latitude) data.latitude = +updateEventDto.latitude;

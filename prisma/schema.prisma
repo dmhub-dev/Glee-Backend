@@ -201,7 +201,7 @@ model Event {
   capacity           Int?
   maxTicketPurchased Int?
   availableTickets   Int?
-  location           String?
+  locationName       String?
   city               String?
   state              String?
   country            String?
@@ -218,6 +218,8 @@ model Event {
   deletedAt          DateTime?
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt
+  locationId         String?
+  location           Location?    @relation(fields: [locationId], references: [id])
 
   schedules        EventSchedule[]
   tickets          EventTicket[]
@@ -507,8 +509,10 @@ model Media {
   access    MediaAccess @default(PUBLIC)
   vendorId  String?
   vendor    Vendor?     @relation(fields: [vendorId], references: [id])
-  createdAt DateTime    @default(now())
-  updatedAt DateTime    @updatedAt
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  locationId String?
+  location   Location?   @relation(fields: [locationId], references: [id])
 }
 
 // ─── Currency ─────────────────────────────────────────────────────────────────
@@ -655,4 +659,24 @@ model RolePermission {
 
   @@id([roleId, permissionId])
   @@map("role_permissions")
+}
+
+model Location {
+  id                 String       @id @default(cuid())
+  name               String
+  address            String
+  capacity           Int
+  isIndoors          Boolean      @default(false)
+  isOutdoors         Boolean      @default(false)
+  latitude           Float
+  longitude          Float
+  floorPlanImageUrl  String?
+  isParkingAvailable Boolean      @default(false)
+  status             EntityStatus @default(ACTIVE)
+  locationPictures   Media[]
+  events             Event[]
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  @@map("locations")
 }
