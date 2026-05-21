@@ -194,7 +194,7 @@ export class EventTicketsService {
 
     try {
       const notification = await this.notificationService.addNotification({
-        notificationType: NotificationType.EVENT_TICKET,
+        type: NotificationType.EVENT_TICKET,
         orderModel: 'EventTicket',
         orderPayload: eventTicket.id,
         body: `A new Event Ticket has been purchased by ${user?.name}.`,
