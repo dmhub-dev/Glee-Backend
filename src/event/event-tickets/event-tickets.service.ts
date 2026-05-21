@@ -1,4 +1,4 @@
-import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { NotificationType } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { EmailService } from '@src/email-server/email.service';
@@ -21,6 +21,8 @@ import { PaginationQueryDto } from './dto/pagination-query.dto';
 
 @Injectable()
 export class EventTicketsService {
+  private readonly logger = new Logger(EventTicketsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly eventSharedService: EventSharedService,
@@ -121,8 +123,12 @@ export class EventTicketsService {
   async confirmPurchase(dto: ConfirmPurchaseDto) {
     const result = await this.payStackService.verifyTransaction(dto.verificationToken);
     const paystackData = (result as any)?.paystack?.data;
-    if (!paystackData || paystackData.status !== 'success') {
-      throw new HttpException('Payment not verified', HttpStatus.BAD_REQUEST);
+    this.logger.debug(`Paystack verify data: ${JSON.stringify(paystackData)}`);
+    if (!paystackData?.reference) {
+      throw new HttpException('Payment verification failed', HttpStatus.BAD_REQUEST);
+    }
+    if (paystackData.status === 'failed' || paystackData.status === 'abandoned') {
+      throw new HttpException('Payment was not successful', HttpStatus.BAD_REQUEST);
     }
     await this.createPurchasedEventTicket(paystackData.metadata, paystackData.reference);
     return { success: true, message: 'Ticket confirmed' };
@@ -141,7 +147,8 @@ export class EventTicketsService {
       if (category) price = Number(category.price);
     }
 
-    const totalPrice = price * (metadata.noOfTickets ?? 1);
+    const noOfTickets = parseInt(String(metadata.noOfTickets ?? 1), 10);
+    const totalPrice = price * noOfTickets;
 
     const payment = await this.prisma.payment.create({
       data: {
@@ -151,7 +158,7 @@ export class EventTicketsService {
         paymentMethod: 'PAYSTACK',
         totalPrice: new Decimal(totalPrice),
         perItemPrice: new Decimal(price),
-        noOfItems: metadata.noOfTickets ?? 1,
+        noOfItems: noOfTickets,
         isPaid: true,
         isAvailable: false,
       },
@@ -163,7 +170,7 @@ export class EventTicketsService {
         userId: metadata.userId,
         paymentId: payment.id,
         ticketCategoryId: metadata.ticketCategoryId,
-        quantity: metadata.noOfTickets ?? 1,
+        quantity: noOfTickets,
         totalPrice: new Decimal(totalPrice),
         preOrderMenu: metadata.preOrderMenu,
       },
@@ -171,13 +178,13 @@ export class EventTicketsService {
 
     await this.prisma.event.update({
       where: { id: event.id },
-      data: { availableTickets: { decrement: metadata.noOfTickets ?? 1 } },
+      data: { availableTickets: { decrement: noOfTickets } },
     });
 
     if (metadata.ticketCategoryId) {
       await this.prisma.ticketCategory.update({
         where: { id: metadata.ticketCategoryId },
-        data: { available: { decrement: metadata.noOfTickets ?? 1 } },
+        data: { available: { decrement: noOfTickets } },
       });
     }
 
@@ -232,7 +239,7 @@ export class EventTicketsService {
           eventVenue: event.location ?? null,
           total: totalPrice.toLocaleString(),
           subTotal: price.toLocaleString(),
-          noOfItems: metadata.noOfTickets ?? 1,
+          noOfItems: noOfTickets,
           productImage: event.bannerImages?.[0] ?? null,
           orderType: 'Event',
         },
