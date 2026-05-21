@@ -13,6 +13,7 @@ import { UsersModule } from './users/users.module';
 import { AuthModule } from './auth/auth.module';
 import { EventModule } from './event/event.module';
 import { CategoriesModule } from './categories/categories.module';
+import { LocationModule } from './location/location.module';
 import { ServicesModule } from './services/services.module';
 import { PaymentModule } from './payment/payment.module';
 import { VendorModule } from './vendor/vendor.module';
@@ -52,6 +53,7 @@ import { CronModule } from '@src/cron/cron.module';
     AuthModule,
     EventModule,
     CategoriesModule,
+    LocationModule,
     ServicesModule,
     PaymentModule,
     VendorModule,
