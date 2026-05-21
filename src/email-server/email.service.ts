@@ -1,64 +1,65 @@
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import * as nodemailer from 'nodemailer';
-import * as Email from 'email-templates';
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import { Resend } from 'resend';
+import * as handlebars from 'handlebars';
+import * as fs from 'fs';
 import * as path from 'path';
 
-import { Transporter } from 'nodemailer';
-import SMTPTransport from 'nodemailer/lib/smtp-transport';
+export interface SendMailOptions {
+  template: string
+  message: {
+    to: string | string[]
+    subject: string
+    attachments?: unknown[]  // accepted but unused — Resend handles assets via URLs
+  }
+  locals: Record<string, unknown>
+}
 
 @Injectable()
 export class EmailService {
-  transporter: Transporter<SMTPTransport.SentMessageInfo> = null;
+  private readonly logger = new Logger(EmailService.name);
+  private readonly resend: Resend;
+  private readonly from: string;
+  private readonly logoCid: string;
 
-  constructor(private configService: ConfigService) {
-    const config = this.configService.get('EMAIL_SMTP');
-    this.transporter = nodemailer.createTransport({
-      port: config.MAIL_PORT,
-      host: config.MAIL_HOST,
-      auth: {
-        user: config.MAIL_USERNAME,
-        pass: config.MAIL_PASSWORD,
-      },
-    });
+  constructor(private readonly config: ConfigService) {
+    this.resend = new Resend(this.config.get<string>('RESEND_API_KEY'));
+    this.from = this.config.get<string>('RESEND_FROM') ?? 'Glee <tickets@gleefolder.com>';
+
+    // Pre-compute inline logo data URI so cid:logo in templates resolves
+    const logoPath = path.join(process.cwd(), 'views', 'logo.svg');
+    const logoB64 = fs.readFileSync(logoPath).toString('base64');
+    this.logoCid = `data:image/svg+xml;base64,${logoB64}`;
   }
 
-  sendMail(options: Email.EmailOptions) {
-    const email = new Email({
-      views: { root: './views', options: { extension: 'hbs' } },
-      message: {
-        from: this.configService.get('EMAIL_SMTP').MAIL_FROM_ADDRESS,
-      },
-      preview: false,
-      send: true,
-      transport: this.transporter,
-      // <https://github.com/Automattic/juice>
-      juice: true,
-      // Override juice global settings <https://github.com/Automattic/juice#juicecodeblocks>
-      juiceSettings: {
-        tableElements: ['TABLE'],
-      },
-      juiceResources: {
-        preserveImportant: true,
-        webResources: {
-          //
-          // this is the relative directory to your CSS/image assets
-          // and its default path is `build/`:
-          //
-          // e.g. if you have the following in the `<head`> of your template:
-          // `<link rel="stylesheet" href="style.css" data-inline="data-inline">`
-          // then this assumes that the file `build/style.css` exists
-          //
-          relativeTo: path.resolve('views'),
-          //
-          // but you might want to change it to something like:
-          // relativeTo: path.join(__dirname, '..', 'assets')
-          // (so that you can re-use CSS/images that are used in your web-app)
-          //
-        },
-      },
+  async sendMail(options: SendMailOptions): Promise<void> {
+    const templatePath = path.join(process.cwd(), 'views', options.template, 'html.hbs');
+    const source = fs.readFileSync(templatePath, 'utf-8');
+
+    handlebars.registerHelper('gt', (a: number, b: number) => a > b);
+
+    const compiled = handlebars.compile(source);
+    const rawHtml = compiled(options.locals);
+
+    // Replace nodemailer CID references with inline data URIs
+    const html = rawHtml.replace(/cid:logo/g, this.logoCid);
+
+    const to = Array.isArray(options.message.to)
+      ? (options.message.to.filter(Boolean) as string[])
+      : [options.message.to as string];
+
+    const { data, error } = await this.resend.emails.send({
+      from: this.from,
+      to,
+      subject: options.message.subject,
+      html,
     });
 
-    return email.send(options);
+    if (error) {
+      this.logger.error(`Resend error: ${JSON.stringify(error)}`);
+      throw new Error(error.message);
+    }
+
+    this.logger.log(`Email sent: id=${data?.id} to=${to.join(',')}`);
   }
 }
