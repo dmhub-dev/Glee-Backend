@@ -195,15 +195,14 @@ export class EventTicketsService {
     try {
       const notification = await this.notificationService.addNotification({
         type: NotificationType.EVENT_TICKET,
-        orderModel: 'EventTicket',
-        orderPayload: eventTicket.id,
-        body: `A new Event Ticket has been purchased by ${user?.name}.`,
+        eventTicketId: eventTicket.id,
+        userId: admin?.id,
       } as any);
 
       SocketGateway.emitEvent('notification', {
-        notificationType: NotificationType.EVENT_TICKET,
+        type: NotificationType.EVENT_TICKET,
         body: `A new Event Ticket has been purchased by ${user?.name}.`,
-        orderPayload: eventTicket.id,
+        eventTicketId: eventTicket.id,
         _id: (notification as any)?.id,
       }, admin?.id);
     } catch (e) {
