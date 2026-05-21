@@ -5,6 +5,7 @@ import { CurrentUser } from '../../auth/jwt.strategy';
 import { ApiResponses } from 'src/shared/response';
 import { EventTicketsService } from './event-tickets.service';
 import { CreateEventTicketDto } from './dto/create-event-ticket.dto';
+import { CreateGuestTicketDto } from './dto/create-guest-ticket.dto';
 import { PaginationQueryDto } from './dto/pagination-query.dto';
 
 @Controller('event/tickets/')
@@ -19,6 +20,11 @@ export class EventTicketsController {
     @CurrentUser() currentUser,
   ) {
     return this.eventTicketsService.create(createEventTicketDto, currentUser);
+  }
+
+  @Post('initiate-guest')
+  initiateGuestPurchase(@Body() dto: CreateGuestTicketDto) {
+    return this.eventTicketsService.initiateGuestPurchase(dto);
   }
 
   @ApiResponses(true, [UserRole.USER])
