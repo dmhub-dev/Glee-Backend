@@ -163,6 +163,13 @@ export class EventTicketsService {
       data: { availableTickets: { decrement: metadata.noOfTickets ?? 1 } },
     });
 
+    if (metadata.ticketCategoryId) {
+      await this.prisma.ticketCategory.update({
+        where: { id: metadata.ticketCategoryId },
+        data: { available: { decrement: metadata.noOfTickets ?? 1 } },
+      });
+    }
+
     const admin = await this.prisma.user.findFirst({ where: { role: { name: 'ADMIN' }, isDeleted: false } });
     const user = await this.userService.findOne({ id: metadata.userId });
 

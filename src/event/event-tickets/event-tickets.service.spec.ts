@@ -123,3 +123,104 @@ describe('EventTicketsService.initiateGuestPurchase', () => {
     ).rejects.toThrow(HttpException);
   });
 });
+
+describe('EventTicketsService.createPurchasedEventTicket - tier decrement', () => {
+  let service: EventTicketsService;
+  let prisma: any;
+  let userService: any;
+  let emailService: any;
+
+  const mockEventData = {
+    id: 'event-1',
+    name: 'Test Event',
+    price: 1000,
+    bannerImages: [],
+    location: 'Nairobi',
+    startDate: new Date('2026-06-01T20:00:00Z'),
+  };
+
+  const mockUserData = { id: 'user-1', name: 'Jane', email: 'jane@example.com' };
+
+  beforeEach(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        EventTicketsService,
+        {
+          provide: PrismaService,
+          useValue: {
+            user: {
+              upsert: jest.fn(),
+              findFirst: jest.fn().mockResolvedValue({ id: 'admin-1', email: 'admin@glee.app' }),
+            },
+            payment: {
+              findUnique: jest.fn().mockResolvedValue(null),
+              create: jest.fn().mockResolvedValue({ id: 'payment-1' }),
+            },
+            eventTicket: {
+              create: jest.fn().mockResolvedValue({ id: 'ticket-1', eventId: 'event-1', userId: 'user-1' }),
+            },
+            event: { update: jest.fn() },
+            ticketCategory: {
+              findUnique: jest.fn(),
+              update: jest.fn(),
+            },
+          },
+        },
+        {
+          provide: EventSharedService,
+          useValue: { helperEventFindById: jest.fn().mockResolvedValue(mockEventData) },
+        },
+        {
+          provide: UsersService,
+          useValue: { findOne: jest.fn().mockResolvedValue(mockUserData) },
+        },
+        { provide: EmailService, useValue: { sendMail: jest.fn() } },
+        {
+          provide: NotificationService,
+          useValue: { addNotification: jest.fn().mockResolvedValue({ id: 'notif-1' }) },
+        },
+        {
+          provide: PayStackService,
+          useValue: { createPaymentIntent: jest.fn() },
+        },
+      ],
+    }).compile();
+
+    service = module.get<EventTicketsService>(EventTicketsService);
+    prisma = module.get(PrismaService);
+    userService = module.get(UsersService);
+    emailService = module.get(EmailService);
+  });
+
+  it('decrements ticketCategory.available when ticketCategoryId in metadata', async () => {
+    await service.createPurchasedEventTicket(
+      {
+        userId: 'user-1',
+        eventId: 'event-1',
+        ticketCategoryId: 'cat-1',
+        noOfTickets: 2,
+        purchasingType: 'EVENT_TICKET',
+      },
+      'paystack-ref-123',
+    );
+
+    expect(prisma.ticketCategory.update).toHaveBeenCalledWith({
+      where: { id: 'cat-1' },
+      data: { available: { decrement: 2 } },
+    });
+  });
+
+  it('does not call ticketCategory.update when no ticketCategoryId', async () => {
+    await service.createPurchasedEventTicket(
+      {
+        userId: 'user-1',
+        eventId: 'event-1',
+        noOfTickets: 1,
+        purchasingType: 'EVENT_TICKET',
+      },
+      'paystack-ref-456',
+    );
+
+    expect(prisma.ticketCategory.update).not.toHaveBeenCalled();
+  });
+});
