@@ -1,5 +1,18 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEmail, IsNotEmpty, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsEmail, IsNotEmpty, IsNumber, IsOptional, IsString, Min, ValidateNested, IsArray } from 'class-validator';
+
+export class MenuItemOrderDto {
+  @ApiProperty()
+  @IsString()
+  @IsNotEmpty()
+  id: string;
+
+  @ApiProperty({ default: 1 })
+  @IsNumber()
+  @Min(1)
+  quantity: number = 1;
+}
 
 export class CreateGuestTicketDto {
   @ApiProperty()
@@ -31,4 +44,11 @@ export class CreateGuestTicketDto {
   @IsString()
   @IsNotEmpty()
   guestPhone: string;
+
+  @ApiPropertyOptional({ type: [MenuItemOrderDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => MenuItemOrderDto)
+  menuItems?: MenuItemOrderDto[];
 }

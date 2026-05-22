@@ -11,7 +11,7 @@ import { UpdateEventDto } from './dto/update-event.dto';
 import { EventSharedService } from './shared/shared.event.service';
 import { S3Service } from '../shared/s3.service';
 
-const EVENT_INCLUDE = { vendor: true, category: true, schedules: true, ticketCategories: true };
+const EVENT_INCLUDE = { location: true, ticketCategories: true, menuItems: true };
 
 @Injectable()
 export class EventService {
@@ -29,8 +29,7 @@ export class EventService {
     const event = await this.prisma.event.create({
       data: {
         name: createEventDto.name,
-        vendorId: createEventDto.vendor ?? null,
-        categoryId: createEventDto.category ?? null,
+        description: createEventDto.description ?? null,
         locationName: createEventDto.location,
         city: createEventDto.city ?? null,
         country: createEventDto.country ?? null,
@@ -46,17 +45,26 @@ export class EventService {
       },
     });
 
-    const tiers = Array.isArray(createEventDto.ticketCategories)
-      ? createEventDto.ticketCategories
-      : [];
-    if (tiers.length > 0) {
+    if (createEventDto.ticketCategories?.length) {
       await this.prisma.ticketCategory.createMany({
-        data: tiers.map(t => ({
+        data: createEventDto.ticketCategories.map(tc => ({
           eventId: event.id,
-          name: t.name,
-          price: t.price,
-          capacity: t.capacity ?? null,
-          available: t.capacity ?? null,
+          name: tc.name,
+          price: tc.price,
+          capacity: tc.capacity ?? null,
+          available: tc.capacity ?? null,
+        })),
+      });
+    }
+
+    if (createEventDto.menuItems?.length) {
+      await this.prisma.eventMenuItem.createMany({
+        data: createEventDto.menuItems.map(m => ({
+          eventId: event.id,
+          name: m.name,
+          category: m.category ?? 'other',
+          price: m.price,
+          description: m.description ?? null,
         })),
       });
     }
@@ -100,7 +108,7 @@ export class EventService {
   }
 
   async findAllByVendorId({ page, limit, search }: RetrieveEventDto, user: any) {
-    const where: any = { isDeleted: false, vendorId: user.vendor_id ?? user.vendorId };
+    const where: any = { isDeleted: false };
     if (search) where.name = { contains: search, mode: 'insensitive' };
 
     const [data, docCount] = await Promise.all([
@@ -287,16 +295,29 @@ export class EventService {
 
     await this.prisma.event.update({ where: { id }, data });
 
-    if (Array.isArray(updateEventDto.ticketCategories)) {
+    if ((updateEventDto as any).ticketCategories?.length) {
       await this.prisma.ticketCategory.deleteMany({ where: { eventId: id } });
-      if (updateEventDto.ticketCategories.length > 0) {
-        await this.prisma.ticketCategory.createMany({
-          data: updateEventDto.ticketCategories.map(t => ({
+      await this.prisma.ticketCategory.createMany({
+        data: (updateEventDto as any).ticketCategories.map((tc: { name: string; price: number; capacity?: number }) => ({
+          eventId: id,
+          name: tc.name,
+          price: tc.price,
+          capacity: tc.capacity ?? null,
+          available: tc.capacity ?? null,
+        })),
+      });
+    }
+
+    if (updateEventDto.menuItems !== undefined) {
+      await this.prisma.eventMenuItem.deleteMany({ where: { eventId: id } });
+      if (updateEventDto.menuItems.length) {
+        await this.prisma.eventMenuItem.createMany({
+          data: updateEventDto.menuItems.map(m => ({
             eventId: id,
-            name: t.name,
-            price: t.price,
-            capacity: t.capacity ?? null,
-            available: t.capacity ?? null,
+            name: m.name,
+            category: m.category ?? 'other',
+            price: m.price,
+            description: m.description ?? null,
           })),
         });
       }

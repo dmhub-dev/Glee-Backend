@@ -20,10 +20,21 @@ export class EventScheduleDto {
   time: Date;
 }
 
+export class MenuItemInputDto {
+  name: string;
+  category?: string;
+  price: number;
+  description?: string;
+}
+
 export class CreateEventDto {
   @ApiProperty()
   @IsNotEmpty({ message: 'Name field should not be empty.' })
   name: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  description?: string;
 
   @ApiProperty({ required: false })
   @IsOptional()
@@ -111,4 +122,16 @@ export class CreateEventDto {
   })
   @IsOptional()
   ticketCategories?: TicketCategoryInputDto[];
+
+  @Transform(({ value }) => {
+    if (!value) return [];
+    try { return toJson(value); } catch { return []; }
+  })
+  @ApiProperty({
+    required: false,
+    type: 'string',
+    description: 'JSON array: [{ "name": "Hennessy", "category": "drink", "price": 2500 }]',
+  })
+  @IsOptional()
+  menuItems?: MenuItemInputDto[];
 }

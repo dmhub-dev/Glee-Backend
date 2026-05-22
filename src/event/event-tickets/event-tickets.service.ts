@@ -102,7 +102,23 @@ export class EventTicketsService {
       },
     });
 
-    const totalPrice = price * dto.noOfTickets;
+    let menuTotal = 0;
+    const resolvedMenuItems: { id: string; name: string; price: number; quantity: number }[] = [];
+    if (dto.menuItems?.length) {
+      const menuItemRecords = await this.prisma.eventMenuItem.findMany({
+        where: { id: { in: dto.menuItems.map(m => m.id) }, eventId: dto.eventId },
+      });
+      for (const ordered of dto.menuItems) {
+        const record = menuItemRecords.find(r => r.id === ordered.id);
+        if (record) {
+          const lineTotal = Number(record.price) * ordered.quantity;
+          menuTotal += lineTotal;
+          resolvedMenuItems.push({ id: record.id, name: record.name, price: Number(record.price), quantity: ordered.quantity });
+        }
+      }
+    }
+
+    const totalPrice = price * dto.noOfTickets + menuTotal;
 
     const metadata = {
       purchasingType: PurchasingType.EVENT_TICKET,
@@ -110,6 +126,7 @@ export class EventTicketsService {
       noOfTickets: dto.noOfTickets,
       ticketCategoryId: dto.ticketCategoryId,
       userId: user.id,
+      preOrderMenu: resolvedMenuItems.length ? resolvedMenuItems : undefined,
     };
 
     const paymentIntent = await this.payStackService.createPaymentIntent({

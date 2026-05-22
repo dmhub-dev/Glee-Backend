@@ -145,8 +145,22 @@ model Event {
   category           Category?        @relation(fields: [categoryId], references: [id])
   ticketCategories   TicketCategory[]
   eventTickets       EventTicket[]
+  menuItems          EventMenuItem[]
 
   @@index([isDeleted])
+}
+
+model EventMenuItem {
+  id          String   @id @default(cuid())
+  eventId     String
+  event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  name        String
+  category    String   @default("other")
+  price       Decimal  @db.Decimal(10, 2)
+  description String?
+  createdAt   DateTime @default(now())
+
+  @@map("event_menu_items")
 }
 
 model TicketCategory {
