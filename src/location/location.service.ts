@@ -1,19 +1,24 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { EntityStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '@src/prisma/prisma.service';
+import { S3Service } from '../shared/s3.service';
 import { CreateLocationDto } from './dto/create-location.dto';
 import { FilterLocationDto } from './dto/filter-location.dto';
 import { UpdateLocationDto } from './dto/update-location.dto';
 
 @Injectable()
 export class LocationService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly s3: S3Service,
+  ) {}
 
   async create(dto: CreateLocationDto) {
     const location = await this.prisma.location.create({
       data: {
         name: dto.name,
         address: dto.address,
+        description: dto.description,
         capacity: dto.capacity,
         isIndoors: dto.isIndoors ?? false,
         isOutdoors: dto.isOutdoors ?? false,
@@ -94,6 +99,19 @@ export class LocationService {
     }
 
     return { success: true, message: 'Location updated successfully', data: updated };
+  }
+
+  async uploadPictures(id: string, files: Express.Multer.File[]) {
+    const location = await this.prisma.location.findUnique({ where: { id } });
+    if (!location) throw new NotFoundException({ success: false, message: 'No location with this id' });
+
+    const urls = await this.s3.uploadMany(files, 'locations');
+    const updated = await this.prisma.location.update({
+      where: { id },
+      data: { pictures: [...location.pictures, ...urls] },
+    });
+
+    return { success: true, message: 'Pictures uploaded successfully', data: updated };
   }
 
   async remove(id: string) {

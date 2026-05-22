@@ -27,6 +27,11 @@ export class UpdateLocationDto {
 
   @ApiPropertyOptional()
   @IsOptional()
+  @IsString()
+  description?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
   @IsBoolean()
   isIndoors?: boolean;
 

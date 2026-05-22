@@ -26,6 +26,11 @@ export class CreateLocationDto {
   @Min(1)
   capacity: number;
 
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  description?: string;
+
   @ApiPropertyOptional({ default: false })
   @IsOptional()
   @IsBoolean()
