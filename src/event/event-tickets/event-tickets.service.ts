@@ -165,7 +165,9 @@ export class EventTicketsService {
     }
 
     const noOfTickets = parseInt(String(metadata.noOfTickets ?? 1), 10);
-    const totalPrice = price * noOfTickets;
+    const preOrderMenu: { id: string; name: string; price: number; quantity: number }[] = metadata.preOrderMenu ?? [];
+    const menuTotal = preOrderMenu.reduce((sum, item) => sum + item.price * item.quantity, 0);
+    const totalPrice = price * noOfTickets + menuTotal;
 
     const payment = await this.prisma.payment.create({
       data: {
@@ -272,7 +274,13 @@ export class EventTicketsService {
           eventTime,
           eventVenue,
           total: totalPrice.toLocaleString(),
-          subTotal: price.toLocaleString(),
+          subTotal: (price * noOfTickets).toLocaleString(),
+          menuItems: preOrderMenu.map(item => ({
+            name: item.name,
+            quantity: item.quantity,
+            price: (item.price * item.quantity).toLocaleString(),
+          })),
+          menuTotal: menuTotal > 0 ? menuTotal.toLocaleString() : null,
           noOfItems: noOfTickets,
           productImage: event.bannerImages?.[0] ?? null,
           orderType: 'Event',
