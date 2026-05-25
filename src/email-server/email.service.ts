@@ -1,35 +1,46 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Resend } from 'resend';
 import * as handlebars from 'handlebars';
 import * as fs from 'fs';
 import * as path from 'path';
+import { S3Service } from '@src/shared/s3.service';
 
 export interface SendMailOptions {
   template: string
   message: {
     to: string | string[]
     subject: string
-    attachments?: unknown[]  // accepted but unused — Resend handles assets via URLs
+    attachments?: unknown[]
   }
   locals: Record<string, unknown>
 }
 
 @Injectable()
-export class EmailService {
+export class EmailService implements OnModuleInit {
   private readonly logger = new Logger(EmailService.name);
   private readonly resend: Resend;
   private readonly from: string;
-  private readonly logoCid: string;
+  private logoUrl: string;
 
-  constructor(private readonly config: ConfigService) {
+  constructor(
+    private readonly config: ConfigService,
+    private readonly s3: S3Service,
+  ) {
     this.resend = new Resend(this.config.get<string>('RESEND_API_KEY'));
     this.from = this.config.get<string>('RESEND_FROM') ?? 'Glee <tickets@gleefolder.com>';
+  }
 
-    // Pre-compute inline logo data URI so cid:logo in templates resolves
-    const logoPath = path.join(process.cwd(), 'views', 'logo.svg');
-    const logoB64 = fs.readFileSync(logoPath).toString('base64');
-    this.logoCid = `data:image/svg+xml;base64,${logoB64}`;
+  async onModuleInit() {
+    try {
+      const logoPath = path.join(process.cwd(), 'views', 'logo.svg');
+      const logoBuffer = fs.readFileSync(logoPath);
+      this.logoUrl = await this.s3.uploadBuffer(logoBuffer, 'static/logo.svg', 'image/svg+xml');
+      this.logger.log(`Logo uploaded: ${this.logoUrl}`);
+    } catch (err) {
+      this.logger.warn(`Logo S3 upload failed, email logo will be broken: ${(err as Error).message}`);
+      this.logoUrl = '';
+    }
   }
 
   async sendMail(options: SendMailOptions): Promise<void> {
@@ -39,10 +50,7 @@ export class EmailService {
     handlebars.registerHelper('gt', (a: number, b: number) => a > b);
 
     const compiled = handlebars.compile(source);
-    const rawHtml = compiled(options.locals);
-
-    // Replace nodemailer CID references with inline data URIs
-    const html = rawHtml.replace(/cid:logo/g, this.logoCid);
+    const rawHtml = compiled({ ...options.locals, logoUrl: this.logoUrl });
 
     const to = Array.isArray(options.message.to)
       ? (options.message.to.filter(Boolean) as string[])
@@ -52,7 +60,7 @@ export class EmailService {
       from: this.from,
       to,
       subject: options.message.subject,
-      html,
+      html: rawHtml,
     });
 
     if (error) {

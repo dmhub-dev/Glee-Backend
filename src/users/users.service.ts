@@ -6,9 +6,7 @@ import { JwtService } from '@nestjs/jwt';
 import { comparePasswords } from '../shared/utils';
 import {
   LoginDto,
-  LoginVendorDto,
   RegisterUserDto,
-  RegisterVendorDto,
   VerifyOtpDto,
 } from '../auth/dto/create-auth.dto';
 
@@ -18,18 +16,11 @@ export const USER_PUBLIC_FIELDS = {
   email: true,
   phone: true,
   address: true,
-  city: true,
-  state: true,
-  country: true,
   profileImage: true,
   role: true,
-  vendorId: true,
-  vendor: true,
   notificationStatus: true,
   profileStatus: true,
   haveNewNotification: true,
-  isAllChatRead: true,
-  notificationIds: true,
 };
 
 export const USER_AUTH_FIELDS = {
@@ -46,10 +37,6 @@ export class UsersService {
 
   async findOne(where: { id?: string; email?: string; otp?: number }) {
     return this.prisma.user.findFirst({ where: { ...where, isDeleted: false } });
-  }
-
-  async readChat(id: string) {
-    return this.prisma.user.update({ where: { id }, data: { isAllChatRead: true } });
   }
 
   async findByLogin({ email, password, role }: LoginDto) {
@@ -102,36 +89,6 @@ export class UsersService {
     return user;
   }
 
-  async findByVendorLogin({ email, password, role }: LoginVendorDto) {
-    const user = await this.prisma.user.findFirst({
-      where: { email, role: { name: role as UserRole }, isDeleted: false },
-      include: { role: true, vendor: true },
-    });
-    if (!user) throw new HttpException('User does not exist', HttpStatus.UNAUTHORIZED);
-
-    const areEqual = await comparePasswords(user.password, password);
-    if (!areEqual) throw new HttpException('Invalid credentials', HttpStatus.UNAUTHORIZED);
-
-    if (user.isActive === 'INACTIVE') {
-      throw new HttpException(
-        `Account has been ${user.isActive}. Please contact your administrator.`,
-        HttpStatus.UNAUTHORIZED,
-      );
-    }
-
-    const { accessToken, refreshToken } = await this._createToken(user);
-    await this.prisma.user.update({
-      where: { id: user.id },
-      data: { token: accessToken, refreshToken, profileStatus: true },
-    });
-
-    return {
-      user: this._toUserDto(user),
-      accessToken,
-      refreshToken,
-    };
-  }
-
   async findByPayload(payload: { userId: string }) {
     const user = await this.prisma.user.findFirst({
       where: { id: payload.userId, isDeleted: false },
@@ -149,30 +106,14 @@ export class UsersService {
   }
 
   async create(userDto: RegisterUserDto) {
-    const { password, country, state, city, confirmPassword, ...rest } = userDto as any;
+    const { password, confirmPassword, ...rest } = userDto as any;
     const hashed = await bcrypt.hash(password, 10);
     return this.prisma.user.create({
       data: {
         ...rest,
         password: hashed,
-        notificationIds: [],
         role: { connect: { name: UserRole.USER } },
       },
-    });
-  }
-
-  async createVendorAuth(dto: RegisterVendorDto, vendorId: string) {
-    const password = await bcrypt.hash(dto.password, 10);
-    return this.prisma.user.create({
-      data: {
-        name: (dto as any).username,
-        password,
-        email: dto.email,
-        role: { connect: { name: UserRole.VENDOR } },
-        isActive: 'INACTIVE' as any,
-        vendorId,
-        notificationIds: [],
-      } as any,
     });
   }
 
@@ -260,7 +201,6 @@ export class UsersService {
       email: user.email,
       role: user.role?.name ?? null,
       profileImage: user.profileImage ?? null,
-      vendorId: user.vendorId ?? null,
       profileStatus: user.profileStatus,
       notificationStatus: user.notificationStatus,
     };

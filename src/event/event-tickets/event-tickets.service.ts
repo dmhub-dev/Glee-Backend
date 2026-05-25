@@ -12,9 +12,9 @@ import { SocketGateway } from '@src/socket/socket.gateway';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const moment = require('moment') as typeof import('moment');
 import * as crypto from 'crypto';
-import * as path from 'path';
 import { UsersService } from '../../users/users.service';
 import { EventSharedService } from '../shared/shared.event.service';
+import { S3Service } from '@src/shared/s3.service';
 import { CreateEventTicketDto } from './dto/create-event-ticket.dto';
 import { CreateGuestTicketDto } from './dto/create-guest-ticket.dto';
 import { ConfirmPurchaseDto } from './dto/confirm-purchase.dto';
@@ -31,6 +31,7 @@ export class EventTicketsService {
     private readonly emailService: EmailService,
     private readonly notificationService: NotificationService,
     private readonly payStackService: PayStackService,
+    private readonly s3: S3Service,
   ) {
     // Register this service as the event ticket webhook handler
     this.payStackService.eventTicketsHandler = this;
@@ -234,18 +235,16 @@ export class EventTicketsService {
         color: { dark: '#FF2D8F', light: '#131328' },
       });
       const qrBuffer = Buffer.from(qrDataUrl.replace(/^data:image\/png;base64,/, ''), 'base64');
+      const qrUrl = await this.s3.uploadBuffer(qrBuffer, `qr-codes/${ticketRef}.png`, 'image/png');
 
       await this.emailService.sendMail({
         template: 'event-ticket',
         message: {
           to: [user?.email].filter(Boolean),
           subject: `Your ticket for ${event.name} — Glee`,
-          attachments: [
-            { filename: 'logo.svg', path: path.join(process.cwd(), 'views', 'logo.svg'), cid: 'logo' },
-            { filename: 'qrcode.png', content: qrBuffer, encoding: 'base64', cid: 'qrcode' },
-          ],
         },
         locals: {
+          qrCode: qrUrl,
           purchasedOn: moment().format('MMMM DD, YYYY'),
           userEmail: user?.email,
           userName: user?.name,

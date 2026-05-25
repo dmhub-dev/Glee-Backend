@@ -7,13 +7,11 @@ import { UsersModule } from '../users/users.module';
 import { JwtStrategy } from './jwt.strategy';
 import { OnesignalModule } from 'src/onesignal/onesignal.module';
 import { ConfigService } from '@nestjs/config';
-import { VendorModule } from '@src/vendor/vendor.module';
 
 @Module({
   imports: [
     UsersModule,
     OnesignalModule,
-    VendorModule,
     PassportModule.register({ defaultStrategy: 'jwt', property: 'user', session: false }),
     JwtModule.registerAsync({
       imports: [ConfigService],

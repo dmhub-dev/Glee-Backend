@@ -12,30 +12,13 @@ import { PrismaModule } from '@src/prisma/prisma.module';
 import { UsersModule } from './users/users.module';
 import { AuthModule } from './auth/auth.module';
 import { EventModule } from './event/event.module';
+import { EventTicketsModule } from './event/event-tickets/event-tickets.module';
 import { CategoriesModule } from './categories/categories.module';
 import { LocationModule } from './location/location.module';
-import { ServicesModule } from './services/services.module';
-import { PaymentModule } from './payment/payment.module';
-import { VendorModule } from './vendor/vendor.module';
-import { UserManagementModule } from './user-management/user-management.module';
-import { BookingsModule } from './bookings/bookings.module';
-import { CommonApiModule } from '@src/common.api/common-api.module';
-import { SocketModule } from '@src/socket/socket.module';
-import { SocketGateway } from '@src/socket/socket.gateway';
-import { SocketEventHandler } from '@src/socket/socket_event.handler';
-import { NotificationModule } from '@src/notification/notification.module';
 import { OnesignalModule } from './onesignal/onesignal.module';
 import { EmailModule } from '@src/email-server/email.module';
-import { ChatModule } from './chat/chat.module';
+import { NotificationModule } from './notification/notification.module';
 import { AppService } from '@src/app.service';
-import { PaystackModule } from '@src/paystack/paystack.module';
-import { WalletModule } from '@src/wallet/wallet.module';
-import { CurrencyModule } from '@src/currency/currency.module';
-import { LanguageModule } from '@src/language/language.module';
-import { ArtistModule } from '@src/artist/artist.module';
-import { ReminderModule } from '@src/reminder/reminder.module';
-import { MediaModule } from '@src/media/media.module';
-import { CronModule } from '@src/cron/cron.module';
 
 @Module({
   imports: [
@@ -44,7 +27,10 @@ import { CronModule } from '@src/cron/cron.module';
       isGlobal: true,
       ignoreEnvFile: false,
       load: [configuration],
-      envFilePath: `${process.cwd()}/${process.env.NODE_ENV}.env`,
+      envFilePath: [
+        `${process.cwd()}/${process.env.NODE_ENV}.env`,
+        `${process.cwd()}/.env`,
+      ],
     }),
     ScheduleModule.forRoot(),
     CacheModule.register({ isGlobal: true }),
@@ -52,32 +38,15 @@ import { CronModule } from '@src/cron/cron.module';
     UsersModule,
     AuthModule,
     EventModule,
+    EventTicketsModule,
     CategoriesModule,
     LocationModule,
-    ServicesModule,
-    PaymentModule,
-    VendorModule,
-    UserManagementModule,
-    BookingsModule,
-    CommonApiModule,
-    SocketModule,
-    NotificationModule,
     OnesignalModule,
     EmailModule,
-    ChatModule,
-    PaystackModule,
-    WalletModule,
-    CurrencyModule,
-    LanguageModule,
-    ArtistModule,
-    ReminderModule,
-    MediaModule,
-    CronModule,
+    NotificationModule,
   ],
   providers: [
     AppService,
-    SocketGateway,
-    SocketEventHandler,
     {
       provide: APP_INTERCEPTOR,
       useClass: HttpLogInterceptor,

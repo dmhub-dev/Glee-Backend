@@ -31,6 +31,25 @@
   "exclude": [
     "node_modules",
     "dist",
-    "Release:prod"
+    "Release:prod",
+    "src/vendor",
+    "src/services",
+    "src/payment",
+    "src/user-management",
+    "src/bookings",
+    "src/common.api",
+    "src/socket",
+    "src/notification",
+    "src/chat",
+    "src/paystack",
+    "src/wallet",
+    "src/currency",
+    "src/language",
+    "src/artist",
+    "src/reminder",
+    "src/media",
+    "src/cron",
+    "src/event/event-tickets",
+    "src/seeder"
   ]
 }

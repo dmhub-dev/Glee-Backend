@@ -41,6 +41,19 @@ export class S3Service {
     return Promise.all((files ?? []).map(f => this.upload(f, folder)));
   }
 
+  async uploadBuffer(buffer: Buffer, key: string, contentType: string): Promise<string> {
+    await this.client.send(
+      new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+        Body: buffer,
+        ContentType: contentType,
+        ACL: ObjectCannedACL.public_read,
+      }),
+    );
+    return `https://${this.bucket}.s3.${this.config.get('AWS_REGION')}.amazonaws.com/${key}`;
+  }
+
   async delete(url: string): Promise<void> {
     const key = url.split('.amazonaws.com/')[1];
     if (!key) return;

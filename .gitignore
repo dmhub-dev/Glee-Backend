@@ -50,3 +50,4 @@ pnpm-lock.yaml
 /generated/prisma
 /Release:prod
 rbac-seed.ts
+claude.md
