@@ -6,12 +6,20 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { S3Service } from '@src/shared/s3.service';
 
+export interface EmailAttachment {
+  filename: string;
+  content?: Buffer;
+  content_type?: string;
+  path?: string;
+  cid?: string;
+}
+
 export interface SendMailOptions {
   template: string
   message: {
     to: string | string[]
     subject: string
-    attachments?: unknown[]
+    attachments?: EmailAttachment[]
   }
   locals: Record<string, unknown>
 }
@@ -61,7 +69,10 @@ export class EmailService implements OnModuleInit {
       to,
       subject: options.message.subject,
       html: rawHtml,
-    });
+      ...(options.message.attachments?.length
+        ? { attachments: options.message.attachments }
+        : {}),
+    } as any);
 
     if (error) {
       this.logger.error(`Resend error: ${JSON.stringify(error)}`);

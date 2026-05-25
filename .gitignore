@@ -2,6 +2,9 @@
 /dist
 /node_modules
 
+# Superpowers brainstorm artifacts
+.superpowers/
+
 # Logs
 logs
 *.log

@@ -17,52 +17,27 @@
     .shell { background-color: #F0F4FF; padding: 32px 20px 48px; }
     .logo-bar { text-align: center; padding-bottom: 24px; }
 
-    /* ── Hero ── */
-    .hero-wrap { border-radius: 16px 16px 0 0; overflow: hidden; line-height: 0; }
-    .hero-img { width: 100%; display: block; max-height: 220px; object-fit: cover; }
-    .hero-overlay {
-      background: linear-gradient(to bottom, transparent 20%, rgba(10,5,30,0.88) 100%);
-      padding: 0 28px 24px;
-      margin-top: -80px;
-      position: relative;
-    }
-    .hero-eyebrow {
-      color: #a78bfa;
-      font-family: Arial, Helvetica, sans-serif;
-      font-size: 10px; font-weight: 700;
-      letter-spacing: 2.5px; text-transform: uppercase;
-      margin: 0 0 5px;
-    }
-    .hero-title {
-      color: #FFFFFF;
-      font-family: Georgia, 'Times New Roman', serif;
-      font-size: 22px; font-weight: 700;
-      margin: 0; line-height: 1.2;
-    }
-    .hero-meta { color: rgba(255,255,255,0.65); font-family: Arial, Helvetica, sans-serif; font-size: 12px; margin: 7px 0 0; }
-    .hero-meta strong { color: rgba(255,255,255,0.90); }
-
-    /* Fallback header (no event image) */
-    .fallback-header {
+    /* ── Event header (always clean — no poster image) ── */
+    .event-header {
       background: linear-gradient(135deg, #1a0533 0%, #3d1278 100%);
       border-radius: 16px 16px 0 0;
-      padding: 28px 28px 24px;
+      padding: 32px 32px 28px;
     }
-    .fallback-eyebrow {
+    .event-header-eyebrow {
       color: #a78bfa;
       font-family: Arial, Helvetica, sans-serif;
-      font-size: 10px; font-weight: 700;
+      font-size: 11px; font-weight: 700;
       letter-spacing: 2.5px; text-transform: uppercase;
-      margin: 0 0 7px;
+      margin: 0 0 10px;
     }
-    .fallback-title {
+    .event-header-title {
       color: #FFFFFF;
-      font-family: Georgia, 'Times New Roman', serif;
-      font-size: 22px; font-weight: 700;
-      margin: 0 0 7px;
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 28px; font-weight: 700;
+      margin: 0 0 10px; line-height: 1.2;
     }
-    .fallback-meta { color: rgba(255,255,255,0.60); font-family: Arial, Helvetica, sans-serif; font-size: 12px; margin: 0; }
-    .fallback-meta strong { color: rgba(255,255,255,0.85); }
+    .event-header-meta { color: rgba(255,255,255,0.70); font-family: Arial, Helvetica, sans-serif; font-size: 13px; margin: 0; line-height: 1.6; }
+    .event-header-meta strong { color: rgba(255,255,255,0.95); }
 
     /* ── Greeting ── */
     .greeting-strip {
@@ -108,42 +83,42 @@
     }
 
     /* Ticket top bar */
-    .ticket-topbar { background: linear-gradient(110deg, #7B2FBE 0%, #FF2D8F 100%); padding: 14px 20px; }
+    .ticket-topbar { background: linear-gradient(110deg, #7B2FBE 0%, #FF2D8F 100%); padding: 18px 24px; }
     .ticket-topbar-label {
       color: rgba(255,255,255,0.75);
       font-family: Arial, Helvetica, sans-serif;
-      font-size: 10px; font-weight: 700;
+      font-size: 11px; font-weight: 700;
       letter-spacing: 2px; text-transform: uppercase;
-      margin: 0 0 3px;
+      margin: 0 0 4px;
     }
     .ticket-topbar-name {
       color: #FFFFFF;
-      font-family: Georgia, 'Times New Roman', serif;
-      font-size: 18px; font-weight: 700;
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 22px; font-weight: 700;
       margin: 0;
     }
 
-    .ticket-body-wrap { padding: 18px 20px; }
+    .ticket-body-wrap { padding: 22px 24px; }
     .ticket-detail-label {
       color: #9ca3af;
       font-family: Arial, Helvetica, sans-serif;
-      font-size: 9px; font-weight: 700;
+      font-size: 10px; font-weight: 700;
       letter-spacing: 1.5px; text-transform: uppercase;
-      margin: 0 0 2px;
+      margin: 0 0 3px;
     }
-    .ticket-detail-value { color: #111827; font-family: Arial, Helvetica, sans-serif; font-size: 13px; font-weight: 600; margin: 0 0 13px; }
-    .ticket-detail-value.small { font-size: 11px; color: #374151; word-break: break-all; }
+    .ticket-detail-value { color: #111827; font-family: Arial, Helvetica, sans-serif; font-size: 15px; font-weight: 600; margin: 0 0 16px; }
+    .ticket-detail-value.small { font-size: 12px; color: #374151; word-break: break-all; }
 
     /* QR panel */
     .qr-panel {
-      background: linear-gradient(135deg, #f5f0ff, #fff0f7);
-      border: 1px solid #e9d5ff;
-      border-radius: 10px;
-      padding: 12px;
+      background: #ffffff;
+      border: 2px solid #e9d5ff;
+      border-radius: 12px;
+      padding: 16px;
       text-align: center;
     }
-    .qr-panel img { width: 90px; height: 90px; display: block; margin: 0 auto; border-radius: 4px; }
-    .qr-hint { color: #9ca3af; font-family: Arial, Helvetica, sans-serif; font-size: 9px; letter-spacing: 0.5px; margin: 7px 0 0; text-align: center; }
+    .qr-panel img { width: 170px; height: 170px; display: block; margin: 0 auto; border-radius: 4px; }
+    .qr-hint { color: #9ca3af; font-family: Arial, Helvetica, sans-serif; font-size: 10px; letter-spacing: 0.5px; margin: 10px 0 0; text-align: center; }
 
     .tear-line { border: 0; border-top: 2px dashed #e5e7eb; margin: 0 20px; }
 
@@ -222,7 +197,7 @@
       .hero-title, .fallback-title { font-size: 18px !important; }
       .ticket-topbar { padding: 12px 16px !important; }
       .ticket-body-wrap { padding: 14px 16px !important; }
-      .qr-panel img { width: 76px !important; height: 76px !important; }
+      .qr-panel img { width: 130px !important; height: 130px !important; }
     }
   </style>
 </head>
@@ -236,27 +211,14 @@
       <img src="{{logoUrl}}" alt="Glee" style="height:32px;width:auto;">
     </div>
 
-    <!-- ── HERO / HEADER ── -->
-    {{#if productImage}}
-    <div class="hero-wrap">
-      <img src="{{productImage}}" alt="{{productTitle}}" class="hero-img">
-      <div class="hero-overlay">
-        <p class="hero-eyebrow">Event Ticket &nbsp;·&nbsp; {{orderType}}</p>
-        <p class="hero-title">{{productTitle}}</p>
-        {{#if eventDate}}
-        <p class="hero-meta"><strong>{{eventDate}}</strong>{{#if eventTime}} &nbsp;·&nbsp; {{eventTime}}{{/if}}{{#if eventVenue}} &nbsp;·&nbsp; {{eventVenue}}{{/if}}</p>
-        {{/if}}
-      </div>
-    </div>
-    {{else}}
-    <div class="fallback-header">
-      <p class="fallback-eyebrow">Event Ticket &nbsp;·&nbsp; {{orderType}}</p>
-      <p class="fallback-title">{{productTitle}}</p>
+    <!-- ── EVENT HEADER ── -->
+    <div class="event-header">
+      <p class="event-header-eyebrow">Event Ticket &nbsp;·&nbsp; {{orderType}}</p>
+      <p class="event-header-title">{{productTitle}}</p>
       {{#if eventDate}}
-      <p class="fallback-meta"><strong>{{eventDate}}</strong>{{#if eventTime}} &nbsp;·&nbsp; {{eventTime}}{{/if}}{{#if eventVenue}} &nbsp;·&nbsp; {{eventVenue}}{{/if}}</p>
+      <p class="event-header-meta"><strong>{{eventDate}}</strong>{{#if eventTime}} &nbsp;·&nbsp; {{eventTime}}{{/if}}{{#if eventVenue}} &nbsp;·&nbsp; {{eventVenue}}{{/if}}</p>
       {{/if}}
     </div>
-    {{/if}}
 
     <!-- ── GREETING ── -->
     <div class="greeting-strip">
@@ -267,7 +229,7 @@
           <td class="greeting-text">Hey <strong>{{userName}}</strong>, you're in! Your ticket is confirmed.</td>
         </tr></tbody></table>
       </div>
-      <p class="greeting-sub">Present the QR code below at the venue entrance. See you there!</p>
+      <p class="greeting-sub">Your ticket{{#if (gt noOfItems 1)}}s are{{else}} is{{/if}} attached as PDF{{#if (gt noOfItems 1)}}s{{/if}} to this email. Present the QR code at the venue entrance.</p>
     </div>
 
     <!-- ── TICKET CARD ── -->
@@ -285,7 +247,7 @@
           <table width="100%" cellpadding="0" cellspacing="0">
             <tbody><tr>
               <!-- Left: attendee details -->
-              <td valign="top" style="width:58%;padding-right:16px;">
+              <td valign="top" style="width:52%;padding-right:20px;">
                 <p class="ticket-detail-label">Attendee</p>
                 <p class="ticket-detail-value">{{userName}}</p>
 
@@ -309,11 +271,12 @@
                 <p class="ticket-detail-value" style="margin-bottom:0;">{{noOfItems}} Ticket{{#if (gt noOfItems 1)}}s{{/if}}</p>
               </td>
 
-              <!-- Right: QR code -->
-              <td valign="top" style="width:42%;">
-                <div class="qr-panel">
-                  <img src="{{qrCode}}" alt="Entry QR Code">
-                  <p class="qr-hint">Scan at entrance</p>
+              <!-- Right: attached PDF notice -->
+              <td valign="top" style="width:48%;">
+                <div class="qr-panel" style="background:#fdf4ff;border-color:#e9d5ff;">
+                  <p style="font-size:36px;margin:16px 0 8px;text-align:center;">🎟️</p>
+                  <p style="color:#7c3aed;font-family:Arial,Helvetica,sans-serif;font-size:12px;font-weight:700;text-align:center;margin:0 0 6px;">PDF Ticket{{#if (gt noOfItems 1)}}s{{/if}} Attached</p>
+                  <p style="color:#9ca3af;font-family:Arial,Helvetica,sans-serif;font-size:10px;text-align:center;margin:0;">Check your email attachments.<br>Each PDF contains a QR code for entry.</p>
                 </div>
               </td>
             </tr></tbody>
@@ -373,9 +336,9 @@
     <div class="notice-outer" style="padding-top:12px;">
       <div class="notice-box">
         <p class="notice-text">
-          <strong>Entry rules:</strong> Show your QR code at the venue gate.
-          Ticket ID <em>{{ticketId}}</em> is valid for <em>{{noOfItems}} person{{#if (gt noOfItems 1)}}s{{/if}}</em> — one-time entry only.
-          This ticket is non-transferable. Doors close 30 minutes after event start.
+          <strong>Entry rules:</strong> Open the attached PDF ticket{{#if (gt noOfItems 1)}}s{{/if}} and show the QR code at the venue gate.
+          Order <em>{{ticketId}}</em> covers <em>{{noOfItems}} person{{#if (gt noOfItems 1)}}s{{/if}}</em> — each PDF is for one-time entry only.
+          Tickets are non-transferable. Doors close 30 minutes after event start.
         </p>
       </div>
     </div>

@@ -3,7 +3,7 @@ import { NotificationType } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { EmailService } from '@src/email-server/email.service';
 import { loggers } from '@src/interceptors/logger.enums';
-import * as QRCode from 'qrcode';
+import { generateTicketPdf } from '@src/shared/ticket-pdf.util';
 import { NotificationService } from '@src/notification/notification.service';
 import { PrismaService } from '@src/prisma/prisma.service';
 import { PayStackService } from '@src/paystack/paystack.service';
@@ -14,7 +14,6 @@ const moment = require('moment') as typeof import('moment');
 import * as crypto from 'crypto';
 import { UsersService } from '../../users/users.service';
 import { EventSharedService } from '../shared/shared.event.service';
-import { S3Service } from '@src/shared/s3.service';
 import { CreateEventTicketDto } from './dto/create-event-ticket.dto';
 import { CreateGuestTicketDto } from './dto/create-guest-ticket.dto';
 import { ConfirmPurchaseDto } from './dto/confirm-purchase.dto';
@@ -31,7 +30,6 @@ export class EventTicketsService {
     private readonly emailService: EmailService,
     private readonly notificationService: NotificationService,
     private readonly payStackService: PayStackService,
-    private readonly s3: S3Service,
   ) {
     // Register this service as the event ticket webhook handler
     this.payStackService.eventTicketsHandler = this;
@@ -228,31 +226,51 @@ export class EventTicketsService {
     }
 
     try {
-      const ticketRef = eventTicket.id;
-      const qrDataUrl = await QRCode.toDataURL(ticketRef, {
-        width: 200,
-        margin: 2,
-        color: { dark: '#FF2D8F', light: '#131328' },
-      });
-      const qrBuffer = Buffer.from(qrDataUrl.replace(/^data:image\/png;base64,/, ''), 'base64');
-      const qrUrl = await this.s3.uploadBuffer(qrBuffer, `qr-codes/${ticketRef}.png`, 'image/png');
+      const purchasedOn = moment().format('MMMM DD, YYYY');
+      const eventDate = event.startDate ? moment(event.startDate).format('dddd, MMMM DD, YYYY') : null;
+      const eventTime = event.startDate ? moment(event.startDate).format('h:mm A') : null;
+      const eventVenue = (event as any).locationName ?? null;
+
+      const pdfAttachments = await Promise.all(
+        Array.from({ length: noOfTickets }, (_, i) =>
+          generateTicketPdf({
+            ticketRef: `${eventTicket.id}-${i + 1}`,
+            ticketNumber: i + 1,
+            totalTickets: noOfTickets,
+            eventName: event.name,
+            eventDate,
+            eventTime,
+            eventVenue,
+            attendeeName: user?.name ?? '',
+            attendeeEmail: user?.email ?? '',
+            purchasedOn,
+            orderId: eventTicket.id,
+            price: price.toLocaleString(),
+            currency: 'KES',
+          }).then((buf) => ({
+            filename: `glee-ticket-${i + 1}.pdf`,
+            content: buf,
+            content_type: 'application/pdf',
+          })),
+        ),
+      );
 
       await this.emailService.sendMail({
         template: 'event-ticket',
         message: {
-          to: [user?.email].filter(Boolean),
+          to: [user?.email].filter(Boolean) as string[],
           subject: `Your ticket for ${event.name} — Glee`,
+          attachments: pdfAttachments,
         },
         locals: {
-          qrCode: qrUrl,
-          purchasedOn: moment().format('MMMM DD, YYYY'),
+          purchasedOn,
           userEmail: user?.email,
           userName: user?.name,
           ticketId: eventTicket.id,
           productTitle: event.name,
-          eventDate: event.startDate ? moment(event.startDate).format('dddd, MMMM DD, YYYY') : null,
-          eventTime: event.startDate ? moment(event.startDate).format('h:mm A') : null,
-          eventVenue: event.locationName ?? null,
+          eventDate,
+          eventTime,
+          eventVenue,
           total: totalPrice.toLocaleString(),
           subTotal: price.toLocaleString(),
           noOfItems: noOfTickets,
