@@ -1,137 +1,178 @@
-import { IsEnum, IsNotEmpty, IsOptional } from 'class-validator';
+import { IsEnum, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { EntityStatus as EventStatus } from '@prisma/client';
+import { EventStatus } from '@prisma/client';
 import { toJson } from '@src/common/utils/cast.helper';
 
 export class TicketCategoryInputDto {
-  name: string;
-  price: number;
-  capacity?: number;
+    name: string;
+    price: number;
+    capacity?: number;
 }
 
 export class EventScheduleDto {
-  @ApiProperty()
-  @IsNotEmpty()
-  note: string;
+    @ApiProperty({ required: false })
+    @IsOptional()
+    title?: string;
 
-  @ApiProperty()
-  @IsNotEmpty()
-  time: Date;
+    @ApiProperty({ required: false })
+    @IsOptional()
+    description?: string;
+
+    @ApiProperty({ required: false, format: 'date-time' })
+    @IsOptional()
+    startsAt?: Date;
+
+    @ApiProperty({ required: false, format: 'date-time' })
+    @IsOptional()
+    endsAt?: Date;
+
+    @ApiProperty({ required: false })
+    @IsOptional()
+    sortOrder?: number;
+
+    @ApiProperty({ required: false, description: 'Legacy alias for title' })
+    @IsOptional()
+    note?: string;
+
+    @ApiProperty({ required: false, description: 'Legacy alias for startsAt' })
+    @IsOptional()
+    time?: Date;
 }
 
 export class MenuItemInputDto {
-  name: string;
-  category?: string;
-  price: number;
-  description?: string;
+    name: string;
+    category?: string;
+    price: number;
+    description?: string;
 }
 
 export class CreateEventDto {
-  @ApiProperty()
-  @IsNotEmpty({ message: 'Name field should not be empty.' })
-  name: string;
+    @ApiProperty()
+    @IsNotEmpty({ message: 'Name field should not be empty.' })
+    name: string;
 
-  @ApiProperty({ required: false })
-  @IsOptional()
-  description?: string;
+    @ApiProperty({ required: false })
+    @IsOptional()
+    description?: string;
 
-  @ApiProperty({ required: false })
-  @IsOptional()
-  country?: string;
+    @ApiProperty({ description: 'Location id from the locations table' })
+    @IsNotEmpty({ message: 'Location is required.' })
+    @IsString()
+    locationId: string;
 
-  @ApiProperty({ required: false })
-  @IsOptional()
-  city?: string;
+    @Transform(({ value }) => toJson(value))
+    @ApiProperty({
+        required: false,
+        name: 'date',
+        type: 'object',
+        properties: {
+            start: { type: 'string', format: 'date-time' },
+            end: { type: 'string', format: 'date-time' },
+        },
+    })
+    @IsOptional()
+    date?: { start: Date; end: Date };
 
-  @ApiProperty()
-  @IsNotEmpty({ message: 'Location field should not be empty.' })
-  location: string;
+    @ApiProperty({ required: false })
+    @IsOptional()
+    vendor?: string;
 
-  @ApiProperty({ required: false })
-  @IsOptional()
-  latitude?: number;
+    @ApiProperty({ required: false })
+    @IsOptional()
+    capacity?: number;
 
-  @ApiProperty({ required: false })
-  @IsOptional()
-  longitude?: number;
+    @ApiProperty({ required: false })
+    @IsOptional()
+    category?: string;
 
-  @Transform(({ value }) => toJson(value))
-  @ApiProperty({
-    required: false,
-    name: 'date',
-    type: 'object',
-    properties: {
-      start: { type: 'string', format: 'date-time' },
-      end: { type: 'string', format: 'date-time' },
-    },
-  })
-  @IsOptional()
-  date?: { start: Date; end: Date };
+    @ApiProperty({
+        required: false,
+        enum: EventStatus,
+        default: EventStatus.DRAFT,
+    })
+    @IsOptional()
+    @IsEnum(EventStatus, { message: 'Invalid Event Status' })
+    status?: EventStatus;
 
-  @ApiProperty({ required: false })
-  @IsOptional()
-  vendor?: string;
+    @ApiProperty({
+        required: false,
+        enum: EventStatus,
+        default: EventStatus.DRAFT,
+    })
+    @IsOptional()
+    @IsEnum(EventStatus, { message: 'Invalid Event Status' })
+    isActive?: EventStatus;
 
-  @ApiProperty({ required: false })
-  @IsOptional()
-  capacity?: number;
+    @ApiProperty({
+        name: 'files',
+        required: false,
+        type: 'array',
+        items: { type: 'string', format: 'binary' },
+    })
+    @IsOptional()
+    photos?: string[];
 
-  @ApiProperty({ required: false })
-  @IsOptional()
-  maxTicketPurchased?: number;
+    @ApiProperty({ required: false, isArray: true, type: [EventScheduleDto] })
+    @IsOptional()
+    @Transform(({ value }) => {
+        if (!value) return [];
+        try {
+            return toJson(value);
+        } catch {
+            return [];
+        }
+    })
+    eventSchedule?: EventScheduleDto[];
 
-  @ApiProperty({ required: false })
-  @IsOptional()
-  price?: number;
+    @Transform(({ value }) => {
+        if (!value) return [];
+        try {
+            return toJson(value);
+        } catch {
+            return [];
+        }
+    })
+    @ApiProperty({
+        required: false,
+        type: 'string',
+        description:
+            'JSON array: [{ "name": "VIP", "price": 1000, "capacity": 50 }]',
+    })
+    @IsOptional()
+    ticketCategories?: TicketCategoryInputDto[];
 
-  @ApiProperty({ required: false })
-  @IsOptional()
-  category?: string;
+    @Transform(({ value }) => {
+        if (!value) return [];
+        try {
+            return toJson(value);
+        } catch {
+            return [];
+        }
+    })
+    @ApiProperty({
+        required: false,
+        type: 'string',
+        description:
+            'JSON array: [{ "name": "Hennessy", "category": "drink", "price": 2500 }]',
+    })
+    @IsOptional()
+    menuItems?: MenuItemInputDto[];
 
-  @ApiProperty({ required: false, enum: EventStatus, default: EventStatus.ACTIVE })
-  @IsOptional()
-  @IsEnum(EventStatus, { message: 'Invalid Event Status' })
-  isActive?: string;
-
-  @ApiProperty({
-    name: 'files',
-    required: false,
-    type: 'array',
-    items: { type: 'string', format: 'binary' },
-  })
-  @IsOptional()
-  bannerImages?: string[];
-
-  @ApiProperty({ required: false, isArray: true, type: [EventScheduleDto] })
-  @IsOptional()
-  @Transform(({ value }) => {
-    if (!value) return [];
-    try { return JSON.parse('[' + value + ']'); } catch { return []; }
-  })
-  eventSchedule?: EventScheduleDto[];
-
-  @Transform(({ value }) => {
-    if (!value) return [];
-    try { return toJson(value); } catch { return []; }
-  })
-  @ApiProperty({
-    required: false,
-    type: 'string',
-    description: 'JSON array: [{ "name": "VIP", "price": 1000, "capacity": 50 }]',
-  })
-  @IsOptional()
-  ticketCategories?: TicketCategoryInputDto[];
-
-  @Transform(({ value }) => {
-    if (!value) return [];
-    try { return toJson(value); } catch { return []; }
-  })
-  @ApiProperty({
-    required: false,
-    type: 'string',
-    description: 'JSON array: [{ "name": "Hennessy", "category": "drink", "price": 2500 }]',
-  })
-  @IsOptional()
-  menuItems?: MenuItemInputDto[];
+    @Transform(({ value }) => {
+        if (!value) return [];
+        try {
+            return toJson(value);
+        } catch {
+            return [];
+        }
+    })
+    @ApiProperty({
+        required: false,
+        type: 'string',
+        description:
+            'Alias for menuItems. JSON array: [{ "name": "Hennessy", "category": "drink", "price": 2500 }]',
+    })
+    @IsOptional()
+    preOrderMenu?: MenuItemInputDto[];
 }

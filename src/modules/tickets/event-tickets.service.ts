@@ -44,24 +44,20 @@ export class EventTicketsService {
         );
         if (!event)
             throw new HttpException('Event not found', HttpStatus.BAD_REQUEST);
-        if (!event.availableTickets || event.availableTickets <= 0) {
-            throw new HttpException(
-                'No tickets available',
-                HttpStatus.BAD_REQUEST,
-            );
-        }
+        await this.assertEventCapacity(
+            event.id,
+            event.capacity,
+            createEventTicketDto.noOfTickets,
+        );
 
         const user = await this.userService.findOne({ id: userId });
         if (!user)
             throw new HttpException('User not found', HttpStatus.UNAUTHORIZED);
 
-        let price = Number(event.price);
-        if (createEventTicketDto.ticketCategoryId) {
-            const category = await this.prisma.ticketCategory.findUnique({
-                where: { id: createEventTicketDto.ticketCategoryId },
-            });
-            if (category) price = Number(category.price);
-        }
+        const price = await this.resolveTicketPrice(
+            event.id,
+            createEventTicketDto.ticketCategoryId,
+        );
 
         const totalPrice = price * createEventTicketDto.noOfTickets;
 
@@ -140,14 +136,16 @@ export class EventTicketsService {
         );
         if (!event)
             throw new HttpException('Event not found', HttpStatus.BAD_REQUEST);
+        await this.assertEventCapacity(
+            event.id,
+            event.capacity,
+            dto.noOfTickets,
+        );
 
-        let price = Number(event.price);
-        if (dto.ticketCategoryId) {
-            const category = await this.prisma.ticketCategory.findUnique({
-                where: { id: dto.ticketCategoryId },
-            });
-            if (category) price = Number(category.price);
-        }
+        const price = await this.resolveTicketPrice(
+            event.id,
+            dto.ticketCategoryId,
+        );
 
         const randomPassword = crypto.randomBytes(32).toString('hex');
 
@@ -256,15 +254,12 @@ export class EventTicketsService {
         );
         if (!event) return;
 
-        let price = Number(event.price);
-        if (metadata.ticketCategoryId) {
-            const category = await this.prisma.ticketCategory.findUnique({
-                where: { id: metadata.ticketCategoryId },
-            });
-            if (category) price = Number(category.price);
-        }
-
         const noOfTickets = parseInt(String(metadata.noOfTickets ?? 1), 10);
+        await this.assertEventCapacity(event.id, event.capacity, noOfTickets);
+        const price = await this.resolveTicketPrice(
+            event.id,
+            metadata.ticketCategoryId,
+        );
         const preOrderMenu: {
             id: string;
             name: string;
@@ -301,11 +296,6 @@ export class EventTicketsService {
                 totalPrice: new Decimal(totalPrice),
                 preOrderMenu: metadata.preOrderMenu,
             },
-        });
-
-        await this.prisma.event.update({
-            where: { id: event.id },
-            data: { availableTickets: { decrement: noOfTickets } },
         });
 
         if (metadata.ticketCategoryId) {
@@ -348,7 +338,10 @@ export class EventTicketsService {
             const eventTime = event.startDate
                 ? moment(event.startDate).format('h:mm A')
                 : null;
-            const eventVenue = (event as any).locationName ?? null;
+            const eventVenue =
+                (event as any).location?.name ??
+                (event as any).location?.address ??
+                null;
 
             const pdfAttachments = await Promise.all(
                 Array.from({ length: noOfTickets }, (_, i) =>
@@ -400,7 +393,7 @@ export class EventTicketsService {
                     menuTotal:
                         menuTotal > 0 ? menuTotal.toLocaleString() : null,
                     noOfItems: noOfTickets,
-                    productImage: event.bannerImages?.[0] ?? null,
+                    productImage: event.photos?.[0] ?? null,
                     orderType: 'Event',
                 },
             });
@@ -698,7 +691,7 @@ export class EventTicketsService {
         if (!event)
             return { success: false, message: 'Event not found', data: [] };
 
-        const [tickets, ticketsCount] = await Promise.all([
+        const [tickets, ticketsCount, sold] = await Promise.all([
             this.prisma.eventTicket.findMany({
                 where: { eventId },
                 include: { user: true },
@@ -706,14 +699,19 @@ export class EventTicketsService {
                 take: limit,
             }),
             this.prisma.eventTicket.count({ where: { eventId } }),
+            this.prisma.eventTicket.aggregate({
+                where: { eventId },
+                _sum: { quantity: true },
+            }),
         ]);
 
-        const ticketsAvailable = (event.capacity ?? 0) - ticketsCount;
+        const ticketsSold = sold._sum.quantity ?? 0;
+        const ticketsAvailable = event.capacity - ticketsSold;
         return {
             success: true,
             data: {
                 ticketsCapacity: event.capacity,
-                ticketsSold: ticketsCount,
+                ticketsSold,
                 ticketsAvailable,
                 tickets,
                 totalPages: Math.ceil(ticketsCount / limit),
@@ -721,6 +719,48 @@ export class EventTicketsService {
                 limit,
             },
         };
+    }
+
+    private async resolveTicketPrice(
+        eventId: string,
+        ticketCategoryId?: string,
+    ) {
+        if (ticketCategoryId) {
+            const category = await this.prisma.ticketCategory.findFirst({
+                where: { id: ticketCategoryId, eventId },
+            });
+            if (!category) {
+                throw new HttpException(
+                    'Ticket category not found',
+                    HttpStatus.BAD_REQUEST,
+                );
+            }
+            return Number(category.price);
+        }
+
+        const category = await this.prisma.ticketCategory.findFirst({
+            where: { eventId },
+            orderBy: { createdAt: 'asc' },
+        });
+        return category ? Number(category.price) : 0;
+    }
+
+    private async assertEventCapacity(
+        eventId: string,
+        capacity: number,
+        requestedTickets: number,
+    ) {
+        const sold = await this.prisma.eventTicket.aggregate({
+            where: { eventId },
+            _sum: { quantity: true },
+        });
+        const soldCount = sold._sum.quantity ?? 0;
+        if (capacity - soldCount < requestedTickets) {
+            throw new HttpException(
+                'No tickets available',
+                HttpStatus.BAD_REQUEST,
+            );
+        }
     }
 
     async remove(eventId?: string, userId?: string) {

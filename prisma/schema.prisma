@@ -34,6 +34,14 @@ enum EntityStatus {
   INACTIVE
 }
 
+enum EventStatus {
+  DRAFT
+  ACTIVE
+  POSTPONED
+  CANCELLED
+  SOLD_OUT
+}
+
 enum NotificationType {
   CHAT
   EVENT_TICKET
@@ -118,18 +126,18 @@ model User {
   vendorAccount       User?         @relation("VendorStaff", fields: [vendorAccountId], references: [id], onDelete: SetNull)
   vendorStaff         User[]        @relation("VendorStaff")
 
-  chatsSent      Chat[]         @relation("ChatSender")
-  chatsReceived  Chat[]         @relation("ChatReceiver")
-  blocksGiven    UserBlock[]    @relation("Blocker")
-  blocksReceived UserBlock[]    @relation("Blocked")
-  eventTickets   EventTicket[]
-  checkedInTickets EventTicket[] @relation("TicketCheckedInBy")
-  wallet         Wallet?
-  notifications  Notification[]
-  auditLogs      AuditLog[]     @relation("AuditActor")
-  invitationsSent UserInvitation[] @relation("InvitationInviter")
-  invitation      UserInvitation?
-  vendorEvents    Event[]       @relation("EventVendor")
+  chatsSent        Chat[]           @relation("ChatSender")
+  chatsReceived    Chat[]           @relation("ChatReceiver")
+  blocksGiven      UserBlock[]      @relation("Blocker")
+  blocksReceived   UserBlock[]      @relation("Blocked")
+  eventTickets     EventTicket[]
+  checkedInTickets EventTicket[]    @relation("TicketCheckedInBy")
+  wallet           Wallet?
+  notifications    Notification[]
+  auditLogs        AuditLog[]       @relation("AuditActor")
+  invitationsSent  UserInvitation[] @relation("InvitationInviter")
+  invitation       UserInvitation?
+  vendorEvents     Event[]          @relation("EventVendor")
 
   @@index([email])
   @@index([isDeleted])
@@ -184,42 +192,47 @@ model AuditLog {
 // ─── Events ───────────────────────────────────────────────────────────────────
 
 model Event {
-  id                 String           @id @default(cuid())
-  name               String
-  description        String?
-  price              Decimal          @db.Decimal(10, 2)
-  capacity           Int?
-  maxTicketPurchased Int?
-  availableTickets   Int?
-  locationName       String?
-  city               String?
-  state              String?
-  country            String?
-  latitude           Float?
-  longitude          Float?
-  bannerImages       String[]
-  photos             String[]
-  floorPlan          String?
-  startDate          DateTime?
-  endDate            DateTime?
-  status             EntityStatus     @default(ACTIVE)
-  suspended          Boolean          @default(false)
-  isDeleted          Boolean          @default(false)
-  deletedAt          DateTime?
-  createdAt          DateTime         @default(now())
-  updatedAt          DateTime         @updatedAt
-  locationId         String?
-  categoryId         String?
-  vendorId           String?
-  location           Location?        @relation(fields: [locationId], references: [id])
-  category           Category?        @relation(fields: [categoryId], references: [id])
-  vendor             User?            @relation("EventVendor", fields: [vendorId], references: [id], onDelete: SetNull)
-  ticketCategories   TicketCategory[]
-  eventTickets       EventTicket[]
-  menuItems          EventMenuItem[]
+  id               String           @id @default(cuid())
+  name             String
+  description      String?
+  capacity         Int              @default(0)
+  photos           String[]
+  startDate        DateTime?
+  endDate          DateTime?
+  status           EventStatus      @default(DRAFT)
+  isDeleted        Boolean          @default(false)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  locationId       String?
+  categoryId       String?
+  vendorId         String?
+  location         Location?        @relation(fields: [locationId], references: [id])
+  category         Category?        @relation(fields: [categoryId], references: [id])
+  vendor           User?            @relation("EventVendor", fields: [vendorId], references: [id], onDelete: SetNull)
+  ticketCategories TicketCategory[]
+  eventTickets     EventTicket[]
+  menuItems        EventMenuItem[]
+  schedules        EventSchedule[]
 
   @@index([isDeleted])
   @@index([vendorId])
+}
+
+model EventSchedule {
+  id          String    @id @default(cuid())
+  eventId     String
+  event       Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  title       String?
+  description String?
+  startsAt    DateTime
+  endsAt      DateTime?
+  sortOrder   Int       @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([eventId])
+  @@index([startsAt])
+  @@map("event_schedules")
 }
 
 model EventMenuItem {
@@ -286,41 +299,41 @@ model Location {
 // ─── Tickets & Payments ───────────────────────────────────────────────────────
 
 model Payment {
-  id                String      @id @default(cuid())
+  id                String       @id @default(cuid())
   userId            String
-  paystackReference String      @unique
+  paystackReference String       @unique
   paymentStatus     String
   paymentMethod     String
-  totalPrice        Decimal     @db.Decimal(10, 2)
-  perItemPrice      Decimal     @db.Decimal(10, 2)
-  noOfItems         Int         @default(1)
-  isPaid            Boolean     @default(false)
-  isAvailable       Boolean     @default(true)
-  createdAt         DateTime    @default(now())
-  updatedAt         DateTime    @updatedAt
+  totalPrice        Decimal      @db.Decimal(10, 2)
+  perItemPrice      Decimal      @db.Decimal(10, 2)
+  noOfItems         Int          @default(1)
+  isPaid            Boolean      @default(false)
+  isAvailable       Boolean      @default(true)
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
   eventTicket       EventTicket?
 
   @@map("payments")
 }
 
 model EventTicket {
-  id               String           @id @default(cuid())
+  id               String          @id @default(cuid())
   eventId          String
   userId           String
-  paymentId        String           @unique
+  paymentId        String          @unique
   ticketCategoryId String?
   checkedInById    String?
-  quantity         Int              @default(1)
-  totalPrice       Decimal          @db.Decimal(10, 2)
+  quantity         Int             @default(1)
+  totalPrice       Decimal         @db.Decimal(10, 2)
   preOrderMenu     Json?
   checkedInAt      DateTime?
-  createdAt        DateTime         @default(now())
-  updatedAt        DateTime         @updatedAt
-  event            Event            @relation(fields: [eventId], references: [id])
-  user             User             @relation(fields: [userId], references: [id])
-  payment          Payment          @relation(fields: [paymentId], references: [id])
-  ticketCategory   TicketCategory?  @relation(fields: [ticketCategoryId], references: [id])
-  checkedInBy      User?            @relation("TicketCheckedInBy", fields: [checkedInById], references: [id], onDelete: SetNull)
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  event            Event           @relation(fields: [eventId], references: [id])
+  user             User            @relation(fields: [userId], references: [id])
+  payment          Payment         @relation(fields: [paymentId], references: [id])
+  ticketCategory   TicketCategory? @relation(fields: [ticketCategoryId], references: [id])
+  checkedInBy      User?           @relation("TicketCheckedInBy", fields: [checkedInById], references: [id], onDelete: SetNull)
   notifications    Notification[]
 
   @@index([checkedInById])
@@ -343,17 +356,17 @@ model Wallet {
 }
 
 model WalletTransaction {
-  id          String   @id @default(cuid())
-  walletId    String
-  wallet      Wallet   @relation(fields: [walletId], references: [id], onDelete: Cascade)
-  paymentId   String?
-  type        String
-  amount      Decimal  @db.Decimal(10, 2)
-  balanceAfter Decimal @db.Decimal(10, 2)
-  description String?
-  reference   String?  @unique
-  metadata    Json?
-  createdAt   DateTime @default(now())
+  id           String   @id @default(cuid())
+  walletId     String
+  wallet       Wallet   @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  paymentId    String?
+  type         String
+  amount       Decimal  @db.Decimal(10, 2)
+  balanceAfter Decimal  @db.Decimal(10, 2)
+  description  String?
+  reference    String?  @unique
+  metadata     Json?
+  createdAt    DateTime @default(now())
 
   @@index([walletId])
   @@index([type])
