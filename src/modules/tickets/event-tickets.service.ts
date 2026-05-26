@@ -59,7 +59,37 @@ export class EventTicketsService {
             createEventTicketDto.ticketCategoryId,
         );
 
-        const totalPrice = price * createEventTicketDto.noOfTickets;
+        let menuTotal = 0;
+        const resolvedMenuItems: {
+            id: string;
+            name: string;
+            price: number;
+            quantity: number;
+        }[] = [];
+        if (createEventTicketDto.preOrderMenu?.length) {
+            const menuItemRecords = await this.prisma.eventMenuItem.findMany({
+                where: {
+                    id: { in: createEventTicketDto.preOrderMenu.map((m) => m.id) },
+                    eventId: event.id,
+                },
+            });
+            for (const ordered of createEventTicketDto.preOrderMenu) {
+                const record = menuItemRecords.find((r) => r.id === ordered.id);
+                if (record) {
+                    const quantity = Number(ordered.quantity) || 0;
+                    const lineTotal = Number(record.price) * quantity;
+                    menuTotal += lineTotal;
+                    resolvedMenuItems.push({
+                        id: record.id,
+                        name: record.name,
+                        price: Number(record.price),
+                        quantity,
+                    });
+                }
+            }
+        }
+
+        const totalPrice = price * createEventTicketDto.noOfTickets + menuTotal;
 
         if (createEventTicketDto.useWallet) {
             return this.purchaseWithWallet({
@@ -67,7 +97,7 @@ export class EventTicketsService {
                 userId,
                 ticketCategoryId: createEventTicketDto.ticketCategoryId,
                 noOfTickets: createEventTicketDto.noOfTickets,
-                preOrderMenu: createEventTicketDto.preOrderMenu,
+                preOrderMenu: resolvedMenuItems.length ? resolvedMenuItems : undefined,
                 totalPrice,
                 price,
             });
@@ -78,7 +108,7 @@ export class EventTicketsService {
             eventId: event.id,
             noOfTickets: createEventTicketDto.noOfTickets,
             ticketCategoryId: createEventTicketDto.ticketCategoryId,
-            preOrderMenu: createEventTicketDto.preOrderMenu,
+            preOrderMenu: resolvedMenuItems.length ? resolvedMenuItems : undefined,
             userId,
         };
 

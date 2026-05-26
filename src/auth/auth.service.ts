@@ -8,8 +8,10 @@ import { OnesignalService } from '@src/infrastructure/push/onesignal/onesignal.s
 import { EmailService } from '@src/infrastructure/email/email.service';
 import { loggers } from '@src/common/interceptors/logger.enums';
 import { generateOtp } from '@src/common/utils/utils';
+import { comparePasswords } from '@src/common/utils/utils';
 import { Response, ResponseObj } from '@src/common/responses/response';
 import * as path from 'path';
+import * as bcrypt from 'bcrypt';
 import {
     LoginDto,
     ForgotPassword,
@@ -253,6 +255,61 @@ export class AuthService {
                 twoFactorEnabled: user.twoFactorEnabled,
             },
         };
+    }
+
+    async updateMe(
+        currentUser: { id: string },
+        payload: { firstName?: string; lastName?: string; name?: string; phone?: string },
+    ) {
+        const current = await this.prisma.user.findUnique({
+            where: { id: currentUser.id },
+            select: { name: true },
+        });
+        if (!current) {
+            throw new HttpException('User not found', HttpStatus.NOT_FOUND);
+        }
+
+        const fallbackParts = (current.name ?? '').split(' ');
+        const firstName = payload.firstName ?? fallbackParts[0] ?? '';
+        const lastName = payload.lastName ?? fallbackParts.slice(1).join(' ');
+        const name = payload.name ?? [firstName, lastName].filter(Boolean).join(' ').trim();
+
+        const user = await this.prisma.user.update({
+            where: { id: currentUser.id },
+            data: {
+                ...(name ? { name } : {}),
+                ...(payload.phone !== undefined ? { phone: payload.phone } : {}),
+            },
+            include: { role: true },
+        });
+
+        return { success: true, data: user };
+    }
+
+    async changeMyPassword(
+        currentUser: { id: string },
+        payload: { currentPassword: string; newPassword: string },
+    ) {
+        const user = await this.prisma.user.findUnique({
+            where: { id: currentUser.id },
+            select: { id: true, password: true },
+        });
+        if (!user) {
+            throw new HttpException('User not found', HttpStatus.NOT_FOUND);
+        }
+
+        const valid = await comparePasswords(user.password, payload.currentPassword);
+        if (!valid) {
+            throw new HttpException('Current password is incorrect', HttpStatus.BAD_REQUEST);
+        }
+
+        const password = await bcrypt.hash(payload.newPassword, 10);
+        await this.prisma.user.update({
+            where: { id: currentUser.id },
+            data: { password },
+        });
+
+        return { success: true, message: 'Password updated successfully' };
     }
 
     async refreshToken(token: string) {

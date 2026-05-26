@@ -79,6 +79,24 @@ export class AuthController {
         return this.authService.updateTwoFactorPreference(user, payload);
     }
 
+    @Patch('me')
+    @ApiResponses(true)
+    public async updateMe(
+        @CurrentUser() user: any,
+        @Body() payload: { firstName?: string; lastName?: string; name?: string; phone?: string },
+    ): Promise<any> {
+        return this.authService.updateMe(user, payload);
+    }
+
+    @Post('me/password')
+    @ApiResponses(true)
+    public async changeMyPassword(
+        @CurrentUser() user: any,
+        @Body() payload: { currentPassword: string; newPassword: string },
+    ): Promise<any> {
+        return this.authService.changeMyPassword(user, payload);
+    }
+
     @Post('refresh')
     @ApiResponses(false)
     public async refresh(@Body() body: { refreshToken: string }): Promise<any> {
