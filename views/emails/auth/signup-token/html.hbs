@@ -1,0 +1,47 @@
+<html lang='en'>
+    <head>
+        <meta charset='utf-8' />
+        <title>Glee Sign Up Code</title>
+    </head>
+    <body
+        style='font-family: Arial, sans-serif; color: #111827; margin: 0; padding: 24px; background: #f8fafc;'
+    >
+        <table
+            role='presentation'
+            width='100%'
+            cellspacing='0'
+            cellpadding='0'
+            style='max-width: 560px; margin: 0 auto; background: #ffffff; border: 1px solid #e5e7eb;'
+        >
+            <tr>
+                <td style='padding: 24px;'>
+                    {{#if logoUrl}}
+                        <img
+                            src='{{logoUrl}}'
+                            alt='Glee'
+                            style='height: 40px; margin-bottom: 24px;'
+                        />
+                    {{/if}}
+                    <h1
+                        style='font-size: 22px; line-height: 1.3; margin: 0 0 16px;'
+                    >Your Glee sign up code</h1>
+                    <p
+                        style='font-size: 15px; line-height: 1.6; margin: 0 0 16px;'
+                    >Hello {{name}},</p>
+                    {{#if otp}}
+                        <p
+                            style='font-size: 15px; line-height: 1.6; margin: 0 0 20px;'
+                        >Use this code to verify your account:</p>
+                        <p
+                            style='font-size: 32px; font-weight: bold; letter-spacing: 4px; margin: 0 0 20px;'
+                        >{{otp}}</p>
+                    {{else}}
+                        <p
+                            style='font-size: 15px; line-height: 1.6; margin: 0 0 20px;'
+                        >{{message}}</p>
+                    {{/if}}
+                </td>
+            </tr>
+        </table>
+    </body>
+</html>

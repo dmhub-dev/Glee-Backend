@@ -22,605 +22,789 @@ import { randomUUID } from 'crypto';
 
 @Injectable()
 export class EventTicketsService {
-  private readonly logger = new Logger(EventTicketsService.name);
+    private readonly logger = new Logger(EventTicketsService.name);
 
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly eventSharedService: EventSharedService,
-    private readonly userService: UsersService,
-    private readonly emailService: EmailService,
-    private readonly notificationService: NotificationService,
-    private readonly payStackService: PayStackService,
-    private readonly walletService: WalletService,
-  ) {
-    // Register this service as the event ticket webhook handler
-    this.payStackService.eventTicketsHandler = this;
-  }
-
-  async create(createEventTicketDto: CreateEventTicketDto, currentUser: any) {
-    const userId = createEventTicketDto.userId || currentUser.id;
-    const event = await this.eventSharedService.helperEventFindById(createEventTicketDto.eventId);
-    if (!event) throw new HttpException('Event not found', HttpStatus.BAD_REQUEST);
-    if (!event.availableTickets || event.availableTickets <= 0) {
-      throw new HttpException('No tickets available', HttpStatus.BAD_REQUEST);
+    constructor(
+        private readonly prisma: PrismaService,
+        private readonly eventSharedService: EventSharedService,
+        private readonly userService: UsersService,
+        private readonly emailService: EmailService,
+        private readonly notificationService: NotificationService,
+        private readonly payStackService: PayStackService,
+        private readonly walletService: WalletService,
+    ) {
+        // Register this service as the event ticket webhook handler
+        this.payStackService.eventTicketsHandler = this;
     }
 
-    const user = await this.userService.findOne({ id: userId });
-    if (!user) throw new HttpException('User not found', HttpStatus.UNAUTHORIZED);
-
-    let price = Number(event.price);
-    if (createEventTicketDto.ticketCategoryId) {
-      const category = await this.prisma.ticketCategory.findUnique({
-        where: { id: createEventTicketDto.ticketCategoryId },
-      });
-      if (category) price = Number(category.price);
-    }
-
-    const totalPrice = price * createEventTicketDto.noOfTickets;
-
-    if (createEventTicketDto.useWallet) {
-      return this.purchaseWithWallet({
-        event,
-        userId,
-        ticketCategoryId: createEventTicketDto.ticketCategoryId,
-        noOfTickets: createEventTicketDto.noOfTickets,
-        preOrderMenu: createEventTicketDto.preOrderMenu,
-        totalPrice,
-        price,
-      });
-    }
-
-    const metadata = {
-      purchasingType: PurchasingType.EVENT_TICKET,
-      eventId: event.id,
-      noOfTickets: createEventTicketDto.noOfTickets,
-      ticketCategoryId: createEventTicketDto.ticketCategoryId,
-      preOrderMenu: createEventTicketDto.preOrderMenu,
-      userId,
-    };
-
-    const paymentIntent = await this.payStackService.createPaymentIntent({
-      email: user.email,
-      amount: Math.round(totalPrice),
-      metaData: metadata,
-    });
-
-    return { success: true, data: paymentIntent };
-  }
-
-  private async purchaseWithWallet(input: {
-    event: any;
-    userId: string;
-    ticketCategoryId?: string;
-    noOfTickets: number;
-    preOrderMenu?: any[];
-    totalPrice: number;
-    price: number;
-  }) {
-    const reference = `wallet_${randomUUID()}`;
-    await this.walletService.debit(
-      input.userId,
-      input.totalPrice,
-      `Event ticket purchase: ${input.event.name}`,
-      reference,
-      { eventId: input.event.id, noOfTickets: input.noOfTickets },
-    );
-
-    await this.createPurchasedEventTicket({
-      purchasingType: PurchasingType.EVENT_TICKET,
-      eventId: input.event.id,
-      noOfTickets: input.noOfTickets,
-      ticketCategoryId: input.ticketCategoryId,
-      preOrderMenu: input.preOrderMenu,
-      userId: input.userId,
-      paymentMethod: 'WALLET',
-      walletReference: reference,
-    }, reference);
-
-    return {
-      success: true,
-      message: 'Ticket purchased successfully with wallet',
-      data: { reference },
-    };
-  }
-
-  async initiateGuestPurchase(dto: CreateGuestTicketDto) {
-    const event = await this.eventSharedService.helperEventFindById(dto.eventId);
-    if (!event) throw new HttpException('Event not found', HttpStatus.BAD_REQUEST);
-
-    let price = Number(event.price);
-    if (dto.ticketCategoryId) {
-      const category = await this.prisma.ticketCategory.findUnique({
-        where: { id: dto.ticketCategoryId },
-      });
-      if (category) price = Number(category.price);
-    }
-
-    const randomPassword = crypto.randomBytes(32).toString('hex');
-
-    const user = await this.prisma.user.upsert({
-      where: { email: dto.guestEmail },
-      update: {},
-      create: {
-        name: dto.guestName,
-        email: dto.guestEmail,
-        phone: dto.guestPhone,
-        password: randomPassword,
-        notificationIds: [],
-        role: { connect: { name: 'USER' as any } },
-      },
-    });
-
-    let menuTotal = 0;
-    const resolvedMenuItems: { id: string; name: string; price: number; quantity: number }[] = [];
-    if (dto.menuItems?.length) {
-      const menuItemRecords = await this.prisma.eventMenuItem.findMany({
-        where: { id: { in: dto.menuItems.map(m => m.id) }, eventId: dto.eventId },
-      });
-      for (const ordered of dto.menuItems) {
-        const record = menuItemRecords.find(r => r.id === ordered.id);
-        if (record) {
-          const lineTotal = Number(record.price) * ordered.quantity;
-          menuTotal += lineTotal;
-          resolvedMenuItems.push({ id: record.id, name: record.name, price: Number(record.price), quantity: ordered.quantity });
+    async create(createEventTicketDto: CreateEventTicketDto, currentUser: any) {
+        const userId = createEventTicketDto.userId || currentUser.id;
+        const event = await this.eventSharedService.helperEventFindById(
+            createEventTicketDto.eventId,
+        );
+        if (!event)
+            throw new HttpException('Event not found', HttpStatus.BAD_REQUEST);
+        if (!event.availableTickets || event.availableTickets <= 0) {
+            throw new HttpException(
+                'No tickets available',
+                HttpStatus.BAD_REQUEST,
+            );
         }
-      }
+
+        const user = await this.userService.findOne({ id: userId });
+        if (!user)
+            throw new HttpException('User not found', HttpStatus.UNAUTHORIZED);
+
+        let price = Number(event.price);
+        if (createEventTicketDto.ticketCategoryId) {
+            const category = await this.prisma.ticketCategory.findUnique({
+                where: { id: createEventTicketDto.ticketCategoryId },
+            });
+            if (category) price = Number(category.price);
+        }
+
+        const totalPrice = price * createEventTicketDto.noOfTickets;
+
+        if (createEventTicketDto.useWallet) {
+            return this.purchaseWithWallet({
+                event,
+                userId,
+                ticketCategoryId: createEventTicketDto.ticketCategoryId,
+                noOfTickets: createEventTicketDto.noOfTickets,
+                preOrderMenu: createEventTicketDto.preOrderMenu,
+                totalPrice,
+                price,
+            });
+        }
+
+        const metadata = {
+            purchasingType: PurchasingType.EVENT_TICKET,
+            eventId: event.id,
+            noOfTickets: createEventTicketDto.noOfTickets,
+            ticketCategoryId: createEventTicketDto.ticketCategoryId,
+            preOrderMenu: createEventTicketDto.preOrderMenu,
+            userId,
+        };
+
+        const paymentIntent = await this.payStackService.createPaymentIntent({
+            email: user.email,
+            amount: Math.round(totalPrice),
+            metaData: metadata,
+        });
+
+        return { success: true, data: paymentIntent };
     }
 
-    const totalPrice = price * dto.noOfTickets + menuTotal;
+    private async purchaseWithWallet(input: {
+        event: any;
+        userId: string;
+        ticketCategoryId?: string;
+        noOfTickets: number;
+        preOrderMenu?: any[];
+        totalPrice: number;
+        price: number;
+    }) {
+        const reference = `wallet_${randomUUID()}`;
+        await this.walletService.debit(
+            input.userId,
+            input.totalPrice,
+            `Event ticket purchase: ${input.event.name}`,
+            reference,
+            { eventId: input.event.id, noOfTickets: input.noOfTickets },
+        );
 
-    const metadata = {
-      purchasingType: PurchasingType.EVENT_TICKET,
-      eventId: dto.eventId,
-      noOfTickets: dto.noOfTickets,
-      ticketCategoryId: dto.ticketCategoryId,
-      userId: user.id,
-      preOrderMenu: resolvedMenuItems.length ? resolvedMenuItems : undefined,
-    };
+        await this.createPurchasedEventTicket(
+            {
+                purchasingType: PurchasingType.EVENT_TICKET,
+                eventId: input.event.id,
+                noOfTickets: input.noOfTickets,
+                ticketCategoryId: input.ticketCategoryId,
+                preOrderMenu: input.preOrderMenu,
+                userId: input.userId,
+                paymentMethod: 'WALLET',
+                walletReference: reference,
+            },
+            reference,
+        );
 
-    const paymentIntent = await this.payStackService.createPaymentIntent({
-      email: dto.guestEmail,
-      amount: Math.round(totalPrice),
-      metaData: metadata,
-    });
-
-    return { success: true, data: paymentIntent };
-  }
-
-  async confirmPurchase(dto: ConfirmPurchaseDto) {
-    const result = await this.payStackService.verifyTransaction(dto.verificationToken);
-    const paystackData = (result as any)?.paystack?.data;
-    this.logger.debug(`Paystack verify data: ${JSON.stringify(paystackData)}`);
-    if (!paystackData?.reference) {
-      throw new HttpException('Payment verification failed', HttpStatus.BAD_REQUEST);
-    }
-    if (paystackData.status === 'failed' || paystackData.status === 'abandoned') {
-      throw new HttpException('Payment was not successful', HttpStatus.BAD_REQUEST);
-    }
-    await this.createPurchasedEventTicket(paystackData.metadata, paystackData.reference);
-    return { success: true, message: 'Ticket confirmed' };
-  }
-
-  async createPurchasedEventTicket(metadata: any, paystackReference: string) {
-    const existing = await this.prisma.payment.findUnique({ where: { paystackReference } });
-    if (existing) return;
-
-    const event = await this.eventSharedService.helperEventFindById(metadata.eventId);
-    if (!event) return;
-
-    let price = Number(event.price);
-    if (metadata.ticketCategoryId) {
-      const category = await this.prisma.ticketCategory.findUnique({ where: { id: metadata.ticketCategoryId } });
-      if (category) price = Number(category.price);
+        return {
+            success: true,
+            message: 'Ticket purchased successfully with wallet',
+            data: { reference },
+        };
     }
 
-    const noOfTickets = parseInt(String(metadata.noOfTickets ?? 1), 10);
-    const preOrderMenu: { id: string; name: string; price: number; quantity: number }[] = metadata.preOrderMenu ?? [];
-    const menuTotal = preOrderMenu.reduce((sum, item) => sum + item.price * item.quantity, 0);
-    const totalPrice = price * noOfTickets + menuTotal;
+    async initiateGuestPurchase(dto: CreateGuestTicketDto) {
+        const event = await this.eventSharedService.helperEventFindById(
+            dto.eventId,
+        );
+        if (!event)
+            throw new HttpException('Event not found', HttpStatus.BAD_REQUEST);
 
-    const payment = await this.prisma.payment.create({
-      data: {
-        userId: metadata.userId,
-        paystackReference,
-        paymentStatus: 'SUCCEEDED',
-        paymentMethod: metadata.paymentMethod ?? 'PAYSTACK',
-        totalPrice: new Decimal(totalPrice),
-        perItemPrice: new Decimal(price),
-        noOfItems: noOfTickets,
-        isPaid: true,
-        isAvailable: false,
-      },
-    });
+        let price = Number(event.price);
+        if (dto.ticketCategoryId) {
+            const category = await this.prisma.ticketCategory.findUnique({
+                where: { id: dto.ticketCategoryId },
+            });
+            if (category) price = Number(category.price);
+        }
 
-    const eventTicket = await this.prisma.eventTicket.create({
-      data: {
-        eventId: metadata.eventId,
-        userId: metadata.userId,
-        paymentId: payment.id,
-        ticketCategoryId: metadata.ticketCategoryId,
-        quantity: noOfTickets,
-        totalPrice: new Decimal(totalPrice),
-        preOrderMenu: metadata.preOrderMenu,
-      },
-    });
+        const randomPassword = crypto.randomBytes(32).toString('hex');
 
-    await this.prisma.event.update({
-      where: { id: event.id },
-      data: { availableTickets: { decrement: noOfTickets } },
-    });
+        const user = await this.prisma.user.upsert({
+            where: { email: dto.guestEmail },
+            update: {},
+            create: {
+                name: dto.guestName,
+                email: dto.guestEmail,
+                phone: dto.guestPhone,
+                password: randomPassword,
+                notificationIds: [],
+                role: { connect: { name: 'USER' as any } },
+            },
+        });
 
-    if (metadata.ticketCategoryId) {
-      await this.prisma.ticketCategory.update({
-        where: { id: metadata.ticketCategoryId },
-        data: { available: { decrement: noOfTickets } },
-      });
+        let menuTotal = 0;
+        const resolvedMenuItems: {
+            id: string;
+            name: string;
+            price: number;
+            quantity: number;
+        }[] = [];
+        if (dto.menuItems?.length) {
+            const menuItemRecords = await this.prisma.eventMenuItem.findMany({
+                where: {
+                    id: { in: dto.menuItems.map((m) => m.id) },
+                    eventId: dto.eventId,
+                },
+            });
+            for (const ordered of dto.menuItems) {
+                const record = menuItemRecords.find((r) => r.id === ordered.id);
+                if (record) {
+                    const lineTotal = Number(record.price) * ordered.quantity;
+                    menuTotal += lineTotal;
+                    resolvedMenuItems.push({
+                        id: record.id,
+                        name: record.name,
+                        price: Number(record.price),
+                        quantity: ordered.quantity,
+                    });
+                }
+            }
+        }
+
+        const totalPrice = price * dto.noOfTickets + menuTotal;
+
+        const metadata = {
+            purchasingType: PurchasingType.EVENT_TICKET,
+            eventId: dto.eventId,
+            noOfTickets: dto.noOfTickets,
+            ticketCategoryId: dto.ticketCategoryId,
+            userId: user.id,
+            preOrderMenu: resolvedMenuItems.length
+                ? resolvedMenuItems
+                : undefined,
+        };
+
+        const paymentIntent = await this.payStackService.createPaymentIntent({
+            email: dto.guestEmail,
+            amount: Math.round(totalPrice),
+            metaData: metadata,
+        });
+
+        return { success: true, data: paymentIntent };
     }
 
-    const admin = await this.prisma.user.findFirst({ where: { role: { name: 'ADMIN' }, isDeleted: false } });
-    const user = await this.userService.findOne({ id: metadata.userId });
-
-    try {
-      const notification = await this.notificationService.addNotification({
-        type: NotificationType.EVENT_TICKET,
-        eventTicketId: eventTicket.id,
-        userId: admin?.id,
-      } as any);
-
-      loggers.info('Event ticket notification created: %O', {
-        type: NotificationType.EVENT_TICKET,
-        body: `A new Event Ticket has been purchased by ${user?.name}.`,
-        eventTicketId: eventTicket.id,
-        _id: (notification as any)?.id,
-        userId: admin?.id,
-      });
-    } catch (e) {
-      loggers.error('Notification error: %O', e);
+    async confirmPurchase(dto: ConfirmPurchaseDto) {
+        const result = await this.payStackService.verifyTransaction(
+            dto.verificationToken,
+        );
+        const paystackData = (result as any)?.paystack?.data;
+        this.logger.debug(
+            `Paystack verify data: ${JSON.stringify(paystackData)}`,
+        );
+        if (!paystackData?.reference) {
+            throw new HttpException(
+                'Payment verification failed',
+                HttpStatus.BAD_REQUEST,
+            );
+        }
+        if (
+            paystackData.status === 'failed' ||
+            paystackData.status === 'abandoned'
+        ) {
+            throw new HttpException(
+                'Payment was not successful',
+                HttpStatus.BAD_REQUEST,
+            );
+        }
+        await this.createPurchasedEventTicket(
+            paystackData.metadata,
+            paystackData.reference,
+        );
+        return { success: true, message: 'Ticket confirmed' };
     }
 
-    try {
-      const purchasedOn = moment().format('MMMM DD, YYYY');
-      const eventDate = event.startDate ? moment(event.startDate).format('dddd, MMMM DD, YYYY') : null;
-      const eventTime = event.startDate ? moment(event.startDate).format('h:mm A') : null;
-      const eventVenue = (event as any).locationName ?? null;
+    async createPurchasedEventTicket(metadata: any, paystackReference: string) {
+        const existing = await this.prisma.payment.findUnique({
+            where: { paystackReference },
+        });
+        if (existing) return;
 
-      const pdfAttachments = await Promise.all(
-        Array.from({ length: noOfTickets }, (_, i) =>
-          generateTicketPdf({
-            ticketRef: `${eventTicket.id}-${i + 1}`,
-            ticketNumber: i + 1,
-            totalTickets: noOfTickets,
-            eventName: event.name,
-            eventDate,
-            eventTime,
-            eventVenue,
-            attendeeName: user?.name ?? '',
-            attendeeEmail: user?.email ?? '',
-            purchasedOn,
-            orderId: eventTicket.id,
-            price: price.toLocaleString(),
-            currency: 'KES',
-          }).then((buf) => ({
-            filename: `glee-ticket-${i + 1}.pdf`,
-            content: buf,
-            content_type: 'application/pdf',
-          })),
-        ),
-      );
+        const event = await this.eventSharedService.helperEventFindById(
+            metadata.eventId,
+        );
+        if (!event) return;
 
-      await this.emailService.sendMail({
-        template: 'event-ticket',
-        message: {
-          to: [user?.email].filter(Boolean) as string[],
-          subject: `Your ticket for ${event.name} — Glee`,
-          attachments: pdfAttachments,
-        },
-        locals: {
-          purchasedOn,
-          userEmail: user?.email,
-          userName: user?.name,
-          ticketId: eventTicket.id,
-          productTitle: event.name,
-          eventDate,
-          eventTime,
-          eventVenue,
-          total: totalPrice.toLocaleString(),
-          subTotal: (price * noOfTickets).toLocaleString(),
-          menuItems: preOrderMenu.map(item => ({
-            name: item.name,
-            quantity: item.quantity,
-            price: (item.price * item.quantity).toLocaleString(),
-          })),
-          menuTotal: menuTotal > 0 ? menuTotal.toLocaleString() : null,
-          noOfItems: noOfTickets,
-          productImage: event.bannerImages?.[0] ?? null,
-          orderType: 'Event',
-        },
-      });
-    } catch (e) {
-      loggers.error('Email error: %O', e);
-    }
-  }
+        let price = Number(event.price);
+        if (metadata.ticketCategoryId) {
+            const category = await this.prisma.ticketCategory.findUnique({
+                where: { id: metadata.ticketCategoryId },
+            });
+            if (category) price = Number(category.price);
+        }
 
-  async createEventTicketViaPaystack(data: any) {
-    const metadata = data.metadata;
-    return this.createPurchasedEventTicket({
-      ...metadata,
-      depositAmount: metadata.depositAmount,
-    }, data.reference);
-  }
+        const noOfTickets = parseInt(String(metadata.noOfTickets ?? 1), 10);
+        const preOrderMenu: {
+            id: string;
+            name: string;
+            price: number;
+            quantity: number;
+        }[] = metadata.preOrderMenu ?? [];
+        const menuTotal = preOrderMenu.reduce(
+            (sum, item) => sum + item.price * item.quantity,
+            0,
+        );
+        const totalPrice = price * noOfTickets + menuTotal;
 
-  async findAll(page = 1, limit = 10, filter?: any, currentUser?: any) {
-    const where: any = { ...filter };
-    const vendorId = this.resolveVendorAccountId(currentUser, false);
-    if (vendorId) where.event = { vendorId };
+        const payment = await this.prisma.payment.create({
+            data: {
+                userId: metadata.userId,
+                paystackReference,
+                paymentStatus: 'SUCCEEDED',
+                paymentMethod: metadata.paymentMethod ?? 'PAYSTACK',
+                totalPrice: new Decimal(totalPrice),
+                perItemPrice: new Decimal(price),
+                noOfItems: noOfTickets,
+                isPaid: true,
+                isAvailable: false,
+            },
+        });
 
-    const [tickets, ticketsCount] = await Promise.all([
-      this.prisma.eventTicket.findMany({
-        where,
-        include: {
-          event: true,
-          payment: true,
-          user: { select: { id: true, name: true, email: true, phone: true } },
-          ticketCategory: true,
-          checkedInBy: { select: { id: true, name: true, email: true } },
-        },
-        orderBy: { createdAt: 'desc' },
-        skip: (page - 1) * limit,
-        take: limit,
-      }),
-      this.prisma.eventTicket.count({ where }),
-    ]);
+        const eventTicket = await this.prisma.eventTicket.create({
+            data: {
+                eventId: metadata.eventId,
+                userId: metadata.userId,
+                paymentId: payment.id,
+                ticketCategoryId: metadata.ticketCategoryId,
+                quantity: noOfTickets,
+                totalPrice: new Decimal(totalPrice),
+                preOrderMenu: metadata.preOrderMenu,
+            },
+        });
 
-    if (tickets.length === 0) return { success: false, message: 'No tickets sold yet', data: [] };
+        await this.prisma.event.update({
+            where: { id: event.id },
+            data: { availableTickets: { decrement: noOfTickets } },
+        });
 
-    return {
-      success: true,
-      message: 'Tickets fetched successfully',
-      data: tickets,
-      totalPages: Math.ceil(ticketsCount / limit),
-      page,
-      limit,
-    };
-  }
+        if (metadata.ticketCategoryId) {
+            await this.prisma.ticketCategory.update({
+                where: { id: metadata.ticketCategoryId },
+                data: { available: { decrement: noOfTickets } },
+            });
+        }
 
-  async getTicketById(id: string, currentUser?: any) {
-    const ticket = await this.findScopedTicketOrThrow(id, currentUser, false);
-    const supportNotes = currentUser
-      ? await this.prisma.auditLog.findMany({
-          where: {
-            entity: 'EventTicket',
-            entityId: id,
-            action: 'tickets.support_note',
-          },
-          include: { actor: { select: { id: true, name: true, email: true, role: true } } },
-          orderBy: { createdAt: 'desc' },
-        })
-      : [];
-    return {
-      success: true,
-      message: 'Ticket fetched successfully',
-      data: { ...ticket, supportNotes },
-    };
-  }
+        const admin = await this.prisma.user.findFirst({
+            where: { role: { name: 'ADMIN' }, isDeleted: false },
+        });
+        const user = await this.userService.findOne({ id: metadata.userId });
 
-  async addSupportNote(id: string, note: string, currentUser: any) {
-    const ticket = await this.findScopedTicketOrThrow(id, currentUser, false);
-    if (![UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.CUSTOMER_SUPPORT].includes(currentUser?.role)) {
-      throw new HttpException('Only support or admin users can add support notes', HttpStatus.FORBIDDEN);
-    }
+        try {
+            const notification = await this.notificationService.addNotification(
+                {
+                    type: NotificationType.EVENT_TICKET,
+                    eventTicketId: eventTicket.id,
+                    userId: admin?.id,
+                } as any,
+            );
 
-    const supportNote = await this.prisma.auditLog.create({
-      data: {
-        actorId: currentUser.id,
-        action: 'tickets.support_note',
-        entity: 'EventTicket',
-        entityId: id,
-        metadata: {
-          note,
-          eventId: ticket.eventId,
-          userId: ticket.userId,
-        },
-      },
-      include: { actor: { select: { id: true, name: true, email: true, role: true } } },
-    });
+            loggers.info('Event ticket notification created: %O', {
+                type: NotificationType.EVENT_TICKET,
+                body: `A new Event Ticket has been purchased by ${user?.name}.`,
+                eventTicketId: eventTicket.id,
+                _id: (notification as any)?.id,
+                userId: admin?.id,
+            });
+        } catch (e) {
+            loggers.error('Notification error: %O', e);
+        }
 
-    return {
-      success: true,
-      message: 'Support note added successfully',
-      data: supportNote,
-    };
-  }
+        try {
+            const purchasedOn = moment().format('MMMM DD, YYYY');
+            const eventDate = event.startDate
+                ? moment(event.startDate).format('dddd, MMMM DD, YYYY')
+                : null;
+            const eventTime = event.startDate
+                ? moment(event.startDate).format('h:mm A')
+                : null;
+            const eventVenue = (event as any).locationName ?? null;
 
-  async checkInTicket(id: string, currentUser: any) {
-    this.assertVendorCheckInRole(currentUser);
-    const ticket = await this.findScopedTicketOrThrow(id, currentUser);
-    if (ticket.checkedInAt) {
-      return {
-        success: true,
-        message: 'Ticket is already checked in',
-        data: ticket,
-      };
-    }
+            const pdfAttachments = await Promise.all(
+                Array.from({ length: noOfTickets }, (_, i) =>
+                    generateTicketPdf({
+                        ticketRef: `${eventTicket.id}-${i + 1}`,
+                        ticketNumber: i + 1,
+                        totalTickets: noOfTickets,
+                        eventName: event.name,
+                        eventDate,
+                        eventTime,
+                        eventVenue,
+                        attendeeName: user?.name ?? '',
+                        attendeeEmail: user?.email ?? '',
+                        purchasedOn,
+                        orderId: eventTicket.id,
+                        price: price.toLocaleString(),
+                        currency: 'KES',
+                    }).then((buf) => ({
+                        filename: `glee-ticket-${i + 1}.pdf`,
+                        content: buf,
+                        content_type: 'application/pdf',
+                    })),
+                ),
+            );
 
-    const checkedInAt = new Date();
-    const updated = await this.prisma.eventTicket.update({
-      where: { id },
-      data: {
-        checkedInAt,
-        checkedInById: currentUser.id,
-      },
-      include: {
-        event: true,
-        payment: true,
-        user: { select: { id: true, name: true, email: true, phone: true } },
-        ticketCategory: true,
-        checkedInBy: { select: { id: true, name: true, email: true } },
-      },
-    });
-
-    await this.prisma.auditLog.create({
-      data: {
-        actorId: currentUser.id,
-        action: 'tickets.check_in',
-        entity: 'EventTicket',
-        entityId: id,
-        metadata: {
-          eventId: ticket.eventId,
-          vendorId: ticket.event.vendorId,
-          checkedInAt: checkedInAt.toISOString(),
-        },
-      },
-    });
-
-    return { success: true, message: 'Ticket checked in successfully', data: updated };
-  }
-
-  async revertTicketCheckIn(id: string, currentUser: any) {
-    this.assertVendorCheckInRole(currentUser);
-    const ticket = await this.findScopedTicketOrThrow(id, currentUser);
-    if (!ticket.checkedInAt) {
-      return {
-        success: true,
-        message: 'Ticket has not been checked in',
-        data: ticket,
-      };
+            await this.emailService.sendMail({
+                template: 'emails/event/event-ticket',
+                message: {
+                    to: [user?.email].filter(Boolean) as string[],
+                    subject: `Your ticket for ${event.name} — Glee`,
+                    attachments: pdfAttachments,
+                },
+                locals: {
+                    purchasedOn,
+                    userEmail: user?.email,
+                    userName: user?.name,
+                    ticketId: eventTicket.id,
+                    productTitle: event.name,
+                    eventDate,
+                    eventTime,
+                    eventVenue,
+                    total: totalPrice.toLocaleString(),
+                    subTotal: (price * noOfTickets).toLocaleString(),
+                    menuItems: preOrderMenu.map((item) => ({
+                        name: item.name,
+                        quantity: item.quantity,
+                        price: (item.price * item.quantity).toLocaleString(),
+                    })),
+                    menuTotal:
+                        menuTotal > 0 ? menuTotal.toLocaleString() : null,
+                    noOfItems: noOfTickets,
+                    productImage: event.bannerImages?.[0] ?? null,
+                    orderType: 'Event',
+                },
+            });
+        } catch (e) {
+            loggers.error('Email error: %O', e);
+        }
     }
 
-    const updated = await this.prisma.eventTicket.update({
-      where: { id },
-      data: {
-        checkedInAt: null,
-        checkedInById: null,
-      },
-      include: {
-        event: true,
-        payment: true,
-        user: { select: { id: true, name: true, email: true, phone: true } },
-        ticketCategory: true,
-        checkedInBy: { select: { id: true, name: true, email: true } },
-      },
-    });
-
-    await this.prisma.auditLog.create({
-      data: {
-        actorId: currentUser.id,
-        action: 'tickets.check_in_revert',
-        entity: 'EventTicket',
-        entityId: id,
-        metadata: {
-          eventId: ticket.eventId,
-          vendorId: ticket.event.vendorId,
-        },
-      },
-    });
-
-    return { success: true, message: 'Ticket check-in reverted successfully', data: updated };
-  }
-
-  async findTicketsByUserID(userId: string, queryData: any) {
-    const { page, limit, eventId } = queryData;
-    const where: any = { userId };
-    if (eventId) where.eventId = eventId;
-
-    const tickets = await this.prisma.eventTicket.findMany({
-      where,
-      include: { event: { include: { category: true } }, payment: true },
-      orderBy: { createdAt: 'desc' },
-      skip: (page - 1) * limit,
-      take: limit,
-    });
-
-    if (tickets.length === 0) return { success: true, message: 'No tickets bought yet', data: [] };
-
-    const grouped: Record<string, any> = {};
-    tickets.forEach(t => {
-      const eid = t.eventId;
-      if (!grouped[eid]) grouped[eid] = { event: t.event, tickets: [], noOfTicketsPurchased: 0, totalPrice: 0 };
-      grouped[eid].tickets.push(t);
-      grouped[eid].noOfTicketsPurchased += t.payment?.noOfItems ?? 0;
-      grouped[eid].totalPrice += Number(t.payment?.totalPrice ?? 0);
-    });
-
-    const data = Object.values(grouped).map(g => ({
-      ...g,
-      count: g.tickets.length,
-      lastTicketPurchasedOn: g.tickets[g.tickets.length - 1]?.createdAt,
-    }));
-
-    return { success: true, data, totalPages: Math.ceil(data.length / limit), page, limit };
-  }
-
-  async getAvailableTicktesOfEvent(queryData: PaginationQueryDto) {
-    const { page, limit, eventId } = queryData;
-    const event = await this.prisma.event.findFirst({ where: { id: eventId, isDeleted: false, status: 'ACTIVE' } });
-    if (!event) return { success: false, message: 'Event not found', data: [] };
-
-    const [tickets, ticketsCount] = await Promise.all([
-      this.prisma.eventTicket.findMany({ where: { eventId }, include: { user: true }, skip: (page - 1) * limit, take: limit }),
-      this.prisma.eventTicket.count({ where: { eventId } }),
-    ]);
-
-    const ticketsAvailable = (event.capacity ?? 0) - ticketsCount;
-    return {
-      success: true,
-      data: { ticketsCapacity: event.capacity, ticketsSold: ticketsCount, ticketsAvailable, tickets, totalPages: Math.ceil(ticketsCount / limit), page, limit },
-    };
-  }
-
-  async remove(eventId?: string, userId?: string) {
-    const where: any = {};
-    if (eventId) where.eventId = eventId;
-    if (userId) where.userId = userId;
-    await this.prisma.eventTicket.deleteMany({ where });
-  }
-
-  async removeTicket(id: string) {
-    const ticket = await this.prisma.eventTicket.findFirst({ where: { id } });
-    if (!ticket) throw new HttpException('Ticket not found', HttpStatus.BAD_REQUEST);
-    await this.prisma.eventTicket.delete({ where: { id } });
-  }
-
-  async removePermanently() {
-    await this.prisma.eventTicket.deleteMany({});
-    return { success: true };
-  }
-
-  private resolveVendorAccountId(user: any, required = true) {
-    if (user?.role === UserRole.VENDOR) return user.id;
-    if (user?.role === UserRole.VENDOR_STAFF && user.vendorAccountId) return user.vendorAccountId;
-    if (required) throw new HttpException('Vendor account scope is required', HttpStatus.FORBIDDEN);
-    return null;
-  }
-
-  private async findScopedTicketOrThrow(id: string, currentUser: any, requireVendorScope = true) {
-    const ticket = await this.prisma.eventTicket.findFirst({
-      where: { id },
-      include: {
-        event: true,
-        payment: true,
-        user: { select: { id: true, name: true, email: true, phone: true } },
-        ticketCategory: true,
-        checkedInBy: { select: { id: true, name: true, email: true } },
-      },
-    });
-    if (!ticket) throw new HttpException('Ticket not found', HttpStatus.NOT_FOUND);
-
-    if ([UserRole.VENDOR, UserRole.VENDOR_STAFF].includes(currentUser?.role)) {
-      const vendorId = this.resolveVendorAccountId(currentUser);
-      if (ticket.event.vendorId !== vendorId) {
-        throw new HttpException('You do not have access to this ticket', HttpStatus.FORBIDDEN);
-      }
-    } else if (requireVendorScope && ![UserRole.SUPER_ADMIN, UserRole.ADMIN].includes(currentUser?.role)) {
-      throw new HttpException('Vendor account scope is required', HttpStatus.FORBIDDEN);
+    async createEventTicketViaPaystack(data: any) {
+        const metadata = data.metadata;
+        return this.createPurchasedEventTicket(
+            {
+                ...metadata,
+                depositAmount: metadata.depositAmount,
+            },
+            data.reference,
+        );
     }
 
-    return ticket;
-  }
+    async findAll(page = 1, limit = 10, filter?: any, currentUser?: any) {
+        const where: any = { ...filter };
+        const vendorId = this.resolveVendorAccountId(currentUser, false);
+        if (vendorId) where.event = { vendorId };
 
-  private assertVendorCheckInRole(user: any) {
-    if (![UserRole.VENDOR, UserRole.VENDOR_STAFF].includes(user?.role)) {
-      throw new HttpException('Only vendor users can check in tickets', HttpStatus.FORBIDDEN);
+        const [tickets, ticketsCount] = await Promise.all([
+            this.prisma.eventTicket.findMany({
+                where,
+                include: {
+                    event: true,
+                    payment: true,
+                    user: {
+                        select: {
+                            id: true,
+                            name: true,
+                            email: true,
+                            phone: true,
+                        },
+                    },
+                    ticketCategory: true,
+                    checkedInBy: {
+                        select: { id: true, name: true, email: true },
+                    },
+                },
+                orderBy: { createdAt: 'desc' },
+                skip: (page - 1) * limit,
+                take: limit,
+            }),
+            this.prisma.eventTicket.count({ where }),
+        ]);
+
+        if (tickets.length === 0)
+            return { success: false, message: 'No tickets sold yet', data: [] };
+
+        return {
+            success: true,
+            message: 'Tickets fetched successfully',
+            data: tickets,
+            totalPages: Math.ceil(ticketsCount / limit),
+            page,
+            limit,
+        };
     }
-  }
+
+    async getTicketById(id: string, currentUser?: any) {
+        const ticket = await this.findScopedTicketOrThrow(
+            id,
+            currentUser,
+            false,
+        );
+        const supportNotes = currentUser
+            ? await this.prisma.auditLog.findMany({
+                  where: {
+                      entity: 'EventTicket',
+                      entityId: id,
+                      action: 'tickets.support_note',
+                  },
+                  include: {
+                      actor: {
+                          select: {
+                              id: true,
+                              name: true,
+                              email: true,
+                              role: true,
+                          },
+                      },
+                  },
+                  orderBy: { createdAt: 'desc' },
+              })
+            : [];
+        return {
+            success: true,
+            message: 'Ticket fetched successfully',
+            data: { ...ticket, supportNotes },
+        };
+    }
+
+    async addSupportNote(id: string, note: string, currentUser: any) {
+        const ticket = await this.findScopedTicketOrThrow(
+            id,
+            currentUser,
+            false,
+        );
+        if (
+            ![
+                UserRole.SUPER_ADMIN,
+                UserRole.ADMIN,
+                UserRole.CUSTOMER_SUPPORT,
+            ].includes(currentUser?.role)
+        ) {
+            throw new HttpException(
+                'Only support or admin users can add support notes',
+                HttpStatus.FORBIDDEN,
+            );
+        }
+
+        const supportNote = await this.prisma.auditLog.create({
+            data: {
+                actorId: currentUser.id,
+                action: 'tickets.support_note',
+                entity: 'EventTicket',
+                entityId: id,
+                metadata: {
+                    note,
+                    eventId: ticket.eventId,
+                    userId: ticket.userId,
+                },
+            },
+            include: {
+                actor: {
+                    select: { id: true, name: true, email: true, role: true },
+                },
+            },
+        });
+
+        return {
+            success: true,
+            message: 'Support note added successfully',
+            data: supportNote,
+        };
+    }
+
+    async checkInTicket(id: string, currentUser: any) {
+        this.assertVendorCheckInRole(currentUser);
+        const ticket = await this.findScopedTicketOrThrow(id, currentUser);
+        if (ticket.checkedInAt) {
+            return {
+                success: true,
+                message: 'Ticket is already checked in',
+                data: ticket,
+            };
+        }
+
+        const checkedInAt = new Date();
+        const updated = await this.prisma.eventTicket.update({
+            where: { id },
+            data: {
+                checkedInAt,
+                checkedInById: currentUser.id,
+            },
+            include: {
+                event: true,
+                payment: true,
+                user: {
+                    select: { id: true, name: true, email: true, phone: true },
+                },
+                ticketCategory: true,
+                checkedInBy: { select: { id: true, name: true, email: true } },
+            },
+        });
+
+        await this.prisma.auditLog.create({
+            data: {
+                actorId: currentUser.id,
+                action: 'tickets.check_in',
+                entity: 'EventTicket',
+                entityId: id,
+                metadata: {
+                    eventId: ticket.eventId,
+                    vendorId: ticket.event.vendorId,
+                    checkedInAt: checkedInAt.toISOString(),
+                },
+            },
+        });
+
+        return {
+            success: true,
+            message: 'Ticket checked in successfully',
+            data: updated,
+        };
+    }
+
+    async revertTicketCheckIn(id: string, currentUser: any) {
+        this.assertVendorCheckInRole(currentUser);
+        const ticket = await this.findScopedTicketOrThrow(id, currentUser);
+        if (!ticket.checkedInAt) {
+            return {
+                success: true,
+                message: 'Ticket has not been checked in',
+                data: ticket,
+            };
+        }
+
+        const updated = await this.prisma.eventTicket.update({
+            where: { id },
+            data: {
+                checkedInAt: null,
+                checkedInById: null,
+            },
+            include: {
+                event: true,
+                payment: true,
+                user: {
+                    select: { id: true, name: true, email: true, phone: true },
+                },
+                ticketCategory: true,
+                checkedInBy: { select: { id: true, name: true, email: true } },
+            },
+        });
+
+        await this.prisma.auditLog.create({
+            data: {
+                actorId: currentUser.id,
+                action: 'tickets.check_in_revert',
+                entity: 'EventTicket',
+                entityId: id,
+                metadata: {
+                    eventId: ticket.eventId,
+                    vendorId: ticket.event.vendorId,
+                },
+            },
+        });
+
+        return {
+            success: true,
+            message: 'Ticket check-in reverted successfully',
+            data: updated,
+        };
+    }
+
+    async findTicketsByUserID(userId: string, queryData: any) {
+        const { page, limit, eventId } = queryData;
+        const where: any = { userId };
+        if (eventId) where.eventId = eventId;
+
+        const tickets = await this.prisma.eventTicket.findMany({
+            where,
+            include: { event: { include: { category: true } }, payment: true },
+            orderBy: { createdAt: 'desc' },
+            skip: (page - 1) * limit,
+            take: limit,
+        });
+
+        if (tickets.length === 0)
+            return {
+                success: true,
+                message: 'No tickets bought yet',
+                data: [],
+            };
+
+        const grouped: Record<string, any> = {};
+        tickets.forEach((t) => {
+            const eid = t.eventId;
+            if (!grouped[eid])
+                grouped[eid] = {
+                    event: t.event,
+                    tickets: [],
+                    noOfTicketsPurchased: 0,
+                    totalPrice: 0,
+                };
+            grouped[eid].tickets.push(t);
+            grouped[eid].noOfTicketsPurchased += t.payment?.noOfItems ?? 0;
+            grouped[eid].totalPrice += Number(t.payment?.totalPrice ?? 0);
+        });
+
+        const data = Object.values(grouped).map((g) => ({
+            ...g,
+            count: g.tickets.length,
+            lastTicketPurchasedOn: g.tickets[g.tickets.length - 1]?.createdAt,
+        }));
+
+        return {
+            success: true,
+            data,
+            totalPages: Math.ceil(data.length / limit),
+            page,
+            limit,
+        };
+    }
+
+    async getAvailableTicktesOfEvent(queryData: PaginationQueryDto) {
+        const { page, limit, eventId } = queryData;
+        const event = await this.prisma.event.findFirst({
+            where: { id: eventId, isDeleted: false, status: 'ACTIVE' },
+        });
+        if (!event)
+            return { success: false, message: 'Event not found', data: [] };
+
+        const [tickets, ticketsCount] = await Promise.all([
+            this.prisma.eventTicket.findMany({
+                where: { eventId },
+                include: { user: true },
+                skip: (page - 1) * limit,
+                take: limit,
+            }),
+            this.prisma.eventTicket.count({ where: { eventId } }),
+        ]);
+
+        const ticketsAvailable = (event.capacity ?? 0) - ticketsCount;
+        return {
+            success: true,
+            data: {
+                ticketsCapacity: event.capacity,
+                ticketsSold: ticketsCount,
+                ticketsAvailable,
+                tickets,
+                totalPages: Math.ceil(ticketsCount / limit),
+                page,
+                limit,
+            },
+        };
+    }
+
+    async remove(eventId?: string, userId?: string) {
+        const where: any = {};
+        if (eventId) where.eventId = eventId;
+        if (userId) where.userId = userId;
+        await this.prisma.eventTicket.deleteMany({ where });
+    }
+
+    async removeTicket(id: string) {
+        const ticket = await this.prisma.eventTicket.findFirst({
+            where: { id },
+        });
+        if (!ticket)
+            throw new HttpException('Ticket not found', HttpStatus.BAD_REQUEST);
+        await this.prisma.eventTicket.delete({ where: { id } });
+    }
+
+    async removePermanently() {
+        await this.prisma.eventTicket.deleteMany({});
+        return { success: true };
+    }
+
+    private resolveVendorAccountId(user: any, required = true) {
+        if (user?.role === UserRole.VENDOR) return user.id;
+        if (user?.role === UserRole.VENDOR_STAFF && user.vendorAccountId)
+            return user.vendorAccountId;
+        if (required)
+            throw new HttpException(
+                'Vendor account scope is required',
+                HttpStatus.FORBIDDEN,
+            );
+        return null;
+    }
+
+    private async findScopedTicketOrThrow(
+        id: string,
+        currentUser: any,
+        requireVendorScope = true,
+    ) {
+        const ticket = await this.prisma.eventTicket.findFirst({
+            where: { id },
+            include: {
+                event: true,
+                payment: true,
+                user: {
+                    select: { id: true, name: true, email: true, phone: true },
+                },
+                ticketCategory: true,
+                checkedInBy: { select: { id: true, name: true, email: true } },
+            },
+        });
+        if (!ticket)
+            throw new HttpException('Ticket not found', HttpStatus.NOT_FOUND);
+
+        if (
+            [UserRole.VENDOR, UserRole.VENDOR_STAFF].includes(currentUser?.role)
+        ) {
+            const vendorId = this.resolveVendorAccountId(currentUser);
+            if (ticket.event.vendorId !== vendorId) {
+                throw new HttpException(
+                    'You do not have access to this ticket',
+                    HttpStatus.FORBIDDEN,
+                );
+            }
+        } else if (
+            requireVendorScope &&
+            ![UserRole.SUPER_ADMIN, UserRole.ADMIN].includes(currentUser?.role)
+        ) {
+            throw new HttpException(
+                'Vendor account scope is required',
+                HttpStatus.FORBIDDEN,
+            );
+        }
+
+        return ticket;
+    }
+
+    private assertVendorCheckInRole(user: any) {
+        if (![UserRole.VENDOR, UserRole.VENDOR_STAFF].includes(user?.role)) {
+            throw new HttpException(
+                'Only vendor users can check in tickets',
+                HttpStatus.FORBIDDEN,
+            );
+        }
+    }
 }

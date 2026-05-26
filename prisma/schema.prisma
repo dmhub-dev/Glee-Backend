@@ -93,6 +93,9 @@ model User {
   profileImage        String?
   token               String?
   refreshToken        String?
+  twoFactorCode       Int?
+  twoFactorExpiresAt  DateTime?
+  twoFactorVerifiedAt DateTime?
   invitedById         String?
   invitedAt           DateTime?
   lastLoginAt         DateTime?
