@@ -93,6 +93,7 @@ model User {
   profileImage        String?
   token               String?
   refreshToken        String?
+  twoFactorEnabled    Boolean       @default(false)
   twoFactorCode       Int?
   twoFactorExpiresAt  DateTime?
   twoFactorVerifiedAt DateTime?

@@ -371,6 +371,7 @@ export class AccessManagementService {
             phone: dto.phone,
             address: dto.address,
             isActive: dto.isActive,
+            twoFactorEnabled: dto.twoFactorEnabled,
         };
         Object.keys(data).forEach(
             (key) => data[key] === undefined && delete data[key],

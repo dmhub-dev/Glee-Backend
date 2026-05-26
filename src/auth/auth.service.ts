@@ -15,6 +15,7 @@ import {
     ForgotPassword,
     PasswordReset,
     RegisterUserDto,
+    UpdateTwoFactorPreferenceDto,
     VerifyLoginTwoFactorDto,
     VerifyOtpDto,
 } from './dto/create-auth.dto';
@@ -142,6 +143,10 @@ export class AuthService {
             const user = await this.usersService.validateLoginCredentials(
                 loginUserDto,
             );
+            if (!user.twoFactorEnabled) {
+                return this.completeLogin(user, loginUserDto.playerId);
+            }
+
             const otp = generateOtp();
             const expiresInMinutes = 10;
             await this.prisma.user.update({
@@ -204,7 +209,6 @@ export class AuthService {
             );
         }
 
-        const result = await this.usersService.issueTokens(user);
         await this.prisma.user.update({
             where: { id: user.id },
             data: {
@@ -214,25 +218,41 @@ export class AuthService {
             },
         });
 
-        if (result.user.role === UserRole.USER && payload.playerId) {
-            const oneSignalResponse =
-                await this.oneSignalService.addUserToNotificationList(
-                    result.user.id,
-                    payload.playerId,
-                );
-            if (!oneSignalResponse.success) {
-                throw new HttpException(
-                    oneSignalResponse.message,
-                    HttpStatus.BAD_REQUEST,
-                );
-            }
-            return {
-                ...result,
-                user: { ...result.user, oneSignalData: oneSignalResponse.data },
-            };
-        }
+        return this.completeLogin(user, payload.playerId);
+    }
 
-        return result;
+    async updateTwoFactorPreference(
+        currentUser: { id: string },
+        payload: UpdateTwoFactorPreferenceDto,
+    ) {
+        const user = await this.prisma.user.update({
+            where: { id: currentUser.id },
+            data: {
+                twoFactorEnabled: payload.enabled,
+                twoFactorCode: null,
+                twoFactorExpiresAt: null,
+                twoFactorVerifiedAt: null,
+            },
+            select: {
+                id: true,
+                email: true,
+                role: { select: { name: true } },
+                twoFactorEnabled: true,
+            },
+        });
+
+        return {
+            success: true,
+            message: payload.enabled
+                ? 'Two-factor authentication enabled'
+                : 'Two-factor authentication disabled',
+            data: {
+                id: user.id,
+                email: user.email,
+                role: user.role?.name ?? null,
+                twoFactorEnabled: user.twoFactorEnabled,
+            },
+        };
     }
 
     async refreshToken(token: string) {
@@ -399,5 +419,29 @@ export class AuthService {
                 date: new Date().getFullYear(),
             },
         });
+    }
+
+    private async completeLogin(user: any, playerId?: string) {
+        const result = await this.usersService.issueTokens(user);
+
+        if (result.user.role === UserRole.USER && playerId) {
+            const oneSignalResponse =
+                await this.oneSignalService.addUserToNotificationList(
+                    result.user.id,
+                    playerId,
+                );
+            if (!oneSignalResponse.success) {
+                throw new HttpException(
+                    oneSignalResponse.message,
+                    HttpStatus.BAD_REQUEST,
+                );
+            }
+            return {
+                ...result,
+                user: { ...result.user, oneSignalData: oneSignalResponse.data },
+            };
+        }
+
+        return result;
     }
 }

@@ -4,6 +4,7 @@ import {
     Post,
     Body,
     Req,
+    Patch,
     HttpException,
     HttpStatus,
     Render,
@@ -16,6 +17,7 @@ import {
     ForgotPassword,
     PasswordReset,
     RegisterUserDto,
+    UpdateTwoFactorPreferenceDto,
     VerifyLoginTwoFactorDto,
     VerifyOtpDto,
 } from './dto/create-auth.dto';
@@ -66,6 +68,15 @@ export class AuthController {
         @Body() payload: VerifyLoginTwoFactorDto,
     ): Promise<any> {
         return this.authService.verifyLoginTwoFactor(payload);
+    }
+
+    @Patch('me/2fa')
+    @ApiResponses(true)
+    public async updateTwoFactorPreference(
+        @CurrentUser() user: any,
+        @Body() payload: UpdateTwoFactorPreferenceDto,
+    ): Promise<any> {
+        return this.authService.updateTwoFactorPreference(user, payload);
     }
 
     @Post('refresh')

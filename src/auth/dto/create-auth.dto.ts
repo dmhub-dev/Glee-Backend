@@ -9,6 +9,7 @@ import {
     MaxLength,
     IsPhoneNumber,
     IsMongoId,
+    IsBoolean,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
@@ -203,6 +204,13 @@ export class VerifyLoginTwoFactorDto {
     @IsOptional()
     @IsString()
     playerId?: string;
+}
+
+export class UpdateTwoFactorPreferenceDto {
+    @ApiProperty({ type: Boolean })
+    @IsNotEmpty()
+    @IsBoolean()
+    enabled: boolean;
 }
 
 export class ForgotPassword {

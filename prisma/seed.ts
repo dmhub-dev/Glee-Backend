@@ -323,13 +323,14 @@ async function main() {
     const password = await bcrypt.hash('Admin@1234', 10);
     await prisma.user.upsert({
         where: { email: 'admin@glee.com' },
-        update: {},
+        update: { twoFactorEnabled: false },
         create: {
             name: 'Super Admin',
             email: 'admin@glee.com',
             password,
             role: { connect: { name: UserRole.SUPER_ADMIN } },
             isActive: 'ACTIVE',
+            twoFactorEnabled: false,
         },
     });
     console.log(
@@ -351,6 +352,7 @@ async function main() {
                 role: { connect: { name: testVendor.role } },
                 isActive: 'ACTIVE',
                 isDeleted: false,
+                twoFactorEnabled: false,
                 vendorAccount: { disconnect: true },
             },
             create: {
@@ -359,6 +361,7 @@ async function main() {
                 password: testPassword,
                 role: { connect: { name: testVendor.role } },
                 isActive: 'ACTIVE',
+                twoFactorEnabled: false,
             },
         });
         vendorAccountId = vendor.id;
@@ -379,6 +382,7 @@ async function main() {
                 role: { connect: { name: testUser.role } },
                 isActive: 'ACTIVE',
                 isDeleted: false,
+                twoFactorEnabled: false,
                 vendorAccount,
             },
             create: {
@@ -387,6 +391,7 @@ async function main() {
                 password: testPassword,
                 role: { connect: { name: testUser.role } },
                 isActive: 'ACTIVE',
+                twoFactorEnabled: false,
                 ...(testUser.role === UserRole.VENDOR_STAFF && vendorAccountId
                     ? { vendorAccount: { connect: { id: vendorAccountId } } }
                     : {}),

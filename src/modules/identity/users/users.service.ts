@@ -20,6 +20,7 @@ export const USER_PUBLIC_FIELDS = {
     role: true,
     notificationStatus: true,
     profileStatus: true,
+    twoFactorEnabled: true,
     haveNewNotification: true,
 };
 
@@ -291,6 +292,7 @@ export class UsersService {
             profileImage: user.profileImage ?? null,
             profileStatus: user.profileStatus,
             notificationStatus: user.notificationStatus,
+            twoFactorEnabled: user.twoFactorEnabled ?? false,
         };
     }
 }

@@ -2,7 +2,7 @@ import { HttpException } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import { AuthService } from './auth.service';
 
-describe('AuthService role login 2FA', () => {
+describe('AuthService role login and 2FA', () => {
     const roles = Object.values(UserRole);
     let service: AuthService;
     let prisma: any;
@@ -23,12 +23,10 @@ describe('AuthService role login 2FA', () => {
         };
         emailService = { sendMail: jest.fn().mockResolvedValue(undefined) };
         oneSignalService = {
-            addUserToNotificationList: jest
-                .fn()
-                .mockResolvedValue({
-                    success: true,
-                    data: { playerId: 'player-1' },
-                }),
+            addUserToNotificationList: jest.fn().mockResolvedValue({
+                success: true,
+                data: { playerId: 'player-1' },
+            }),
         };
 
         service = new AuthService(
@@ -47,6 +45,7 @@ describe('AuthService role login 2FA', () => {
             name: `${role} User`,
             email: `${role.toLowerCase()}@glee.test`,
             role: { name: role },
+            twoFactorEnabled: true,
         });
 
         const result = await service.login({
@@ -78,6 +77,38 @@ describe('AuthService role login 2FA', () => {
             }),
         );
     });
+
+    it.each(roles)(
+        'logs in %s immediately when 2FA preference is off',
+        async (role) => {
+            usersService.validateLoginCredentials.mockResolvedValue({
+                id: `${role.toLowerCase()}-id`,
+                name: `${role} User`,
+                email: `${role.toLowerCase()}@glee.test`,
+                role: { name: role },
+                twoFactorEnabled: false,
+            });
+            usersService.issueTokens.mockResolvedValue({
+                user: { id: `${role.toLowerCase()}-id`, role },
+                accessToken: 'access-token',
+                refreshToken: 'refresh-token',
+            });
+
+            const result = await service.login({
+                email: `${role.toLowerCase()}@glee.test`,
+                password: 'Test@1234',
+                role,
+            });
+
+            expect(result).toMatchObject({
+                accessToken: 'access-token',
+                refreshToken: 'refresh-token',
+                user: expect.objectContaining({ role }),
+            });
+            expect(emailService.sendMail).not.toHaveBeenCalled();
+            expect(prisma.user.update).not.toHaveBeenCalled();
+        },
+    );
 
     it.each(roles)(
         'verifies email 2FA and issues tokens for %s',

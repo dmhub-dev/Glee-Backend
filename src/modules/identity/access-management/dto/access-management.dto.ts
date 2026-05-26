@@ -1,134 +1,139 @@
 import { AccountStatus, UserRole } from '@prisma/client';
 import { Type } from 'class-transformer';
 import {
-  ArrayNotEmpty,
-  IsArray,
-  IsEmail,
-  IsEnum,
-  IsInt,
-  IsOptional,
-  IsString,
-  Max,
-  Min,
-  MinLength,
-  ValidateIf,
+    ArrayNotEmpty,
+    IsArray,
+    IsEmail,
+    IsEnum,
+    IsBoolean,
+    IsInt,
+    IsOptional,
+    IsString,
+    Max,
+    Min,
+    MinLength,
+    ValidateIf,
 } from 'class-validator';
 
 export class InviteUserDto {
-  @IsString()
-  name: string;
+    @IsString()
+    name: string;
 
-  @IsEmail()
-  email: string;
+    @IsEmail()
+    email: string;
 
-  @IsEnum(UserRole)
-  role: UserRole;
+    @IsEnum(UserRole)
+    role: UserRole;
 
-  @IsOptional()
-  @IsString()
-  phone?: string;
+    @IsOptional()
+    @IsString()
+    phone?: string;
 
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @Max(30)
-  expiresInDays?: number;
+    @IsOptional()
+    @Type(() => Number)
+    @IsInt()
+    @Min(1)
+    @Max(30)
+    expiresInDays?: number;
 }
 
 export class AcceptInvitationDto {
-  @IsString()
-  @MinLength(8)
-  password: string;
+    @IsString()
+    @MinLength(8)
+    password: string;
 
-  @IsString()
-  confirmPassword: string;
+    @IsString()
+    confirmPassword: string;
 }
 
 export class ListUsersQueryDto {
-  @IsOptional()
-  @IsString()
-  search?: string;
+    @IsOptional()
+    @IsString()
+    search?: string;
 
-  @IsOptional()
-  @IsEnum(UserRole)
-  role?: UserRole;
+    @IsOptional()
+    @IsEnum(UserRole)
+    role?: UserRole;
 
-  @IsOptional()
-  @IsEnum(AccountStatus)
-  status?: AccountStatus;
+    @IsOptional()
+    @IsEnum(AccountStatus)
+    status?: AccountStatus;
 
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  page?: number;
+    @IsOptional()
+    @Type(() => Number)
+    @IsInt()
+    @Min(1)
+    page?: number;
 
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @Max(100)
-  limit?: number;
+    @IsOptional()
+    @Type(() => Number)
+    @IsInt()
+    @Min(1)
+    @Max(100)
+    limit?: number;
 }
 
 export class UpdateUserDto {
-  @IsOptional()
-  @IsString()
-  name?: string;
+    @IsOptional()
+    @IsString()
+    name?: string;
 
-  @IsOptional()
-  @IsString()
-  phone?: string;
+    @IsOptional()
+    @IsString()
+    phone?: string;
 
-  @IsOptional()
-  @IsString()
-  address?: string;
+    @IsOptional()
+    @IsString()
+    address?: string;
 
-  @IsOptional()
-  @IsEnum(UserRole)
-  role?: UserRole;
+    @IsOptional()
+    @IsEnum(UserRole)
+    role?: UserRole;
 
-  @IsOptional()
-  @IsEnum(AccountStatus)
-  isActive?: AccountStatus;
+    @IsOptional()
+    @IsEnum(AccountStatus)
+    isActive?: AccountStatus;
+
+    @IsOptional()
+    @IsBoolean()
+    twoFactorEnabled?: boolean;
 }
 
 export class UpdateRolePermissionsDto {
-  @IsArray()
-  @ArrayNotEmpty()
-  @IsString({ each: true })
-  permissions: string[];
+    @IsArray()
+    @ArrayNotEmpty()
+    @IsString({ each: true })
+    permissions: string[];
 }
 
 export class ListAuditLogsQueryDto {
-  @IsOptional()
-  @IsString()
-  actorId?: string;
+    @IsOptional()
+    @IsString()
+    actorId?: string;
 
-  @IsOptional()
-  @IsString()
-  action?: string;
+    @IsOptional()
+    @IsString()
+    action?: string;
 
-  @IsOptional()
-  @IsString()
-  entity?: string;
+    @IsOptional()
+    @IsString()
+    entity?: string;
 
-  @IsOptional()
-  @ValidateIf((_, value) => value !== '')
-  @IsString()
-  entityId?: string;
+    @IsOptional()
+    @ValidateIf((_, value) => value !== '')
+    @IsString()
+    entityId?: string;
 
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  page?: number;
+    @IsOptional()
+    @Type(() => Number)
+    @IsInt()
+    @Min(1)
+    page?: number;
 
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @Max(100)
-  limit?: number;
+    @IsOptional()
+    @Type(() => Number)
+    @IsInt()
+    @Min(1)
+    @Max(100)
+    limit?: number;
 }
