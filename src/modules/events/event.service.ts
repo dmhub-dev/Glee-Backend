@@ -15,7 +15,7 @@ const EVENT_INCLUDE: Prisma.EventInclude = {
     location: true,
     ticketCategories: true,
     menuItems: true,
-    schedules: { orderBy: [{ startsAt: 'asc' }, { sortOrder: 'asc' }] },
+    schedules: { orderBy: { startDate: 'asc' } },
     vendor: { select: { id: true, name: true, email: true, role: true } },
 };
 
@@ -741,49 +741,51 @@ export class EventService {
 
     private normalizeEventSchedules(schedules?: any[]) {
         if (!Array.isArray(schedules)) return [];
-        return schedules.map((schedule, index) => {
-            const startsAt =
-                schedule.startsAt ?? schedule.startTime ?? schedule.time;
-            const endsAt = schedule.endsAt ?? schedule.endTime;
-            if (!startsAt) {
+        return schedules.map((schedule) => {
+            const startDate = schedule.startDate ?? schedule.startsAt;
+            const endDate = schedule.endDate ?? schedule.endsAt;
+            if (!schedule.name || !startDate || !endDate) {
                 throw new HttpException(
-                    'Each event schedule item requires startsAt',
+                    'Each event schedule item requires name, startDate, and endDate',
                     HttpStatus.BAD_REQUEST,
                 );
             }
-            const parsedStartsAt = new Date(startsAt);
-            const parsedEndsAt = endsAt ? new Date(endsAt) : null;
+            const parsedStartDate = new Date(startDate);
+            const parsedEndDate = new Date(endDate);
             if (
-                Number.isNaN(parsedStartsAt.getTime()) ||
-                (parsedEndsAt && Number.isNaN(parsedEndsAt.getTime()))
+                Number.isNaN(parsedStartDate.getTime()) ||
+                Number.isNaN(parsedEndDate.getTime())
             ) {
                 throw new HttpException(
                     'Event schedule contains an invalid date',
                     HttpStatus.BAD_REQUEST,
                 );
             }
+            if (parsedEndDate < parsedStartDate) {
+                throw new HttpException(
+                    'Event schedule endDate cannot be before startDate',
+                    HttpStatus.BAD_REQUEST,
+                );
+            }
 
             return {
-                title: schedule.title ?? schedule.note ?? null,
+                name: schedule.name,
                 description: schedule.description ?? null,
-                startsAt: parsedStartsAt,
-                endsAt: parsedEndsAt,
-                sortOrder: schedule.sortOrder ?? index,
+                startDate: parsedStartDate,
+                endDate: parsedEndDate,
             };
         });
     }
 
     private resolveEventDateRange(
         date?: { start?: Date | string; end?: Date | string } | null,
-        schedules?: { startsAt: Date; endsAt?: Date | null }[],
+        schedules?: { startDate: Date; endDate: Date }[],
         fallback?: { startDate?: Date | null; endDate?: Date | null },
     ) {
         const scheduleStarts =
-            schedules?.map((schedule) => schedule.startsAt) ?? [];
+            schedules?.map((schedule) => schedule.startDate) ?? [];
         const scheduleEnds =
-            schedules?.map(
-                (schedule) => schedule.endsAt ?? schedule.startsAt,
-            ) ?? [];
+            schedules?.map((schedule) => schedule.endDate) ?? [];
         const startDate = this.parseOptionalDate(
             date?.start ??
                 (scheduleStarts.length

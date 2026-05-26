@@ -1,4 +1,9 @@
-import { PrismaClient, UserRole } from '@prisma/client';
+import {
+    EntityStatus,
+    EventStatus,
+    PrismaClient,
+    UserRole,
+} from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
@@ -68,6 +73,10 @@ const TEST_ROLE_USERS: { role: UserRole; name: string; email: string }[] = [
     },
     { role: UserRole.USER, name: 'Test User', email: 'user@glee.test' },
 ];
+
+const OLD_SAMPLE_EVENT_NAME = 'Glee Sample Weekend Festival';
+const SINGLE_DAY_SAMPLE_EVENT_NAME = 'Summer Music Carnival';
+const MULTI_DAY_SAMPLE_EVENT_NAME = 'East Africa Cultural Festival';
 
 const PERMISSIONS = [
     ['users:read', 'users', 'read', 'View users'],
@@ -401,6 +410,197 @@ async function main() {
     console.log(
         `Seeded ${TEST_ROLE_USERS.length} role test users. Password: Test@1234`,
     );
+
+    console.log('Seeding sample events...');
+    const activeLocations = await prisma.location.findMany({
+        where: { status: EntityStatus.ACTIVE },
+        orderBy: { createdAt: 'desc' },
+    });
+    const sampleLocation =
+        activeLocations.find((location) => location.pictures.length > 0) ??
+        activeLocations[0];
+    const sampleCategory = await prisma.category.findFirst({
+        where: { name: 'Music' },
+    });
+    const sampleVendor = await prisma.user.findUnique({
+        where: { email: 'vendor@glee.test' },
+    });
+
+    if (!sampleLocation || !sampleCategory || !sampleVendor) {
+        console.log(
+            'Skipped sample events. Requires an active location, Music category, and vendor@glee.test.',
+        );
+    } else {
+        const samplePhoto =
+            sampleLocation.pictures[0] ??
+            sampleLocation.floorPlanImageUrl ??
+            'https://new-glee-storage.s3.us-east-1.amazonaws.com/locations/85aed236-fff1-4533-9ec4-061e8381f90b.jpg';
+        async function removeSeedEvent(name: string) {
+            const events = await prisma.event.findMany({
+                where: { name },
+                select: { id: true },
+            });
+            for (const event of events) {
+                await prisma.ticketCategory.deleteMany({
+                    where: { eventId: event.id },
+                });
+                await prisma.eventMenuItem.deleteMany({
+                    where: { eventId: event.id },
+                });
+                await prisma.eventSchedule.deleteMany({
+                    where: { eventId: event.id },
+                });
+                await prisma.eventTicket.deleteMany({
+                    where: { eventId: event.id },
+                });
+                await prisma.event.delete({ where: { id: event.id } });
+            }
+        }
+
+        async function createSeedEvent(input: {
+            name: string;
+            description: string;
+            capacity: number;
+            startDate: Date;
+            endDate: Date;
+            tickets: { name: string; price: number; capacity: number }[];
+            menuItems: {
+                name: string;
+                category: string;
+                price: number;
+                description: string;
+            }[];
+            scheduleDescription: string;
+        }) {
+            await removeSeedEvent(input.name);
+            const event = await prisma.event.create({
+                data: {
+                    name: input.name,
+                    description: input.description,
+                    capacity: input.capacity,
+                    photos: [samplePhoto],
+                    startDate: input.startDate,
+                    endDate: input.endDate,
+                    status: EventStatus.ACTIVE,
+                    isDeleted: false,
+                    locationId: sampleLocation.id,
+                    categoryId: sampleCategory.id,
+                    vendorId: sampleVendor.id,
+                },
+            });
+
+            await prisma.ticketCategory.createMany({
+                data: input.tickets.map((ticket) => ({
+                    eventId: event.id,
+                    name: ticket.name,
+                    price: ticket.price,
+                    capacity: ticket.capacity,
+                    available: ticket.capacity,
+                })),
+            });
+
+            await prisma.eventMenuItem.createMany({
+                data: input.menuItems.map((item) => ({
+                    eventId: event.id,
+                    name: item.name,
+                    category: item.category,
+                    price: item.price,
+                    description: item.description,
+                })),
+            });
+
+            await prisma.eventSchedule.create({
+                data: {
+                    eventId: event.id,
+                    name: input.name,
+                    description: input.scheduleDescription,
+                    startDate: input.startDate,
+                    endDate: input.endDate,
+                },
+            });
+
+            return event;
+        }
+
+        await removeSeedEvent(OLD_SAMPLE_EVENT_NAME);
+
+        const singleDayEvent = await createSeedEvent({
+            name: SINGLE_DAY_SAMPLE_EVENT_NAME,
+            description:
+                'A one-day seeded music event with a full-day schedule, ticket categories, and food/drink pre-orders.',
+            capacity: 500,
+            startDate: new Date('2026-07-05T09:00:00.000Z'),
+            endDate: new Date('2026-07-05T18:00:00.000Z'),
+            tickets: [
+                { name: 'Regular', price: 1500, capacity: 350 },
+                { name: 'VIP', price: 5000, capacity: 120 },
+                { name: 'VVIP', price: 10000, capacity: 30 },
+            ],
+            menuItems: [
+                {
+                    name: 'Nyama Choma Plate',
+                    category: 'food',
+                    price: 1200,
+                    description: 'Grilled meat plate redeemable at the gate.',
+                },
+                {
+                    name: 'Soft Drink',
+                    category: 'drink',
+                    price: 250,
+                    description:
+                        'One chilled soft drink redeemable at the gate.',
+                },
+                {
+                    name: 'Cocktail Voucher',
+                    category: 'drink',
+                    price: 900,
+                    description: 'One cocktail voucher redeemable at the bar.',
+                },
+            ],
+            scheduleDescription:
+                '9:00am-10:00am guest arrival and registration, 10:00am-12:00pm opening performances and games, 12:00pm-1:00pm lunch break, 1:00pm-4:00pm main entertainment (live music, DJs, and activities), 4:00pm-5:30pm competitions and guest appearances, and 5:30pm-6:00pm closing ceremony and farewell session.',
+        });
+
+        const multiDayEvent = await createSeedEvent({
+            name: MULTI_DAY_SAMPLE_EVENT_NAME,
+            description:
+                'A two-day seeded cultural festival with a multi-day schedule, ticket categories, and pre-order menu items.',
+            capacity: 800,
+            startDate: new Date('2026-08-20T09:00:00.000Z'),
+            endDate: new Date('2026-08-21T18:00:00.000Z'),
+            tickets: [
+                { name: 'Day Pass', price: 2000, capacity: 500 },
+                { name: 'Weekend Pass', price: 3500, capacity: 250 },
+                { name: 'Patron Pass', price: 8000, capacity: 50 },
+            ],
+            menuItems: [
+                {
+                    name: 'Food Tasting Voucher',
+                    category: 'food',
+                    price: 1500,
+                    description: 'Voucher for cultural food tasting sessions.',
+                },
+                {
+                    name: 'Craft Market Token',
+                    category: 'merchandise',
+                    price: 1000,
+                    description: 'Token redeemable at selected craft stalls.',
+                },
+                {
+                    name: 'Fresh Juice',
+                    category: 'drink',
+                    price: 350,
+                    description: 'Fresh juice redeemable at the festival bar.',
+                },
+            ],
+            scheduleDescription:
+                'Day 1 (9:00am-10:00am opening parade and cultural introduction, 10:00am-12:00pm traditional performances, 12:00pm-1:00pm food tasting sessions, 1:00pm-5:00pm music, dance, and storytelling showcases, 5:00pm-6:00pm closing remarks), Day 2 (9:00am-10:00am community workshop introductions, 10:00am-12:00pm craft exhibitions, 12:00pm-1:00pm lunch break, 1:00pm-4:00pm cultural competitions, 4:00pm-6:00pm award ceremony and performances).',
+        });
+
+        console.log(
+            `Sample events seeded. Single-day: ${singleDayEvent.name} | Multi-day: ${multiDayEvent.name} | Location: ${sampleLocation.name}`,
+        );
+    }
 
     console.log('Seed complete.');
 }

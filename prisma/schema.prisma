@@ -219,19 +219,18 @@ model Event {
 }
 
 model EventSchedule {
-  id          String    @id @default(cuid())
+  id          String   @id @default(cuid())
   eventId     String
-  event       Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  title       String?
+  event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  name        String
   description String?
-  startsAt    DateTime
-  endsAt      DateTime?
-  sortOrder   Int       @default(0)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  startDate   DateTime
+  endDate     DateTime
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@index([eventId])
-  @@index([startsAt])
+  @@index([startDate])
   @@map("event_schedules")
 }
 

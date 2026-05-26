@@ -11,33 +11,21 @@ export class TicketCategoryInputDto {
 }
 
 export class EventScheduleDto {
-    @ApiProperty({ required: false })
-    @IsOptional()
-    title?: string;
+    @ApiProperty()
+    @IsNotEmpty()
+    name: string;
 
-    @ApiProperty({ required: false })
-    @IsOptional()
-    description?: string;
+    @ApiProperty()
+    @IsNotEmpty()
+    description: string;
 
-    @ApiProperty({ required: false, format: 'date-time' })
-    @IsOptional()
-    startsAt?: Date;
+    @ApiProperty({ format: 'date-time' })
+    @IsNotEmpty()
+    startDate: Date;
 
-    @ApiProperty({ required: false, format: 'date-time' })
-    @IsOptional()
-    endsAt?: Date;
-
-    @ApiProperty({ required: false })
-    @IsOptional()
-    sortOrder?: number;
-
-    @ApiProperty({ required: false, description: 'Legacy alias for title' })
-    @IsOptional()
-    note?: string;
-
-    @ApiProperty({ required: false, description: 'Legacy alias for startsAt' })
-    @IsOptional()
-    time?: Date;
+    @ApiProperty({ format: 'date-time' })
+    @IsNotEmpty()
+    endDate: Date;
 }
 
 export class MenuItemInputDto {
