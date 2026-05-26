@@ -4,6 +4,7 @@ import {
   Body,
   Param,
   Delete,
+  Patch,
   Query,
   HttpCode,
   HttpStatus,
@@ -45,6 +46,20 @@ export class AdminEventTicketsController {
   // update(@Param('id') id: string, @Body() updateEventTicketDto: UpdateEventTicketDto) {
   //   return this.eventTicketsService.update(+id, updateEventTicketDto);
   // }
+  @ApiResponses(true, [UserRole.VENDOR, UserRole.VENDOR_STAFF])
+  @Permissions(Permission.BOOKINGS_UPDATE)
+  @Patch(':id/check-in')
+  checkIn(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.eventTicketsService.checkInTicket(id, user);
+  }
+
+  @ApiResponses(true, [UserRole.VENDOR])
+  @Permissions(Permission.BOOKINGS_UPDATE)
+  @Patch(':id/check-in/revert')
+  revertCheckIn(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.eventTicketsService.revertTicketCheckIn(id, user);
+  }
+
   @ApiResponses(true, [UserRole.ADMIN])
   @Permissions(Permission.BOOKINGS_DELETE)
   @Delete(':id')

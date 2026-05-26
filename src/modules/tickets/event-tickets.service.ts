@@ -312,6 +312,7 @@ export class EventTicketsService {
           payment: true,
           user: { select: { id: true, name: true, email: true, phone: true } },
           ticketCategory: true,
+          checkedInBy: { select: { id: true, name: true, email: true } },
         },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
@@ -339,6 +340,90 @@ export class EventTicketsService {
     });
     if (!ticket) return { success: false, message: 'No ticket found', data: {} };
     return { success: true, message: 'Ticket fetched successfully', data: ticket };
+  }
+
+  async checkInTicket(id: string, currentUser: any) {
+    const ticket = await this.findScopedTicketOrThrow(id, currentUser);
+    if (ticket.checkedInAt) {
+      return {
+        success: true,
+        message: 'Ticket is already checked in',
+        data: ticket,
+      };
+    }
+
+    const checkedInAt = new Date();
+    const updated = await this.prisma.eventTicket.update({
+      where: { id },
+      data: {
+        checkedInAt,
+        checkedInById: currentUser.id,
+      },
+      include: {
+        event: true,
+        payment: true,
+        user: { select: { id: true, name: true, email: true, phone: true } },
+        ticketCategory: true,
+        checkedInBy: { select: { id: true, name: true, email: true } },
+      },
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        actorId: currentUser.id,
+        action: 'tickets.check_in',
+        entity: 'EventTicket',
+        entityId: id,
+        metadata: {
+          eventId: ticket.eventId,
+          vendorId: ticket.event.vendorId,
+          checkedInAt: checkedInAt.toISOString(),
+        },
+      },
+    });
+
+    return { success: true, message: 'Ticket checked in successfully', data: updated };
+  }
+
+  async revertTicketCheckIn(id: string, currentUser: any) {
+    const ticket = await this.findScopedTicketOrThrow(id, currentUser);
+    if (!ticket.checkedInAt) {
+      return {
+        success: true,
+        message: 'Ticket has not been checked in',
+        data: ticket,
+      };
+    }
+
+    const updated = await this.prisma.eventTicket.update({
+      where: { id },
+      data: {
+        checkedInAt: null,
+        checkedInById: null,
+      },
+      include: {
+        event: true,
+        payment: true,
+        user: { select: { id: true, name: true, email: true, phone: true } },
+        ticketCategory: true,
+        checkedInBy: { select: { id: true, name: true, email: true } },
+      },
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        actorId: currentUser.id,
+        action: 'tickets.check_in_revert',
+        entity: 'EventTicket',
+        entityId: id,
+        metadata: {
+          eventId: ticket.eventId,
+          vendorId: ticket.event.vendorId,
+        },
+      },
+    });
+
+    return { success: true, message: 'Ticket check-in reverted successfully', data: updated };
   }
 
   async findTicketsByUserID(userId: string, queryData: any) {
@@ -414,5 +499,28 @@ export class EventTicketsService {
     if (user?.role === UserRole.VENDOR_STAFF && user.vendorAccountId) return user.vendorAccountId;
     if (required) throw new HttpException('Vendor account scope is required', HttpStatus.FORBIDDEN);
     return null;
+  }
+
+  private async findScopedTicketOrThrow(id: string, currentUser: any) {
+    const ticket = await this.prisma.eventTicket.findFirst({
+      where: { id },
+      include: {
+        event: true,
+        payment: true,
+        user: { select: { id: true, name: true, email: true, phone: true } },
+        ticketCategory: true,
+        checkedInBy: { select: { id: true, name: true, email: true } },
+      },
+    });
+    if (!ticket) throw new HttpException('Ticket not found', HttpStatus.NOT_FOUND);
+
+    if ([UserRole.VENDOR, UserRole.VENDOR_STAFF].includes(currentUser?.role)) {
+      const vendorId = this.resolveVendorAccountId(currentUser);
+      if (ticket.event.vendorId !== vendorId) {
+        throw new HttpException('You do not have access to this ticket', HttpStatus.FORBIDDEN);
+      }
+    }
+
+    return ticket;
   }
 }
