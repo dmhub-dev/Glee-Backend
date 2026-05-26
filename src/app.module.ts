@@ -21,6 +21,7 @@ import { NotificationModule } from './modules/notifications/notifications/notifi
 import { AppService } from '@src/app.service';
 import { AccessManagementModule } from './modules/identity/access-management/access-management.module';
 import { WalletModule } from './modules/wallets/wallet/wallet.module';
+import { FinanceModule } from './modules/finance/finance/finance.module';
 
 @Module({
   imports: [
@@ -48,6 +49,7 @@ import { WalletModule } from './modules/wallets/wallet/wallet.module';
     NotificationModule,
     AccessManagementModule,
     WalletModule,
+    FinanceModule,
   ],
   providers: [
     AppService,
