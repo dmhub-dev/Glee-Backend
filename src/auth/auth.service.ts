@@ -1,14 +1,14 @@
 import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
-import { PrismaService } from '@src/prisma/prisma.service';
+import { PrismaService } from '@src/infrastructure/database/prisma.service';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { UserRole } from '@prisma/client';
-import { UsersService } from '../users/users.service';
-import { OnesignalService } from '@src/onesignal/onesignal.service';
-import { EmailService } from '@src/email-server/email.service';
-import { loggers } from '@src/interceptors/logger.enums';
-import { generateOtp } from '../shared/utils';
-import { Response, ResponseObj } from '../shared/response';
+import { UsersService } from '@src/modules/identity/users/users.service';
+import { OnesignalService } from '@src/infrastructure/push/onesignal/onesignal.service';
+import { EmailService } from '@src/infrastructure/email/email.service';
+import { loggers } from '@src/common/interceptors/logger.enums';
+import { generateOtp } from '@src/common/utils/utils';
+import { Response, ResponseObj } from '@src/common/responses/response';
 import * as path from 'path';
 import {
   LoginDto,

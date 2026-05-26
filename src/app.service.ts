@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 
 import { ConfigService } from '@nestjs/config';
-import { loggers } from '@src/interceptors/logger.enums';
+import { loggers } from '@src/common/interceptors/logger.enums';
 
 @Injectable()
 export class AppService implements OnApplicationBootstrap {

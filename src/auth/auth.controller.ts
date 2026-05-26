@@ -19,12 +19,12 @@ import {
   VerifyOtpDto,
 } from './dto/create-auth.dto';
 import { ApiConsumes, ApiTags } from '@nestjs/swagger';
-import { Response, ApiResponses } from '../shared/response';
+import { Response, ApiResponses } from '@src/common/responses/response';
 import {
   ApiImageFile,
   UploadType,
-} from 'src/decorators/check-mime-type.decorator';
-import { CurrentUser } from '@src/auth/jwt.strategy';
+} from '@src/common/decorators/check-mime-type.decorator';
+import { CurrentUser } from '@src/auth/jwt/current-user.decorator';
 import { UserRole } from '@prisma/client';
 
 @Controller()

@@ -12,14 +12,14 @@ import {
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
-import { CountryCodes } from '../../shared/countries';
+import { CountryCodes } from '@src/common/utils/countries';
 import {
   IsMatchConfirmPassword,
   MinDigits,
   MinLowerCase,
   MinSpecialCharacter,
   MinUpperCase,
-} from '../../decorators/validation.decorators';
+} from '@src/common/decorators/validation.decorators';
 import { faker } from '@faker-js/faker';
 
 export type UserRoleType = UserRole;

@@ -3,9 +3,9 @@ import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { PassportModule } from '@nestjs/passport';
 import { JwtModule } from '@nestjs/jwt';
-import { UsersModule } from '../users/users.module';
-import { JwtStrategy } from './jwt.strategy';
-import { OnesignalModule } from 'src/onesignal/onesignal.module';
+import { UsersModule } from '@src/modules/identity/users/users.module';
+import { JwtStrategy } from './jwt/jwt.strategy';
+import { OnesignalModule } from '@src/infrastructure/push/onesignal/onesignal.module';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 
 @Module({

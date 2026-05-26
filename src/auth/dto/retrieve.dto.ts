@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsNumber, IsOptional, IsString } from 'class-validator';
-import { PaginationQueryDto } from '@src/event/dto/pagination-query.dto';
+import { PaginationQueryDto } from '@src/modules/events/dto/pagination-query.dto';
 
 export class RetrieveCountriesDto extends PaginationQueryDto {
   @ApiProperty({ required: false })

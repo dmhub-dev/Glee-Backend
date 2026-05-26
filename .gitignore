@@ -55,3 +55,4 @@ pnpm-lock.yaml
 rbac-seed.ts
 claude.md
 legacy/
+*.pdf

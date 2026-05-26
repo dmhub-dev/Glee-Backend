@@ -5,11 +5,11 @@ import { AppModule } from './app.module';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import * as helmet from 'helmet';
 import { ConfigService } from '@nestjs/config';
-import { createFolder, populateStateData } from './shared/utils';
+import { createFolder, populateStateData } from './common/utils/utils';
 import * as path from 'path';
 import * as express from 'express';
-import { MyLogger } from '@src/shared/LoggerService';
-import { AllExceptionsFilter } from '@src/exceptions-filter/all-exception.filter';
+import { MyLogger } from '@src/common/logger/logger.service';
+import { AllExceptionsFilter } from '@src/common/filters/all-exception.filter';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
