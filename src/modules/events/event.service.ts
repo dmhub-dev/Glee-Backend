@@ -13,6 +13,7 @@ import { S3Service } from '@src/infrastructure/storage/s3.service';
 
 const EVENT_INCLUDE: Prisma.EventInclude = {
     location: true,
+    category: true,
     ticketCategories: true,
     menuItems: true,
     schedules: { orderBy: { startDate: 'asc' } },
