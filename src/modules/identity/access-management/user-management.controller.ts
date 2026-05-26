@@ -16,15 +16,15 @@ export class UserManagementController {
   @Get()
   @ApiResponses(true, [UserRole.SUPER_ADMIN])
   @Permissions(Permission.USERS_READ)
-  listUsers(@Query() query: ListUsersQueryDto) {
-    return this.accessManagementService.listUsers(query);
+  listUsers(@Query() query: ListUsersQueryDto, @CurrentUser() user: any) {
+    return this.accessManagementService.listUsers(query, user);
   }
 
   @Get(':id')
   @ApiResponses(true, [UserRole.SUPER_ADMIN])
   @Permissions(Permission.USERS_READ)
-  getUser(@Param('id') id: string) {
-    return this.accessManagementService.getUser(id);
+  getUser(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.accessManagementService.getUser(id, user);
   }
 
   @Patch(':id')

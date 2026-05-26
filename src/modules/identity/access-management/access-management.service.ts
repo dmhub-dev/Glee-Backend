@@ -159,6 +159,7 @@ export class AccessManagementService {
                 'Only pending invitations can be resent',
                 HttpStatus.BAD_REQUEST,
             );
+        this.assertInvitationAccess(invitation, actor);
 
         const updated = await this.prisma.userInvitation.update({
             where: { id },
@@ -192,6 +193,7 @@ export class AccessManagementService {
                 'Only pending invitations can be revoked',
                 HttpStatus.BAD_REQUEST,
             );
+        this.assertInvitationAccess(invitation, actor);
 
         const updated = await this.prisma.userInvitation.update({
             where: { id },
@@ -302,12 +304,15 @@ export class AccessManagementService {
         };
     }
 
-    async listUsers(query: ListUsersQueryDto) {
+    async listUsers(query: ListUsersQueryDto, actor?: any) {
         const page = query.page ?? 1;
         const limit = query.limit ?? 20;
         const where: any = { isDeleted: false };
 
-        if (query.role) where.role = { name: query.role };
+        if (actor?.role === UserRole.VENDOR) {
+            where.role = { name: UserRole.VENDOR_STAFF };
+            where.vendorAccountId = actor.id;
+        } else if (query.role) where.role = { name: query.role };
         if (query.status) where.isActive = query.status;
         if (query.search) {
             where.OR = [
@@ -335,9 +340,14 @@ export class AccessManagementService {
         };
     }
 
-    async getUser(id: string) {
+    async getUser(id: string, actor?: any) {
+        const where: any = { id, isDeleted: false };
+        if (actor?.role === UserRole.VENDOR) {
+            where.role = { name: UserRole.VENDOR_STAFF };
+            where.vendorAccountId = actor.id;
+        }
         const user = await this.prisma.user.findFirst({
-            where: { id, isDeleted: false },
+            where,
             select: USER_SELECT,
         });
         if (!user)
@@ -351,7 +361,14 @@ export class AccessManagementService {
 
     async updateUser(id: string, dto: UpdateUserDto, actor: any) {
         const current = await this.prisma.user.findFirst({
-            where: { id, isDeleted: false },
+            where: {
+                id,
+                isDeleted: false,
+                ...(actor?.role === UserRole.VENDOR && {
+                    role: { name: UserRole.VENDOR_STAFF },
+                    vendorAccountId: actor.id,
+                }),
+            },
             include: { role: true },
         });
         if (!current)
@@ -378,6 +395,12 @@ export class AccessManagementService {
         );
 
         if (dto.role) {
+            if (actor?.role === UserRole.VENDOR) {
+                throw new HttpException(
+                    'Vendors cannot reassign staff roles',
+                    HttpStatus.FORBIDDEN,
+                );
+            }
             if (!this.canAssignRoles(actor)) {
                 throw new HttpException(
                     'You do not have permission to assign roles',
@@ -422,7 +445,14 @@ export class AccessManagementService {
             );
 
         const user = await this.prisma.user.findFirst({
-            where: { id, isDeleted: false },
+            where: {
+                id,
+                isDeleted: false,
+                ...(actor?.role === UserRole.VENDOR && {
+                    role: { name: UserRole.VENDOR_STAFF },
+                    vendorAccountId: actor.id,
+                }),
+            },
             select: { id: true, role: { select: { name: true } } },
         });
         if (!user)
@@ -571,6 +601,22 @@ export class AccessManagementService {
             actor?.role === UserRole.SUPER_ADMIN ||
             actor?.permissions?.includes('users:assign_role') ||
             actor?.role === UserRole.VENDOR
+        );
+    }
+
+    private assertInvitationAccess(invitation: any, actor: any) {
+        if (
+            actor?.role === UserRole.SUPER_ADMIN ||
+            actor?.role === UserRole.ADMIN
+        ) {
+            return;
+        }
+        if (actor?.role === UserRole.VENDOR && invitation.invitedById === actor.id) {
+            return;
+        }
+        throw new HttpException(
+            'You do not have access to this invitation',
+            HttpStatus.FORBIDDEN,
         );
     }
 

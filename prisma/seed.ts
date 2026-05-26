@@ -222,6 +222,9 @@ const ROLE_PERMISSIONS: Record<UserRole, string[]> = {
     ],
     [UserRole.VENDOR]: [
         'users:invite',
+        'users:read',
+        'users:update',
+        'users:delete',
         'events:read',
         'events:create',
         'events:update',
