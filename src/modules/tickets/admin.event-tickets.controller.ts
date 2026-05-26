@@ -20,6 +20,7 @@ import { PaginationQueryDto } from './dto/pagination-query.dto';
 import { IEventTicketAdminFilters } from './interfaces/filters';
 import { Permissions } from '@src/auth/rbac/permissions.decorator';
 import { Permission } from '@src/auth/rbac/permissions.enum';
+import { SupportTicketNoteDto } from './dto/support-ticket-note.dto';
 
 @Controller('admin/event-ticket')
 @ApiTags('Admin Event Tickets Routes')
@@ -42,6 +43,24 @@ export class AdminEventTicketsController {
     );
   }
 
+  @ApiResponses(true, [UserRole.ADMIN, UserRole.CUSTOMER_SUPPORT, UserRole.VENDOR, UserRole.VENDOR_STAFF])
+  @Permissions(Permission.BOOKINGS_READ)
+  @Get(':id')
+  getTicket(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.eventTicketsService.getTicketById(id, user);
+  }
+
+  @ApiResponses(true, [UserRole.ADMIN, UserRole.CUSTOMER_SUPPORT])
+  @Permissions(Permission.BOOKINGS_UPDATE)
+  @Post(':id/support-note')
+  addSupportNote(
+    @Param('id') id: string,
+    @Body() dto: SupportTicketNoteDto,
+    @CurrentUser() user: any,
+  ) {
+    return this.eventTicketsService.addSupportNote(id, dto.note, user);
+  }
+
   // @Patch(':id')
   // update(@Param('id') id: string, @Body() updateEventTicketDto: UpdateEventTicketDto) {
   //   return this.eventTicketsService.update(+id, updateEventTicketDto);
@@ -62,14 +81,6 @@ export class AdminEventTicketsController {
 
   @ApiResponses(true, [UserRole.ADMIN])
   @Permissions(Permission.BOOKINGS_DELETE)
-  @Delete(':id')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  remove(@Param('id') id: string) {
-    return this.eventTicketsService.removeTicket(id);
-  }
-
-  @ApiResponses(true, [UserRole.ADMIN])
-  @Permissions(Permission.BOOKINGS_DELETE)
   @Delete('ticket')
   @HttpCode(HttpStatus.NO_CONTENT)
   removeTickets(
@@ -85,5 +96,13 @@ export class AdminEventTicketsController {
   @HttpCode(HttpStatus.NO_CONTENT)
   permanentRemoveTickets() {
     return this.eventTicketsService.removePermanently();
+  }
+
+  @ApiResponses(true, [UserRole.ADMIN])
+  @Permissions(Permission.BOOKINGS_DELETE)
+  @Delete(':id')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  remove(@Param('id') id: string) {
+    return this.eventTicketsService.removeTicket(id);
   }
 }

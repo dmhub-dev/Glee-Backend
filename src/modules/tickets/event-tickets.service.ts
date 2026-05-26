@@ -333,16 +333,56 @@ export class EventTicketsService {
     };
   }
 
-  async getTicketById(id: string) {
-    const ticket = await this.prisma.eventTicket.findFirst({
-      where: { id },
-      include: { event: true, payment: true, user: true },
+  async getTicketById(id: string, currentUser?: any) {
+    const ticket = await this.findScopedTicketOrThrow(id, currentUser, false);
+    const supportNotes = currentUser
+      ? await this.prisma.auditLog.findMany({
+          where: {
+            entity: 'EventTicket',
+            entityId: id,
+            action: 'tickets.support_note',
+          },
+          include: { actor: { select: { id: true, name: true, email: true, role: true } } },
+          orderBy: { createdAt: 'desc' },
+        })
+      : [];
+    return {
+      success: true,
+      message: 'Ticket fetched successfully',
+      data: { ...ticket, supportNotes },
+    };
+  }
+
+  async addSupportNote(id: string, note: string, currentUser: any) {
+    const ticket = await this.findScopedTicketOrThrow(id, currentUser, false);
+    if (![UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.CUSTOMER_SUPPORT].includes(currentUser?.role)) {
+      throw new HttpException('Only support or admin users can add support notes', HttpStatus.FORBIDDEN);
+    }
+
+    const supportNote = await this.prisma.auditLog.create({
+      data: {
+        actorId: currentUser.id,
+        action: 'tickets.support_note',
+        entity: 'EventTicket',
+        entityId: id,
+        metadata: {
+          note,
+          eventId: ticket.eventId,
+          userId: ticket.userId,
+        },
+      },
+      include: { actor: { select: { id: true, name: true, email: true, role: true } } },
     });
-    if (!ticket) return { success: false, message: 'No ticket found', data: {} };
-    return { success: true, message: 'Ticket fetched successfully', data: ticket };
+
+    return {
+      success: true,
+      message: 'Support note added successfully',
+      data: supportNote,
+    };
   }
 
   async checkInTicket(id: string, currentUser: any) {
+    this.assertVendorCheckInRole(currentUser);
     const ticket = await this.findScopedTicketOrThrow(id, currentUser);
     if (ticket.checkedInAt) {
       return {
@@ -386,6 +426,7 @@ export class EventTicketsService {
   }
 
   async revertTicketCheckIn(id: string, currentUser: any) {
+    this.assertVendorCheckInRole(currentUser);
     const ticket = await this.findScopedTicketOrThrow(id, currentUser);
     if (!ticket.checkedInAt) {
       return {
@@ -501,7 +542,7 @@ export class EventTicketsService {
     return null;
   }
 
-  private async findScopedTicketOrThrow(id: string, currentUser: any) {
+  private async findScopedTicketOrThrow(id: string, currentUser: any, requireVendorScope = true) {
     const ticket = await this.prisma.eventTicket.findFirst({
       where: { id },
       include: {
@@ -519,8 +560,16 @@ export class EventTicketsService {
       if (ticket.event.vendorId !== vendorId) {
         throw new HttpException('You do not have access to this ticket', HttpStatus.FORBIDDEN);
       }
+    } else if (requireVendorScope && ![UserRole.SUPER_ADMIN, UserRole.ADMIN].includes(currentUser?.role)) {
+      throw new HttpException('Vendor account scope is required', HttpStatus.FORBIDDEN);
     }
 
     return ticket;
+  }
+
+  private assertVendorCheckInRole(user: any) {
+    if (![UserRole.VENDOR, UserRole.VENDOR_STAFF].includes(user?.role)) {
+      throw new HttpException('Only vendor users can check in tickets', HttpStatus.FORBIDDEN);
+    }
   }
 }
