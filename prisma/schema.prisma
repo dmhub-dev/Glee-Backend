@@ -138,6 +138,7 @@ model User {
   invitationsSent  UserInvitation[] @relation("InvitationInviter")
   invitation       UserInvitation?
   vendorEvents     Event[]          @relation("EventVendor")
+  vendorLocations  Location[]       @relation("LocationVendor")
 
   @@index([email])
   @@index([isDeleted])
@@ -288,10 +289,13 @@ model Location {
   pictures           String[]
   isParkingAvailable Boolean      @default(false)
   status             EntityStatus @default(ACTIVE)
+  vendorId           String?
+  vendor             User?        @relation("LocationVendor", fields: [vendorId], references: [id], onDelete: SetNull)
   events             Event[]
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt
 
+  @@index([vendorId])
   @@map("locations")
 }
 

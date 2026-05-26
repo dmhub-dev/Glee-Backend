@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException } from '@nestjs/common';
-import { EntityStatus } from '@prisma/client';
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { EntityStatus, UserRole } from '@prisma/client';
 import { LocationService } from './location.service';
 import { PrismaService } from '@src/infrastructure/database/prisma.service';
 import { S3Service } from '@src/infrastructure/storage/s3.service';
@@ -62,6 +62,8 @@ describe('LocationService', () => {
           floorPlanImageUrl: undefined,
           isParkingAvailable: false,
           pictures: [],
+          description: undefined,
+          vendorId: null,
         },
       });
       expect(result.success).toBe(true);
@@ -89,6 +91,20 @@ describe('LocationService', () => {
       expect(result.success).toBe(false);
       expect(result.data).toEqual([]);
     });
+
+    it('should scope vendor location reads to shared and own locations', async () => {
+      mockPrisma.$transaction.mockResolvedValue([[{ id: 'loc1' }], 1]);
+
+      await service.findAll({ page: 1, limit: 10 }, { id: 'vendor1', role: UserRole.VENDOR });
+
+      expect(mockPrisma.location.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            OR: [{ vendorId: null }, { vendorId: 'vendor1' }],
+          }),
+        }),
+      );
+    });
   });
 
   describe('findOne', () => {
@@ -112,6 +128,7 @@ describe('LocationService', () => {
   describe('update', () => {
     it('should update and return success', async () => {
       const updated = { id: 'loc1', name: 'Updated Hall' };
+      mockPrisma.location.findUnique.mockResolvedValue({ id: 'loc1', vendorId: null });
       mockPrisma.location.update.mockResolvedValue(updated);
 
       const result = await service.update('loc1', { name: 'Updated Hall' });
@@ -121,17 +138,26 @@ describe('LocationService', () => {
     });
 
     it('should return failure when location not found', async () => {
-      mockPrisma.location.update.mockRejectedValue(new Error('not found'));
+      mockPrisma.location.findUnique.mockResolvedValue(null);
 
       const result = await service.update('bad-id', { name: 'X' });
 
       expect(result.success).toBe(false);
+    });
+
+    it('should block vendors from updating shared admin locations', async () => {
+      mockPrisma.location.findUnique.mockResolvedValue({ id: 'loc1', vendorId: null });
+
+      await expect(
+        service.update('loc1', { name: 'Updated Hall' }, { id: 'vendor1', role: UserRole.VENDOR }),
+      ).rejects.toThrow(ForbiddenException);
     });
   });
 
   describe('remove', () => {
     it('should soft delete by setting status to INACTIVE', async () => {
       const updated = { id: 'loc1', status: EntityStatus.INACTIVE };
+      mockPrisma.location.findUnique.mockResolvedValue({ id: 'loc1', vendorId: null });
       mockPrisma.location.update.mockResolvedValue(updated);
 
       const result = await service.remove('loc1');
@@ -144,7 +170,7 @@ describe('LocationService', () => {
     });
 
     it('should return failure when location not found', async () => {
-      mockPrisma.location.update.mockRejectedValue(new Error('not found'));
+      mockPrisma.location.findUnique.mockResolvedValue(null);
 
       const result = await service.remove('bad-id');
 

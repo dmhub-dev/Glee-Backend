@@ -1,5 +1,5 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { EntityStatus, Prisma } from '@prisma/client';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { EntityStatus, Prisma, UserRole } from '@prisma/client';
 import { PrismaService } from '@src/infrastructure/database/prisma.service';
 import { S3Service } from '@src/infrastructure/storage/s3.service';
 import { CreateLocationDto } from './dto/create-location.dto';
@@ -13,7 +13,8 @@ export class LocationService {
     private readonly s3: S3Service,
   ) {}
 
-  async create(dto: CreateLocationDto) {
+  async create(dto: CreateLocationDto, actor?: any) {
+    const vendorId = this.resolveVendorAccountId(actor, false);
     const location = await this.prisma.location.create({
       data: {
         name: dto.name,
@@ -27,13 +28,14 @@ export class LocationService {
         floorPlanImageUrl: dto.floorPlanImageUrl,
         isParkingAvailable: dto.isParkingAvailable ?? false,
         pictures: dto.pictures ?? [],
+        vendorId,
       },
     });
 
     return { success: true, message: 'Location created successfully', data: location };
   }
 
-  async findAll(filters: FilterLocationDto) {
+  async findAll(filters: FilterLocationDto, actor?: any) {
     const {
       search,
       capacity,
@@ -44,8 +46,10 @@ export class LocationService {
       limit = 10,
     } = filters;
 
+    const vendorId = this.resolveVendorAccountId(actor, false);
     const where: Prisma.LocationWhereInput = {
       status: EntityStatus.ACTIVE,
+      ...(vendorId && { OR: [{ vendorId: null }, { vendorId }] }),
       ...(search && { name: { contains: search, mode: 'insensitive' } }),
       ...(capacity !== undefined && { capacity: { gte: capacity } }),
       ...(isIndoors !== undefined && { isIndoors }),
@@ -70,7 +74,8 @@ export class LocationService {
     return { success: true, message: 'Locations fetched successfully', data: locations, total, page, limit };
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, actor?: any) {
+    const vendorId = this.resolveVendorAccountId(actor, false);
     const location = await this.prisma.location.findUnique({
       where: { id },
     });
@@ -78,11 +83,21 @@ export class LocationService {
     if (!location) {
       throw new NotFoundException({ success: false, message: 'No location with this id' });
     }
+    this.assertLocationAccess(location, vendorId);
 
     return { success: true, message: 'Location fetched successfully', data: location };
   }
 
-  async update(id: string, dto: UpdateLocationDto) {
+  async update(id: string, dto: UpdateLocationDto, actor?: any) {
+    const existing = await this.prisma.location.findUnique({ where: { id } });
+    if (!existing) {
+      return {
+        success: false,
+        message: 'No location with this id or update failed',
+        data: [],
+      };
+    }
+    this.assertLocationMutationAccess(existing, actor);
     const updated = await this.prisma.location
       .update({
         where: { id },
@@ -101,9 +116,10 @@ export class LocationService {
     return { success: true, message: 'Location updated successfully', data: updated };
   }
 
-  async uploadPictures(id: string, files: Express.Multer.File[]) {
+  async uploadPictures(id: string, files: Express.Multer.File[], actor?: any) {
     const location = await this.prisma.location.findUnique({ where: { id } });
     if (!location) throw new NotFoundException({ success: false, message: 'No location with this id' });
+    this.assertLocationMutationAccess(location, actor);
 
     const urls = await this.s3.uploadMany(files, 'locations');
     const updated = await this.prisma.location.update({
@@ -114,7 +130,12 @@ export class LocationService {
     return { success: true, message: 'Pictures uploaded successfully', data: updated };
   }
 
-  async remove(id: string) {
+  async remove(id: string, actor?: any) {
+    const existing = await this.prisma.location.findUnique({ where: { id } });
+    if (!existing) {
+      return { success: false, message: 'No location with this id or already deleted', data: [] };
+    }
+    this.assertLocationMutationAccess(existing, actor);
     const updated = await this.prisma.location
       .update({
         where: { id },
@@ -127,5 +148,27 @@ export class LocationService {
     }
 
     return { success: true, message: 'Location deleted successfully', data: [] };
+  }
+
+  private resolveVendorAccountId(actor: any, required = false) {
+    if (actor?.role === UserRole.VENDOR) return actor.id;
+    if (actor?.role === UserRole.VENDOR_STAFF && actor.vendorAccountId) return actor.vendorAccountId;
+    if (required) throw new ForbiddenException('Vendor account scope is required');
+    return null;
+  }
+
+  private assertLocationAccess(location: { vendorId?: string | null }, vendorId: string | null) {
+    if (!vendorId) return;
+    if (location.vendorId && location.vendorId !== vendorId) {
+      throw new ForbiddenException('You do not have access to this location');
+    }
+  }
+
+  private assertLocationMutationAccess(location: { vendorId?: string | null }, actor: any) {
+    const vendorId = this.resolveVendorAccountId(actor, false);
+    if (!vendorId) return;
+    if (!location.vendorId || location.vendorId !== vendorId) {
+      throw new ForbiddenException('Vendors can only update their own locations');
+    }
   }
 }

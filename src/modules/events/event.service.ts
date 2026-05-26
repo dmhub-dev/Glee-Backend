@@ -763,6 +763,16 @@ export class EventService {
                 );
             }
             if (parsedEndDate < parsedStartDate) {
+                parsedEndDate.setFullYear(
+                    parsedStartDate.getFullYear(),
+                    parsedStartDate.getMonth(),
+                    parsedStartDate.getDate(),
+                );
+            }
+            if (parsedEndDate < parsedStartDate) {
+                parsedEndDate.setTime(parsedEndDate.getTime() + 24 * 60 * 60 * 1000);
+            }
+            if (parsedEndDate < parsedStartDate) {
                 throw new HttpException(
                     'Event schedule endDate cannot be before startDate',
                     HttpStatus.BAD_REQUEST,

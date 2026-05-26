@@ -2,7 +2,6 @@ import { ApiProperty } from '@nestjs/swagger';
 import {
   IsNotEmpty,
   IsOptional,
-  IsMongoId,
   IsString,
   IsNumber,
 } from 'class-validator';
@@ -29,13 +28,11 @@ export class PaginationQueryUserTicketsDto {
 
   @ApiProperty()
   @IsOptional()
-  @IsMongoId()
   @IsString()
   eventId: string;
 
   @ApiProperty()
   @IsNotEmpty()
-  @IsMongoId()
   @IsString()
   userId: string;
 }
@@ -61,7 +58,6 @@ export class PaginationQueryDto {
     required: false,
   })
   @IsOptional()
-  @IsMongoId()
   @IsString()
   eventId: string;
 
@@ -69,7 +65,6 @@ export class PaginationQueryDto {
     required: false,
   })
   @IsOptional()
-  @IsMongoId()
   @IsString()
   userId: string;
 
@@ -77,7 +72,6 @@ export class PaginationQueryDto {
     required: false,
   })
   @IsOptional()
-  @IsMongoId()
   @IsString()
   _id: string;
 }

@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UploadedFiles } from '@nestjs/common';
 import { ApiConsumes, ApiTags } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
+import { CurrentUser } from '@src/auth/jwt/current-user.decorator';
 import { Permissions } from '@src/auth/rbac/permissions.decorator';
 import { Permission } from '@src/auth/rbac/permissions.enum';
 import { ApiImageFile, UploadType } from '@src/common/decorators/check-mime-type.decorator';
@@ -18,29 +19,29 @@ export class AdminLocationController {
   @Permissions(Permission.LOCATION_READ)
   @ApiResponses(true)
   @Get()
-  findAll(@Query() filters: FilterLocationDto) {
-    return this.locationService.findAll(filters);
+  findAll(@Query() filters: FilterLocationDto, @CurrentUser() user: any) {
+    return this.locationService.findAll(filters, user);
   }
 
   @Permissions(Permission.LOCATION_READ)
   @ApiResponses(true)
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.locationService.findOne(id);
+  findOne(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.locationService.findOne(id, user);
   }
 
   @Permissions(Permission.LOCATION_CREATE)
   @ApiResponses(true, [UserRole.ADMIN])
   @Post()
-  create(@Body() dto: CreateLocationDto) {
-    return this.locationService.create(dto);
+  create(@Body() dto: CreateLocationDto, @CurrentUser() user: any) {
+    return this.locationService.create(dto, user);
   }
 
   @Permissions(Permission.LOCATION_UPDATE)
   @ApiResponses(true)
   @Patch(':id')
-  update(@Param('id') id: string, @Body() dto: UpdateLocationDto) {
-    return this.locationService.update(id, dto);
+  update(@Param('id') id: string, @Body() dto: UpdateLocationDto, @CurrentUser() user: any) {
+    return this.locationService.update(id, dto, user);
   }
 
   @Permissions(Permission.LOCATION_UPDATE)
@@ -51,14 +52,15 @@ export class AdminLocationController {
   uploadPictures(
     @Param('id') id: string,
     @UploadedFiles() files: Array<Express.Multer.File>,
+    @CurrentUser() user: any,
   ) {
-    return this.locationService.uploadPictures(id, files);
+    return this.locationService.uploadPictures(id, files, user);
   }
 
   @Permissions(Permission.LOCATION_DELETE)
   @ApiResponses(true)
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.locationService.remove(id);
+  remove(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.locationService.remove(id, user);
   }
 }
