@@ -68,6 +68,18 @@ export class EventService {
         const schedules = this.normalizeEventSchedules(
             createEventDto.eventSchedule,
         );
+        const dateRange = this.resolveEventDateRange(dto.date, schedules);
+        const status =
+            createEventDto.status ??
+            createEventDto.isActive ??
+            EventStatus.DRAFT;
+
+        await this.assertLocationIsAvailable({
+            locationId,
+            startDate: dateRange.startDate,
+            endDate: dateRange.endDate,
+            status,
+        });
 
         const event = await this.prisma.event.create({
             data: {
@@ -76,12 +88,9 @@ export class EventService {
                 locationId,
                 capacity,
                 photos: photos.length ? photos : [],
-                startDate: dto.date?.start ?? null,
-                endDate: dto.date?.end ?? null,
-                status:
-                    createEventDto.status ??
-                    createEventDto.isActive ??
-                    EventStatus.DRAFT,
+                startDate: dateRange.startDate,
+                endDate: dateRange.endDate,
+                status,
                 categoryId,
                 vendorId: vendorId ?? null,
             },
@@ -490,6 +499,36 @@ export class EventService {
             }
         }
 
+        const schedulesForDateRange =
+            updateEventDto.eventSchedule !== undefined
+                ? this.normalizeEventSchedules(updateEventDto.eventSchedule)
+                : undefined;
+        const dateRange = this.resolveEventDateRange(
+            updateEventDto.date,
+            schedulesForDateRange,
+            {
+                startDate: eventToUpdate.startDate,
+                endDate: eventToUpdate.endDate,
+            },
+        );
+        const nextLocationId =
+            data.locationId !== undefined
+                ? data.locationId
+                : eventToUpdate.locationId;
+        const nextStatus =
+            data.status !== undefined ? data.status : eventToUpdate.status;
+
+        data.startDate = dateRange.startDate;
+        data.endDate = dateRange.endDate;
+
+        await this.assertLocationIsAvailable({
+            locationId: nextLocationId,
+            startDate: dateRange.startDate,
+            endDate: dateRange.endDate,
+            status: nextStatus,
+            excludeEventId: id,
+        });
+
         await this.prisma.event.update({ where: { id }, data });
 
         if ((updateEventDto as any).ticketCategories?.length) {
@@ -533,9 +572,7 @@ export class EventService {
         }
 
         if (updateEventDto.eventSchedule !== undefined) {
-            const schedules = this.normalizeEventSchedules(
-                updateEventDto.eventSchedule,
-            );
+            const schedules = schedulesForDateRange ?? [];
             await this.prisma.eventSchedule.deleteMany({
                 where: { eventId: id },
             });
@@ -734,6 +771,142 @@ export class EventService {
                 sortOrder: schedule.sortOrder ?? index,
             };
         });
+    }
+
+    private resolveEventDateRange(
+        date?: { start?: Date | string; end?: Date | string } | null,
+        schedules?: { startsAt: Date; endsAt?: Date | null }[],
+        fallback?: { startDate?: Date | null; endDate?: Date | null },
+    ) {
+        const scheduleStarts =
+            schedules?.map((schedule) => schedule.startsAt) ?? [];
+        const scheduleEnds =
+            schedules?.map(
+                (schedule) => schedule.endsAt ?? schedule.startsAt,
+            ) ?? [];
+        const startDate = this.parseOptionalDate(
+            date?.start ??
+                (scheduleStarts.length
+                    ? new Date(
+                          Math.min(
+                              ...scheduleStarts.map((schedule) =>
+                                  schedule.getTime(),
+                              ),
+                          ),
+                      )
+                    : fallback?.startDate),
+        );
+        const endDate = this.parseOptionalDate(
+            date?.end ??
+                (scheduleEnds.length
+                    ? new Date(
+                          Math.max(
+                              ...scheduleEnds.map((schedule) =>
+                                  schedule.getTime(),
+                              ),
+                          ),
+                      )
+                    : fallback?.endDate ?? startDate),
+        );
+
+        if (startDate && endDate && endDate < startDate) {
+            throw new HttpException(
+                'Event end date cannot be before start date',
+                HttpStatus.BAD_REQUEST,
+            );
+        }
+
+        return { startDate, endDate };
+    }
+
+    private parseOptionalDate(value?: Date | string | null) {
+        if (!value) return null;
+        const parsed = value instanceof Date ? value : new Date(value);
+        if (Number.isNaN(parsed.getTime())) {
+            throw new HttpException(
+                'Event date contains an invalid date',
+                HttpStatus.BAD_REQUEST,
+            );
+        }
+        return parsed;
+    }
+
+    private async assertLocationIsAvailable(input: {
+        locationId?: string | null;
+        startDate?: Date | null;
+        endDate?: Date | null;
+        status?: EventStatus;
+        excludeEventId?: string;
+    }) {
+        if (
+            !input.locationId ||
+            !input.startDate ||
+            input.status === EventStatus.CANCELLED
+        ) {
+            return;
+        }
+
+        const startDay = this.startOfUtcDay(input.startDate);
+        const endDay = this.endOfUtcDay(input.endDate ?? input.startDate);
+
+        const conflict = await this.prisma.event.findFirst({
+            where: {
+                id: input.excludeEventId
+                    ? { not: input.excludeEventId }
+                    : undefined,
+                locationId: input.locationId,
+                isDeleted: false,
+                status: { not: EventStatus.CANCELLED },
+                startDate: { not: null, lte: endDay },
+                OR: [
+                    { endDate: { gte: startDay } },
+                    {
+                        endDate: null,
+                        startDate: { gte: startDay, lte: endDay },
+                    },
+                ],
+            },
+            select: { id: true, name: true, startDate: true, endDate: true },
+        });
+
+        if (conflict) {
+            throw new HttpException(
+                {
+                    success: false,
+                    message: 'Location is already booked for this event date',
+                    data: { conflictingEvent: conflict },
+                },
+                HttpStatus.CONFLICT,
+            );
+        }
+    }
+
+    private startOfUtcDay(date: Date) {
+        return new Date(
+            Date.UTC(
+                date.getUTCFullYear(),
+                date.getUTCMonth(),
+                date.getUTCDate(),
+                0,
+                0,
+                0,
+                0,
+            ),
+        );
+    }
+
+    private endOfUtcDay(date: Date) {
+        return new Date(
+            Date.UTC(
+                date.getUTCFullYear(),
+                date.getUTCMonth(),
+                date.getUTCDate(),
+                23,
+                59,
+                59,
+                999,
+            ),
+        );
     }
 
     private async assertVendorEventAccess(eventId: string, vendorId: string) {
