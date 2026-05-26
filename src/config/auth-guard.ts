@@ -1,4 +1,4 @@
-import { UnauthorizedException, SetMetadata, Req } from '@nestjs/common';
+import { UnauthorizedException, SetMetadata } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { AuthGuard } from '@nestjs/passport';
 
@@ -8,8 +8,6 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
   }
 
   handleRequest(err, user, info, context) {
-    const request = context.switchToHttp().getRequest();
-
     const allowAny = this.reflector.get<string[]>(
       'allow-any',
       context.getHandler(),

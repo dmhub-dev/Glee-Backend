@@ -8,7 +8,6 @@ import {
   ApiResponse,
 } from '@nestjs/swagger';
 import { AllowAny } from '../config/auth-guard';
-import { Roles } from '../guards/roles.guard';
 
 export interface Response {
   success: boolean;
@@ -67,8 +66,8 @@ export const UNAUTHORIZED_RESPONSE = {
   },
 };
 
-export function ApiResponses(isAuth = true, roles = []) {
-  if (isAuth && roles.length > 0) {
+export function ApiResponses(isAuth = true, _roles = []) {
+  if (isAuth && _roles.length > 0) {
     return applyDecorators(
       ApiResponse(SUCCESS_RESPONSE),
       ApiBadRequestResponse(BAD_REQUEST),
@@ -76,7 +75,6 @@ export function ApiResponses(isAuth = true, roles = []) {
       ApiInternalServerErrorResponse(SERVER_ERROR),
       ApiUnauthorizedResponse(UNAUTHORIZED_RESPONSE),
       ApiBearerAuth('access-token'),
-      Roles(roles),
     );
   } else if (isAuth) {
     return applyDecorators(

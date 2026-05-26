@@ -3,6 +3,7 @@ import { NotFoundException } from '@nestjs/common';
 import { EntityStatus } from '@prisma/client';
 import { LocationService } from './location.service';
 import { PrismaService } from '@src/prisma/prisma.service';
+import { S3Service } from '@src/shared/s3.service';
 
 const mockPrisma = {
   location: {
@@ -24,6 +25,7 @@ describe('LocationService', () => {
       providers: [
         LocationService,
         { provide: PrismaService, useValue: mockPrisma },
+        { provide: S3Service, useValue: { uploadMany: jest.fn() } },
       ],
     }).compile();
 

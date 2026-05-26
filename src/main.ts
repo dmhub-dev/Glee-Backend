@@ -9,7 +9,7 @@ import { createFolder, populateStateData } from './shared/utils';
 import * as path from 'path';
 import * as express from 'express';
 import { MyLogger } from '@src/shared/LoggerService';
-import { AllExceptionsFilter } from '@src/ExceptionsFilter/AllExceptionFilter';
+import { AllExceptionsFilter } from '@src/exceptions-filter/all-exception.filter';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {

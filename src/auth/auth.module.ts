@@ -6,7 +6,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { UsersModule } from '../users/users.module';
 import { JwtStrategy } from './jwt.strategy';
 import { OnesignalModule } from 'src/onesignal/onesignal.module';
-import { ConfigService } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 
 @Module({
   imports: [
@@ -14,7 +14,7 @@ import { ConfigService } from '@nestjs/config';
     OnesignalModule,
     PassportModule.register({ defaultStrategy: 'jwt', property: 'user', session: false }),
     JwtModule.registerAsync({
-      imports: [ConfigService],
+      imports: [ConfigModule],
       useFactory: (config: ConfigService) => ({
         secret: config.get('SECRETKEY'),
         signOptions: { expiresIn: config.get('EXPIRESIN') },

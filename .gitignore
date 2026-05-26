@@ -54,3 +54,4 @@ pnpm-lock.yaml
 /Release:prod
 rbac-seed.ts
 claude.md
+legacy/

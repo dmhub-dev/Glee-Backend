@@ -8,7 +8,6 @@ import { NotificationService } from '@src/notification/notification.service';
 import { PrismaService } from '@src/prisma/prisma.service';
 import { PayStackService } from '@src/paystack/paystack.service';
 import { PurchasingType } from '@src/paystack/paystack.types';
-import { SocketGateway } from '@src/socket/socket.gateway';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const moment = require('moment') as typeof import('moment');
 import * as crypto from 'crypto';
@@ -217,12 +216,13 @@ export class EventTicketsService {
         userId: admin?.id,
       } as any);
 
-      SocketGateway.emitEvent('notification', {
+      loggers.info('Event ticket notification created: %O', {
         type: NotificationType.EVENT_TICKET,
         body: `A new Event Ticket has been purchased by ${user?.name}.`,
         eventTicketId: eventTicket.id,
         _id: (notification as any)?.id,
-      }, admin?.id);
+        userId: admin?.id,
+      });
     } catch (e) {
       loggers.error('Notification error: %O', e);
     }

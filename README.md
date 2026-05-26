@@ -1,79 +1,44 @@
-# Getting Started with Glee Backend
+# Glee Backend
 
-this repository contains the source code for the Glee Backend. build with node:20
+NestJS backend for Glee. The active application lives under `src/` and uses
+Prisma with PostgreSQL.
 
-## Prerequisites
+## Requirements
 
--   Node.js (v20.x)
--   Yarn (v1.x)
--   Docker (v24.x)
--   NestJS CLI (v10.x)
+- Node.js 20.x
+- npm
+- Docker, for local PostgreSQL
 
-## Installation
-
-1. Clone the repository:
-
-    ```bash
-    git clone https://username@bitbucket.org/KoderLabs/glee-be.git
-    ```
-
-    change the username to your bitbucket username
-
-2. Install NestJS CLI:
-
-    ```bash
-    yarn global add @nestjs/cli
-    ```
-
-3. change the branch to the production branch:
-
-    ```bash
-    git checkout release/production
-    ```
-
-4. Install dependencies:
-
-    ```bash
-    yarn install
-    ```
-
-5. Build the project:
-
-    ```bash
-    yarn build
-    ```
-
-## Running the project
+## Setup
 
 ```bash
-yarn start
+npm install
+cp .env.example .env
+docker compose up -d
+npx prisma migrate deploy
+npx prisma db seed
 ```
 
-## Running the project in production
+## Development
 
 ```bash
-yarn start:prod
+npm run start:dev
 ```
 
-## Running the project in development watch mode
+Swagger is served at `/swagger`. Versioned API routes are prefixed with
+`/api/v1`.
+
+## Verification
 
 ```bash
-yarn start:dev
+npm run build
+npm test -- --runInBand
+npx prisma validate
 ```
 
-## Environment Variables
+## Legacy Modules
 
-The project uses environment variables to configure the application. The environment variables are stored in the `.env` file.
-Change the existing `.env.example` file to the desired environment and rename it to `.env`.
-
-## Bitbucket Pipeline
-
-The project uses bitbucket pipeline to deploy the application to the production server.
-The pipeline is defined in the `bitbucket-pipeline.yml` file.
-
-when you push to the production branch, the pipeline will deploy the application to the production server.
-
-### Note:
-
-1. In the pipeline `docker compose up` command is commented, because the production server already has the docker container running.
-2. In the pipeline `pm2 start npm --name "GLEE-API" -- run start` command is commented, because the production server already has the pm2 process running.
+Unregistered or schema-incompatible modules were moved to `legacy/` so the
+active Nest app compiles against the current Prisma schema. Restore modules
+from there only after their Prisma models, module imports, and tests are
+updated together.
