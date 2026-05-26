@@ -60,7 +60,7 @@ export class UsersService {
     const { accessToken, refreshToken } = await this._createToken(user);
     await this.prisma.user.update({
       where: { id: user.id },
-      data: { token: accessToken, refreshToken, profileStatus: true },
+      data: { token: accessToken, refreshToken, profileStatus: true, lastLoginAt: new Date() },
     });
 
     return {

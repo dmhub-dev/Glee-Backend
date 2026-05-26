@@ -5,6 +5,7 @@ export const Permission = {
   USERS_UPDATE:      'users:update',
   USERS_DELETE:      'users:delete',
   USERS_ASSIGN_ROLE: 'users:assign_role',
+  USERS_INVITE:      'users:invite',
 
   // Vendors
   VENDORS_READ:    'vendors:read',
@@ -41,6 +42,9 @@ export const Permission = {
   // Reports
   REPORTS_READ: 'reports:read',
 
+  // Audit Logs
+  AUDIT_LOGS_READ: 'audit_logs:read',
+
   // Categories
   CATEGORIES_READ:   'categories:read',
   CATEGORIES_CREATE: 'categories:create',
@@ -64,6 +68,12 @@ export const Permission = {
 
   // Settings
   SETTINGS_MANAGE: 'settings:manage',
+
+  // Roles & permissions
+  ROLES_READ:          'roles:read',
+  ROLES_UPDATE:        'roles:update',
+  PERMISSIONS_READ:    'permissions:read',
+  PERMISSIONS_MANAGE:  'permissions:manage',
 
   // Location
   LOCATION_READ:   'location:read',
