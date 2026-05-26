@@ -20,6 +20,7 @@ import { EmailModule } from '@src/infrastructure/email/email.module';
 import { NotificationModule } from './modules/notifications/notifications/notification.module';
 import { AppService } from '@src/app.service';
 import { AccessManagementModule } from './modules/identity/access-management/access-management.module';
+import { WalletModule } from './modules/wallets/wallet/wallet.module';
 
 @Module({
   imports: [
@@ -46,6 +47,7 @@ import { AccessManagementModule } from './modules/identity/access-management/acc
     EmailModule,
     NotificationModule,
     AccessManagementModule,
+    WalletModule,
   ],
   providers: [
     AppService,

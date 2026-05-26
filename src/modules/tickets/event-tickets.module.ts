@@ -5,8 +5,9 @@ import { PaystackModule } from '@src/infrastructure/payments/paystack/paystack.m
 import { AdminEventTicketsController } from './admin.event-tickets.controller';
 import { EventSharedModule } from '@src/modules/events/shared/shared.event.module';
 import { UsersModule } from '@src/modules/identity/users/users.module';
+import { WalletModule } from '@src/modules/wallets/wallet/wallet.module';
 @Module({
-  imports: [PaystackModule, EventSharedModule, UsersModule],
+  imports: [PaystackModule, EventSharedModule, UsersModule, WalletModule],
   controllers: [AdminEventTicketsController, EventTicketsController],
   providers: [EventTicketsService],
 })

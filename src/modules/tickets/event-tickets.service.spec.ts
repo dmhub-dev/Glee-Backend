@@ -7,6 +7,7 @@ import { UsersService } from '@src/modules/identity/users/users.service';
 import { EmailService } from '@src/infrastructure/email/email.service';
 import { NotificationService } from '@src/modules/notifications/notifications/notification.service';
 import { PayStackService } from '@src/infrastructure/payments/paystack/paystack.service';
+import { WalletService } from '@src/modules/wallets/wallet/wallet.service';
 
 const mockEvent = {
   id: 'event-1',
@@ -60,6 +61,7 @@ describe('EventTicketsService.initiateGuestPurchase', () => {
             }),
           },
         },
+        { provide: WalletService, useValue: { debit: jest.fn() } },
       ],
     }).compile();
 
@@ -183,6 +185,7 @@ describe('EventTicketsService.createPurchasedEventTicket - tier decrement', () =
           provide: PayStackService,
           useValue: { createPaymentIntent: jest.fn() },
         },
+        { provide: WalletService, useValue: { debit: jest.fn() } },
       ],
     }).compile();
 
@@ -222,5 +225,73 @@ describe('EventTicketsService.createPurchasedEventTicket - tier decrement', () =
     );
 
     expect(prisma.ticketCategory.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('EventTicketsService.create - wallet payment', () => {
+  let service: EventTicketsService;
+  let prisma: any;
+  let wallet: any;
+
+  beforeEach(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        EventTicketsService,
+        {
+          provide: PrismaService,
+          useValue: {
+            payment: {
+              findUnique: jest.fn().mockResolvedValue(null),
+              create: jest.fn().mockResolvedValue({ id: 'payment-wallet-1' }),
+            },
+            eventTicket: {
+              create: jest.fn().mockResolvedValue({ id: 'ticket-wallet-1', eventId: 'event-1', userId: 'user-1' }),
+            },
+            event: { update: jest.fn() },
+            ticketCategory: { findUnique: jest.fn(), update: jest.fn() },
+            user: { findFirst: jest.fn().mockResolvedValue({ id: 'admin-1' }) },
+          },
+        },
+        {
+          provide: EventSharedService,
+          useValue: { helperEventFindById: jest.fn().mockResolvedValue(mockEvent) },
+        },
+        {
+          provide: UsersService,
+          useValue: { findOne: jest.fn().mockResolvedValue({ id: 'user-1', email: 'user@example.com', name: 'User' }) },
+        },
+        { provide: EmailService, useValue: { sendMail: jest.fn() } },
+        { provide: NotificationService, useValue: { addNotification: jest.fn().mockResolvedValue({ id: 'notif-1' }) } },
+        { provide: PayStackService, useValue: { createPaymentIntent: jest.fn() } },
+        { provide: WalletService, useValue: { debit: jest.fn().mockResolvedValue({}) } },
+      ],
+    }).compile();
+
+    service = module.get<EventTicketsService>(EventTicketsService);
+    prisma = module.get(PrismaService);
+    wallet = module.get(WalletService);
+  });
+
+  it('debits wallet and creates WALLET payment for ticket purchase', async () => {
+    await service.create(
+      { eventId: 'event-1', noOfTickets: 2, useWallet: true },
+      { id: 'user-1' },
+    );
+
+    expect(wallet.debit).toHaveBeenCalledWith(
+      'user-1',
+      2000,
+      'Event ticket purchase: Test Event',
+      expect.stringMatching(/^wallet_/),
+      { eventId: 'event-1', noOfTickets: 2 },
+    );
+    expect(prisma.payment.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          paymentMethod: 'WALLET',
+          totalPrice: expect.anything(),
+        }),
+      }),
+    );
   });
 });

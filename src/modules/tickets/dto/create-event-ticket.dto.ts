@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsNotEmpty, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import { IsBoolean, IsNotEmpty, IsNumber, IsOptional, IsString, Min } from 'class-validator';
 
 export class CreateEventTicketDto {
   @ApiProperty()
@@ -25,4 +25,9 @@ export class CreateEventTicketDto {
   @ApiPropertyOptional({ type: 'array', items: { type: 'object' } })
   @IsOptional()
   preOrderMenu?: any[];
+
+  @ApiPropertyOptional({ default: false })
+  @IsOptional()
+  @IsBoolean()
+  useWallet?: boolean;
 }

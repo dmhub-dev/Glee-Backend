@@ -120,6 +120,7 @@ model User {
   blocksReceived UserBlock[]    @relation("Blocked")
   eventTickets   EventTicket[]
   checkedInTickets EventTicket[] @relation("TicketCheckedInBy")
+  wallet         Wallet?
   notifications  Notification[]
   auditLogs      AuditLog[]     @relation("AuditActor")
   invitationsSent UserInvitation[] @relation("InvitationInviter")
@@ -321,6 +322,39 @@ model EventTicket {
   @@index([checkedInById])
   @@index([checkedInAt])
   @@map("event_tickets")
+}
+
+model Wallet {
+  id           String              @id @default(cuid())
+  userId       String              @unique
+  user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  balance      Decimal             @default(0) @db.Decimal(10, 2)
+  currency     String              @default("KES")
+  isActive     Boolean             @default(true)
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+  transactions WalletTransaction[]
+
+  @@map("wallets")
+}
+
+model WalletTransaction {
+  id          String   @id @default(cuid())
+  walletId    String
+  wallet      Wallet   @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  paymentId   String?
+  type        String
+  amount      Decimal  @db.Decimal(10, 2)
+  balanceAfter Decimal @db.Decimal(10, 2)
+  description String?
+  reference   String?  @unique
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  @@index([walletId])
+  @@index([type])
+  @@index([createdAt])
+  @@map("wallet_transactions")
 }
 
 // ─── Chat ─────────────────────────────────────────────────────────────────────

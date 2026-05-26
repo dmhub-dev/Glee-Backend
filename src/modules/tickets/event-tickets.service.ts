@@ -17,6 +17,8 @@ import { CreateEventTicketDto } from './dto/create-event-ticket.dto';
 import { CreateGuestTicketDto } from './dto/create-guest-ticket.dto';
 import { ConfirmPurchaseDto } from './dto/confirm-purchase.dto';
 import { PaginationQueryDto } from './dto/pagination-query.dto';
+import { WalletService } from '@src/modules/wallets/wallet/wallet.service';
+import { randomUUID } from 'crypto';
 
 @Injectable()
 export class EventTicketsService {
@@ -29,6 +31,7 @@ export class EventTicketsService {
     private readonly emailService: EmailService,
     private readonly notificationService: NotificationService,
     private readonly payStackService: PayStackService,
+    private readonly walletService: WalletService,
   ) {
     // Register this service as the event ticket webhook handler
     this.payStackService.eventTicketsHandler = this;
@@ -55,6 +58,18 @@ export class EventTicketsService {
 
     const totalPrice = price * createEventTicketDto.noOfTickets;
 
+    if (createEventTicketDto.useWallet) {
+      return this.purchaseWithWallet({
+        event,
+        userId,
+        ticketCategoryId: createEventTicketDto.ticketCategoryId,
+        noOfTickets: createEventTicketDto.noOfTickets,
+        preOrderMenu: createEventTicketDto.preOrderMenu,
+        totalPrice,
+        price,
+      });
+    }
+
     const metadata = {
       purchasingType: PurchasingType.EVENT_TICKET,
       eventId: event.id,
@@ -71,6 +86,42 @@ export class EventTicketsService {
     });
 
     return { success: true, data: paymentIntent };
+  }
+
+  private async purchaseWithWallet(input: {
+    event: any;
+    userId: string;
+    ticketCategoryId?: string;
+    noOfTickets: number;
+    preOrderMenu?: any[];
+    totalPrice: number;
+    price: number;
+  }) {
+    const reference = `wallet_${randomUUID()}`;
+    await this.walletService.debit(
+      input.userId,
+      input.totalPrice,
+      `Event ticket purchase: ${input.event.name}`,
+      reference,
+      { eventId: input.event.id, noOfTickets: input.noOfTickets },
+    );
+
+    await this.createPurchasedEventTicket({
+      purchasingType: PurchasingType.EVENT_TICKET,
+      eventId: input.event.id,
+      noOfTickets: input.noOfTickets,
+      ticketCategoryId: input.ticketCategoryId,
+      preOrderMenu: input.preOrderMenu,
+      userId: input.userId,
+      paymentMethod: 'WALLET',
+      walletReference: reference,
+    }, reference);
+
+    return {
+      success: true,
+      message: 'Ticket purchased successfully with wallet',
+      data: { reference },
+    };
   }
 
   async initiateGuestPurchase(dto: CreateGuestTicketDto) {
@@ -173,7 +224,7 @@ export class EventTicketsService {
         userId: metadata.userId,
         paystackReference,
         paymentStatus: 'SUCCEEDED',
-        paymentMethod: 'PAYSTACK',
+        paymentMethod: metadata.paymentMethod ?? 'PAYSTACK',
         totalPrice: new Decimal(totalPrice),
         perItemPrice: new Decimal(price),
         noOfItems: noOfTickets,
