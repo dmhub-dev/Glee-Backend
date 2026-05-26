@@ -4,6 +4,8 @@ import { UserRole } from '@prisma/client';
 import { CurrentUser } from '@src/auth/jwt/current-user.decorator';
 import { ApiResponses } from '@src/common/responses/response';
 import { AllowAny } from '@src/auth/jwt/jwt-auth.guard';
+import { Permissions } from '@src/auth/rbac/permissions.decorator';
+import { Permission } from '@src/auth/rbac/permissions.enum';
 import { EventTicketsService } from './event-tickets.service';
 import { CreateEventTicketDto } from './dto/create-event-ticket.dto';
 import { CreateGuestTicketDto } from './dto/create-guest-ticket.dto';
@@ -16,6 +18,7 @@ export class EventTicketsController {
   constructor(private readonly eventTicketsService: EventTicketsService) {}
 
   @ApiResponses(true, [UserRole.USER])
+  @Permissions(Permission.BOOKINGS_CREATE)
   @Post('purchase')
   purchaseEvent(
     @Body() createEventTicketDto: CreateEventTicketDto,
@@ -37,12 +40,14 @@ export class EventTicketsController {
   }
 
   @ApiResponses(true, [UserRole.USER])
+  @Permissions(Permission.BOOKINGS_READ)
   @Get('my')
   findTicketByUserId(@CurrentUser() user, @Query() queryData: PaginationQueryDto) {
     return this.eventTicketsService.findTicketsByUserID(user.id, queryData);
   }
 
-  @ApiResponses(true, [UserRole.USER])
+  @AllowAny()
+  @ApiResponses(false)
   @Get('available')
   getAvailableTicketsOfEvent(@Query() queryData: PaginationQueryDto) {
     return this.eventTicketsService.getAvailableTicktesOfEvent(queryData);

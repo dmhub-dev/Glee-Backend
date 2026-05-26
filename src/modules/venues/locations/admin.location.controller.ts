@@ -16,14 +16,14 @@ export class AdminLocationController {
   constructor(private readonly locationService: LocationService) {}
 
   @Permissions(Permission.LOCATION_READ)
-  @ApiResponses(false)
+  @ApiResponses(true)
   @Get()
   findAll(@Query() filters: FilterLocationDto) {
     return this.locationService.findAll(filters);
   }
 
   @Permissions(Permission.LOCATION_READ)
-  @ApiResponses(false)
+  @ApiResponses(true)
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.locationService.findOne(id);
@@ -37,14 +37,14 @@ export class AdminLocationController {
   }
 
   @Permissions(Permission.LOCATION_UPDATE)
-  @ApiResponses(false)
+  @ApiResponses(true)
   @Patch(':id')
   update(@Param('id') id: string, @Body() dto: UpdateLocationDto) {
     return this.locationService.update(id, dto);
   }
 
   @Permissions(Permission.LOCATION_UPDATE)
-  @ApiResponses(false)
+  @ApiResponses(true)
   @ApiConsumes('multipart/form-data')
   @ApiImageFile('pictures', { type: UploadType.ARRAY, maxCount: 6 })
   @Post(':id/pictures')
@@ -56,7 +56,7 @@ export class AdminLocationController {
   }
 
   @Permissions(Permission.LOCATION_DELETE)
-  @ApiResponses(false)
+  @ApiResponses(true)
   @Delete(':id')
   remove(@Param('id') id: string) {
     return this.locationService.remove(id);

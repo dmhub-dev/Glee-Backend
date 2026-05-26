@@ -16,6 +16,8 @@ import { ApiResponses } from '@src/common/responses/response';
 import { UserRole } from '@prisma/client';
 import { PaginationQueryDto } from './dto/pagination-query.dto';
 import { IEventTicketAdminFilters } from './interfaces/filters';
+import { Permissions } from '@src/auth/rbac/permissions.decorator';
+import { Permission } from '@src/auth/rbac/permissions.enum';
 
 @Controller('admin/event-ticket')
 @ApiTags('Admin Event Tickets Routes')
@@ -23,6 +25,7 @@ export class AdminEventTicketsController {
   constructor(private readonly eventTicketsService: EventTicketsService) {}
 
   @ApiResponses(true, [UserRole.ADMIN])
+  @Permissions(Permission.BOOKINGS_READ)
   @Get()
   getAllEvents(@Query() queryData: PaginationQueryDto) {
     let filter: IEventTicketAdminFilters = {};
@@ -41,6 +44,7 @@ export class AdminEventTicketsController {
   //   return this.eventTicketsService.update(+id, updateEventTicketDto);
   // }
   @ApiResponses(true, [UserRole.ADMIN])
+  @Permissions(Permission.BOOKINGS_DELETE)
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   remove(@Param('id') id: string) {
@@ -48,6 +52,7 @@ export class AdminEventTicketsController {
   }
 
   @ApiResponses(true, [UserRole.ADMIN])
+  @Permissions(Permission.BOOKINGS_DELETE)
   @Delete('ticket')
   @HttpCode(HttpStatus.NO_CONTENT)
   removeTickets(
@@ -58,6 +63,7 @@ export class AdminEventTicketsController {
   }
 
   @ApiResponses(true, [UserRole.ADMIN])
+  @Permissions(Permission.BOOKINGS_DELETE)
   @Delete('ticket/permanent')
   @HttpCode(HttpStatus.NO_CONTENT)
   permanentRemoveTickets() {

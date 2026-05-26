@@ -21,7 +21,7 @@ export class AdminCategoriesController {
   }
 
   @Permissions(Permission.CATEGORIES_UPDATE)
-  @ApiResponses(false)
+  @ApiResponses(true)
   @Patch(':id')
   update(
     @Param('id') id: string,
@@ -31,7 +31,7 @@ export class AdminCategoriesController {
   }
 
   @Permissions(Permission.CATEGORIES_DELETE)
-  @ApiResponses(false)
+  @ApiResponses(true)
   @Delete(':id')
   remove(@Param('id') id: string) {
     return this.categoriesService.remove(id);

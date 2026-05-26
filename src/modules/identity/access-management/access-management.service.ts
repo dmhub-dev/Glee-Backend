@@ -43,6 +43,9 @@ export class AccessManagementService {
     if (dto.role === UserRole.SUPER_ADMIN && actor?.role !== UserRole.SUPER_ADMIN) {
       throw new HttpException('Only a super admin can invite another super admin', HttpStatus.FORBIDDEN);
     }
+    if (dto.role !== UserRole.USER && !this.canAssignRoles(actor)) {
+      throw new HttpException('You do not have permission to assign roles', HttpStatus.FORBIDDEN);
+    }
 
     const existingUser = await this.prisma.user.findFirst({
       where: { email: dto.email, isDeleted: false },
@@ -233,6 +236,9 @@ export class AccessManagementService {
       include: { role: true },
     });
     if (!current) throw new HttpException('User not found', HttpStatus.NOT_FOUND);
+    if (current.role?.name === UserRole.SUPER_ADMIN && actor?.role !== UserRole.SUPER_ADMIN) {
+      throw new HttpException('Only a super admin can update a super admin account', HttpStatus.FORBIDDEN);
+    }
 
     const data: any = {
       name: dto.name,
@@ -243,6 +249,12 @@ export class AccessManagementService {
     Object.keys(data).forEach(key => data[key] === undefined && delete data[key]);
 
     if (dto.role) {
+      if (!this.canAssignRoles(actor)) {
+        throw new HttpException('You do not have permission to assign roles', HttpStatus.FORBIDDEN);
+      }
+      if (dto.role === UserRole.SUPER_ADMIN && actor?.role !== UserRole.SUPER_ADMIN) {
+        throw new HttpException('Only a super admin can assign the super admin role', HttpStatus.FORBIDDEN);
+      }
       const role = await this.findRoleOrThrow(dto.role);
       data.roleId = role.id;
     }
@@ -260,8 +272,14 @@ export class AccessManagementService {
   async deleteUser(id: string, actor: any) {
     if (id === actor?.id) throw new HttpException('You cannot delete your own account', HttpStatus.BAD_REQUEST);
 
-    const user = await this.prisma.user.findFirst({ where: { id, isDeleted: false }, select: { id: true } });
+    const user = await this.prisma.user.findFirst({
+      where: { id, isDeleted: false },
+      select: { id: true, role: { select: { name: true } } },
+    });
     if (!user) throw new HttpException('User not found', HttpStatus.NOT_FOUND);
+    if (user.role?.name === UserRole.SUPER_ADMIN && actor?.role !== UserRole.SUPER_ADMIN) {
+      throw new HttpException('Only a super admin can delete a super admin account', HttpStatus.FORBIDDEN);
+    }
 
     await this.prisma.user.update({
       where: { id },
@@ -344,6 +362,10 @@ export class AccessManagementService {
     const role = await this.prisma.role.findUnique({ where: { name } });
     if (!role) throw new HttpException(`Role ${name} does not exist`, HttpStatus.BAD_REQUEST);
     return role;
+  }
+
+  private canAssignRoles(actor: any) {
+    return actor?.role === UserRole.SUPER_ADMIN || actor?.permissions?.includes('users:assign_role');
   }
 
   private async log(actor: any, action: string, entity: string, entityId?: string, metadata?: Record<string, unknown>) {

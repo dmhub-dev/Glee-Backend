@@ -86,7 +86,22 @@ const PERMISSIONS = [
 
 const ROLE_PERMISSIONS: Record<UserRole, string[]> = {
   [UserRole.SUPER_ADMIN]: PERMISSIONS.map(([name]) => name),
-  [UserRole.ADMIN]: PERMISSIONS.map(([name]) => name).filter(name => name !== 'system:govern'),
+  [UserRole.ADMIN]: [
+    'users:read', 'users:create', 'users:update', 'users:delete', 'users:invite',
+    'vendors:read', 'vendors:create', 'vendors:update', 'vendors:delete', 'vendors:approve',
+    'events:read', 'events:create', 'events:update', 'events:delete', 'events:approve',
+    'services:read', 'services:create', 'services:update', 'services:delete',
+    'bookings:read', 'bookings:create', 'bookings:update', 'bookings:delete', 'bookings:override',
+    'payments:read', 'payments:refund', 'payments:export',
+    'reports:read',
+    'categories:read', 'categories:create', 'categories:update', 'categories:delete',
+    'content:manage',
+    'notifications:read',
+    'chat:read', 'chat:create',
+    'wallet:read', 'wallet:topup', 'wallet:deduct',
+    'location:read', 'location:create', 'location:update', 'location:delete',
+    'pricing:override', 'pricing:edit',
+  ],
   [UserRole.OPERATIONS_MANAGER]: [
     'users:read', 'vendors:read', 'vendors:update', 'vendors:approve',
     'events:read', 'events:update', 'events:approve',
