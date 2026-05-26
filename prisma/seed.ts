@@ -118,6 +118,7 @@ const ROLE_PERMISSIONS: Record<UserRole, string[]> = {
     'bookings:read', 'reports:read', 'wallet:read',
   ],
   [UserRole.VENDOR]: [
+    'users:invite',
     'events:read', 'events:create', 'events:update',
     'services:read', 'services:create', 'services:update', 'services:delete',
     'bookings:read', 'bookings:update', 'payments:read', 'wallet:read', 'notifications:read',

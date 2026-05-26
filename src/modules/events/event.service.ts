@@ -1,6 +1,6 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { EntityStatus } from '@prisma/client';
+import { EntityStatus, UserRole } from '@prisma/client';
 import { PrismaService } from '@src/infrastructure/database/prisma.service';
 import { AddImageDto, DeleteImageDto } from './dto/add-image.dto';
 import { CreateEventDto } from './dto/create-event.dto';
@@ -11,7 +11,12 @@ import { UpdateEventDto } from './dto/update-event.dto';
 import { EventSharedService } from './shared/shared.event.service';
 import { S3Service } from '@src/infrastructure/storage/s3.service';
 
-const EVENT_INCLUDE = { location: true, ticketCategories: true, menuItems: true };
+const EVENT_INCLUDE = {
+  location: true,
+  ticketCategories: true,
+  menuItems: true,
+  vendor: { select: { id: true, name: true, email: true, role: true } },
+};
 
 @Injectable()
 export class EventService {
@@ -23,6 +28,15 @@ export class EventService {
   ) {}
 
   async create(createEventDto: CreateEventDto, files: Array<Express.Multer.File>) {
+    return this.createInternal(createEventDto, files, (createEventDto as any).vendor ?? null);
+  }
+
+  async createEventVendor(createEventDto: CreateEventDto, files: Array<Express.Multer.File>, user: any) {
+    const vendorId = this.resolveVendorAccountId(user);
+    return this.createInternal(createEventDto, files, vendorId);
+  }
+
+  private async createInternal(createEventDto: CreateEventDto, files: Array<Express.Multer.File>, vendorId?: string | null) {
     const bannerImages = await this.s3.uploadMany(files);
     const dto = createEventDto as any;
 
@@ -42,6 +56,7 @@ export class EventService {
         bannerImages: bannerImages.length ? bannerImages : [],
         startDate: dto.date?.start ?? null,
         endDate: dto.date?.end ?? null,
+        vendorId: vendorId ?? null,
       },
     });
 
@@ -77,16 +92,18 @@ export class EventService {
     return { success: true, message: 'Event created successfully.', data: full };
   }
 
-  async createEventVendor(createEventDto: CreateEventDto, files: Array<Express.Multer.File>) {
-    return this.create(createEventDto, files);
-  }
-
   async eventEarningService(id: string) {
     const result = await this.eventSharedService.calculateEventEarning(id);
     if (!Array.isArray(result) || result.length === 0) {
       return { success: true, adminEarning: 0, vendorEarning: 0 };
     }
     return { success: true, data: result[0] };
+  }
+
+  async eventEarningForVendor(id: string, user: any) {
+    const vendorId = this.resolveVendorAccountId(user);
+    await this.assertVendorEventAccess(id, vendorId);
+    return this.eventEarningService(id);
   }
 
   async findAll({ page, limit, search }: RetrieveEventDto) {
@@ -108,7 +125,8 @@ export class EventService {
   }
 
   async findAllByVendorId({ page, limit, search }: RetrieveEventDto, user: any) {
-    const where: any = { isDeleted: false };
+    const vendorId = this.resolveVendorAccountId(user);
+    const where: any = { isDeleted: false, vendorId };
     if (search) where.name = { contains: search, mode: 'insensitive' };
 
     const [data, docCount] = await Promise.all([
@@ -152,8 +170,10 @@ export class EventService {
     };
   }
 
-  async findOneEventByVendorId(id: string, userId: string) {
-    return this.findOne(id, userId);
+  async findOneEventByVendorId(id: string, user: any) {
+    const vendorId = this.resolveVendorAccountId(user);
+    await this.assertVendorEventAccess(id, vendorId);
+    return this.findOne(id, user.id);
   }
 
   async eventParticipants(filter: { eventId: string; userId: string }, me: any) {
@@ -163,6 +183,12 @@ export class EventService {
     }
     if (event.endDate && new Date(event.endDate) < new Date()) {
       throw new HttpException('Event has been expired', HttpStatus.BAD_REQUEST);
+    }
+    if ([UserRole.VENDOR, UserRole.VENDOR_STAFF].includes(me.role)) {
+      const vendorId = this.resolveVendorAccountId(me);
+      if (event.vendorId !== vendorId) {
+        throw new HttpException('You do not have access to this event', HttpStatus.FORBIDDEN);
+      }
     }
 
     const { data: eventParticipants, count } = await this.eventSharedService.helperGetEventParticipants(filter, me);
@@ -331,7 +357,9 @@ export class EventService {
     return { success: true, message: 'Event updated successfully.', data: full };
   }
 
-  async updateEventVendor(id: string, updateEventDto: UpdateEventDto, files: any) {
+  async updateEventForVendor(id: string, updateEventDto: UpdateEventDto, files: any, user: any) {
+    const vendorId = this.resolveVendorAccountId(user);
+    await this.assertVendorEventAccess(id, vendorId);
     return this.update(id, updateEventDto, files);
   }
 
@@ -342,6 +370,12 @@ export class EventService {
     }
     const eventData = await this.prisma.event.update({ where: { id }, data: { isDeleted: true, deletedAt: new Date() } });
     return { success: true, message: 'This event is deleted successfuly', data: [eventData] };
+  }
+
+  async removeForVendor(id: string, user: any) {
+    const vendorId = this.resolveVendorAccountId(user);
+    await this.assertVendorEventAccess(id, vendorId);
+    return this.remove(id);
   }
 
   async getEvent(id: string, filterDeleted: boolean) {
@@ -367,5 +401,22 @@ export class EventService {
   async clearEventCL() {
     await this.prisma.event.deleteMany({});
     return { success: true };
+  }
+
+  private resolveVendorAccountId(user: any) {
+    if (user?.role === UserRole.VENDOR) return user.id;
+    if (user?.role === UserRole.VENDOR_STAFF && user.vendorAccountId) return user.vendorAccountId;
+    throw new HttpException('Vendor account scope is required', HttpStatus.FORBIDDEN);
+  }
+
+  private async assertVendorEventAccess(eventId: string, vendorId: string) {
+    const event = await this.prisma.event.findFirst({
+      where: { id: eventId, isDeleted: false },
+      select: { id: true, vendorId: true },
+    });
+    if (!event) throw new HttpException('Event not found', HttpStatus.NOT_FOUND);
+    if (event.vendorId !== vendorId) {
+      throw new HttpException('You do not have access to this event', HttpStatus.FORBIDDEN);
+    }
   }
 }

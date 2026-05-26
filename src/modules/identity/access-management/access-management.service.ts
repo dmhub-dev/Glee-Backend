@@ -43,6 +43,9 @@ export class AccessManagementService {
     if (dto.role === UserRole.SUPER_ADMIN && actor?.role !== UserRole.SUPER_ADMIN) {
       throw new HttpException('Only a super admin can invite another super admin', HttpStatus.FORBIDDEN);
     }
+    if (actor?.role === UserRole.VENDOR && dto.role !== UserRole.VENDOR_STAFF) {
+      throw new HttpException('Vendors can only invite vendor staff', HttpStatus.FORBIDDEN);
+    }
     if (dto.role !== UserRole.USER && !this.canAssignRoles(actor)) {
       throw new HttpException('You do not have permission to assign roles', HttpStatus.FORBIDDEN);
     }
@@ -90,8 +93,12 @@ export class AccessManagementService {
     };
   }
 
-  async listInvitations() {
+  async listInvitations(actor: any) {
+    const where = actor?.role === UserRole.SUPER_ADMIN || actor?.role === UserRole.ADMIN
+      ? {}
+      : { invitedById: actor?.id };
     const invitations = await this.prisma.userInvitation.findMany({
+      where,
       orderBy: { createdAt: 'desc' },
       include: this.invitationInclude(),
     });
@@ -142,7 +149,7 @@ export class AccessManagementService {
 
     const invitation = await this.prisma.userInvitation.findUnique({
       where: { token },
-      include: { role: true },
+      include: { role: true, invitedBy: { include: { role: true } } },
     });
     if (!invitation) throw new HttpException('Invitation not found', HttpStatus.NOT_FOUND);
     if (invitation.status !== 'PENDING') throw new HttpException('Invitation is no longer pending', HttpStatus.BAD_REQUEST);
@@ -158,6 +165,9 @@ export class AccessManagementService {
     if (existingUser) throw new HttpException('A user with this email already exists', HttpStatus.BAD_REQUEST);
 
     const password = await bcrypt.hash(dto.password, 10);
+    const vendorAccountId = invitation.role.name === UserRole.VENDOR_STAFF && invitation.invitedBy?.role?.name === UserRole.VENDOR
+      ? invitation.invitedById
+      : null;
     const result = await this.prisma.$transaction(async (tx) => {
       const user = await tx.user.create({
         data: {
@@ -168,6 +178,7 @@ export class AccessManagementService {
           roleId: invitation.roleId,
           invitedById: invitation.invitedById,
           invitedAt: invitation.createdAt,
+          vendorAccountId,
           isActive: AccountStatus.ACTIVE,
         },
         select: USER_SELECT,
@@ -365,7 +376,9 @@ export class AccessManagementService {
   }
 
   private canAssignRoles(actor: any) {
-    return actor?.role === UserRole.SUPER_ADMIN || actor?.permissions?.includes('users:assign_role');
+    return actor?.role === UserRole.SUPER_ADMIN
+      || actor?.permissions?.includes('users:assign_role')
+      || actor?.role === UserRole.VENDOR;
   }
 
   private async log(actor: any, action: string, entity: string, entityId?: string, metadata?: Record<string, unknown>) {

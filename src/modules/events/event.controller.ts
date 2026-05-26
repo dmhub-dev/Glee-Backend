@@ -51,8 +51,8 @@ export class EventController {
     @CurrentUser() user: any,
   ) {
     const query: any = {};
-    if (user.role !== 'ADMIN') query.userId = user.id;
     if (filter.eventId) query.eventId = filter.eventId;
+    if (filter.userId) query.userId = filter.userId;
     loggers.info('Event ID %O', filter);
     return this.eventService.eventParticipants(query, user);
   }
@@ -66,8 +66,8 @@ export class EventController {
     @CurrentUser() user: any,
   ) {
     const query: any = {};
-    if (user.role !== 'ADMIN') query.userId = user.id;
     if (filter.eventId) query.eventId = filter.eventId;
+    if (filter.userId) query.userId = filter.userId;
     loggers.info('Event ID %O', filter);
     return this.eventService.eventParticipants(query, user);
   }
@@ -87,7 +87,6 @@ export class EventController {
   @ApiResponses(true)
   @Get(':id')
   findOneEventByVendorId(@Param('id') id: string, @CurrentUser() currentUser) {
-    const userId = currentUser?.role === 'VENDOR' ? currentUser.id : null;
-    return this.eventService.findOneEventByVendorId(id, userId);
+    return this.eventService.findOneEventByVendorId(id, currentUser);
   }
 }

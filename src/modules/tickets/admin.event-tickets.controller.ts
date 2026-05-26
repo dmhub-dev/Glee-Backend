@@ -9,6 +9,7 @@ import {
   HttpStatus,
   Get,
 } from '@nestjs/common';
+import { CurrentUser } from '@src/auth/jwt/current-user.decorator';
 import { EventTicketsService } from './event-tickets.service';
 import { CreateEventTicketDto } from './dto/create-event-ticket.dto';
 import { ApiTags } from '@nestjs/swagger';
@@ -27,7 +28,7 @@ export class AdminEventTicketsController {
   @ApiResponses(true, [UserRole.ADMIN])
   @Permissions(Permission.BOOKINGS_READ)
   @Get()
-  getAllEvents(@Query() queryData: PaginationQueryDto) {
+  getAllEvents(@Query() queryData: PaginationQueryDto, @CurrentUser() user: any) {
     let filter: IEventTicketAdminFilters = {};
     if (queryData.eventId) filter.eventId = queryData.eventId;
     if (queryData.userId) filter.userId = queryData.userId;
@@ -36,6 +37,7 @@ export class AdminEventTicketsController {
       queryData.page,
       queryData.limit,
       filter,
+      user,
     );
   }
 

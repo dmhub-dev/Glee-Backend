@@ -25,9 +25,9 @@ export class InvitationsController {
 
   @Get()
   @ApiResponses(true, [UserRole.SUPER_ADMIN])
-  @Permissions(Permission.USERS_READ)
-  listInvitations() {
-    return this.accessManagementService.listInvitations();
+  @Permissions(Permission.USERS_INVITE)
+  listInvitations(@CurrentUser() user: any) {
+    return this.accessManagementService.listInvitations(user);
   }
 
   @Post('accept/:token')

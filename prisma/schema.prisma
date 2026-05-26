@@ -96,6 +96,7 @@ model User {
   invitedById         String?
   invitedAt           DateTime?
   lastLoginAt         DateTime?
+  vendorAccountId     String?
   otp                 Int?
   address             String?
   profileStatus       Boolean       @default(true)
@@ -110,6 +111,8 @@ model User {
   updatedAt           DateTime      @updatedAt
   invitedBy           User?         @relation("UserInvites", fields: [invitedById], references: [id], onDelete: SetNull)
   invitedUsers        User[]        @relation("UserInvites")
+  vendorAccount       User?         @relation("VendorStaff", fields: [vendorAccountId], references: [id], onDelete: SetNull)
+  vendorStaff         User[]        @relation("VendorStaff")
 
   chatsSent      Chat[]         @relation("ChatSender")
   chatsReceived  Chat[]         @relation("ChatReceiver")
@@ -120,10 +123,12 @@ model User {
   auditLogs      AuditLog[]     @relation("AuditActor")
   invitationsSent UserInvitation[] @relation("InvitationInviter")
   invitation      UserInvitation?
+  vendorEvents    Event[]       @relation("EventVendor")
 
   @@index([email])
   @@index([isDeleted])
   @@index([invitedById])
+  @@index([vendorAccountId])
 }
 
 model UserInvitation {
@@ -199,13 +204,16 @@ model Event {
   updatedAt          DateTime         @updatedAt
   locationId         String?
   categoryId         String?
+  vendorId           String?
   location           Location?        @relation(fields: [locationId], references: [id])
   category           Category?        @relation(fields: [categoryId], references: [id])
+  vendor             User?            @relation("EventVendor", fields: [vendorId], references: [id], onDelete: SetNull)
   ticketCategories   TicketCategory[]
   eventTickets       EventTicket[]
   menuItems          EventMenuItem[]
 
   @@index([isDeleted])
+  @@index([vendorId])
 }
 
 model EventMenuItem {

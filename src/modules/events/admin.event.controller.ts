@@ -11,6 +11,7 @@ import {
   UploadedFiles,
   Version,
 } from '@nestjs/common';
+import { CurrentUser } from '@src/auth/jwt/current-user.decorator';
 import { EventService } from './event.service';
 import { CreateEventDto } from './dto/create-event.dto';
 import { UpdateEventDto } from './dto/update-event.dto';
@@ -55,8 +56,9 @@ export class AdminEventController {
   createEventVendor(
     @UploadedFiles() files: Array<Express.Multer.File>,
     @Body() createEventDto: CreateEventDto,
+    @CurrentUser() user: any,
   ) {
-    return this.eventService.createEventVendor(createEventDto, files);
+    return this.eventService.createEventVendor(createEventDto, files, user);
   }
 
 
@@ -117,13 +119,14 @@ export class AdminEventController {
   updateEventVendor(
     @Param('id') id: string,
     @Body() updateEventDto: UpdateEventDto,
+    @CurrentUser() user: any,
     @UploadedFiles()
     files: {
       files: Array<Express.Multer.File>;
       photos: Array<Express.Multer.File>;
     },
   ) {
-    return this.eventService.updateEventVendor(id, updateEventDto, files);
+    return this.eventService.updateEventForVendor(id, updateEventDto, files, user);
   }
 
   @Permissions(Permission.EVENTS_UPDATE)
@@ -149,7 +152,10 @@ export class AdminEventController {
   @Permissions(Permission.EVENTS_READ)
   @ApiResponses(true)
   @Get('earning/:id')
-  eventEarningByVendor(@Param('id') id) {
+  eventEarningByVendor(@Param('id') id, @CurrentUser() user: any) {
+    if (user.role === UserRole.VENDOR || user.role === UserRole.VENDOR_STAFF) {
+      return this.eventService.eventEarningForVendor(id, user);
+    }
     return this.eventService.eventEarningService(id);
   }
 
@@ -176,8 +182,8 @@ export class AdminEventController {
   @Permissions(Permission.EVENTS_DELETE)
   @ApiResponses(true)
   @Delete(':id')
-  removeByVendor(@Param('id') id: string) {
-    return this.eventService.remove(id);
+  removeByVendor(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.eventService.removeForVendor(id, user);
   }
 
   /**

@@ -1,5 +1,5 @@
 import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
-import { NotificationType } from '@prisma/client';
+import { NotificationType, UserRole } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { EmailService } from '@src/infrastructure/email/email.service';
 import { loggers } from '@src/common/interceptors/logger.enums';
@@ -299,11 +299,24 @@ export class EventTicketsService {
     }, data.reference);
   }
 
-  async findAll(page = 1, limit = 10, filter?: any) {
+  async findAll(page = 1, limit = 10, filter?: any, currentUser?: any) {
     const where: any = { ...filter };
+    const vendorId = this.resolveVendorAccountId(currentUser, false);
+    if (vendorId) where.event = { vendorId };
 
     const [tickets, ticketsCount] = await Promise.all([
-      this.eventSharedService.getEventTicketsData(where, { limit, page }),
+      this.prisma.eventTicket.findMany({
+        where,
+        include: {
+          event: true,
+          payment: true,
+          user: { select: { id: true, name: true, email: true, phone: true } },
+          ticketCategory: true,
+        },
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
       this.prisma.eventTicket.count({ where }),
     ]);
 
@@ -394,5 +407,12 @@ export class EventTicketsService {
   async removePermanently() {
     await this.prisma.eventTicket.deleteMany({});
     return { success: true };
+  }
+
+  private resolveVendorAccountId(user: any, required = true) {
+    if (user?.role === UserRole.VENDOR) return user.id;
+    if (user?.role === UserRole.VENDOR_STAFF && user.vendorAccountId) return user.vendorAccountId;
+    if (required) throw new HttpException('Vendor account scope is required', HttpStatus.FORBIDDEN);
+    return null;
   }
 }
