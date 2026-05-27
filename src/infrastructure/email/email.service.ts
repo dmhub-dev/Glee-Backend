@@ -9,8 +9,10 @@ import { S3Service } from '@src/infrastructure/storage/s3.service';
 export interface EmailAttachment {
   filename: string;
   content?: Buffer;
+  contentType?: string;
   content_type?: string;
   path?: string;
+  contentId?: string;
   cid?: string;
 }
 
@@ -53,6 +55,9 @@ export class EmailService implements OnModuleInit {
 
   async sendMail(options: SendMailOptions): Promise<void> {
     const templatePath = path.join(process.cwd(), 'views', options.template, 'html.hbs');
+    if (!fs.existsSync(templatePath)) {
+      throw new Error(`Email template not found: ${options.template}`);
+    }
     const source = fs.readFileSync(templatePath, 'utf-8');
 
     handlebars.registerHelper('gt', (a: number, b: number) => a > b);
@@ -63,14 +68,25 @@ export class EmailService implements OnModuleInit {
     const to = Array.isArray(options.message.to)
       ? (options.message.to.filter(Boolean) as string[])
       : [options.message.to as string];
+    if (!to.length) {
+      throw new Error(`Email "${options.message.subject}" has no recipients`);
+    }
+
+    const attachments = options.message.attachments?.map(attachment => ({
+      filename: attachment.filename,
+      content: attachment.content,
+      path: attachment.path,
+      contentType: attachment.contentType ?? attachment.content_type,
+      contentId: attachment.contentId ?? attachment.cid,
+    }));
 
     const { data, error } = await this.resend.emails.send({
       from: this.from,
       to,
       subject: options.message.subject,
       html: rawHtml,
-      ...(options.message.attachments?.length
-        ? { attachments: options.message.attachments }
+      ...(attachments?.length
+        ? { attachments }
         : {}),
     } as any);
 

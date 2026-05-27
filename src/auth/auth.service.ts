@@ -10,7 +10,6 @@ import { loggers } from '@src/common/interceptors/logger.enums';
 import { generateOtp } from '@src/common/utils/utils';
 import { comparePasswords } from '@src/common/utils/utils';
 import { Response, ResponseObj } from '@src/common/responses/response';
-import * as path from 'path';
 import * as bcrypt from 'bcrypt';
 import {
     LoginDto,
@@ -90,17 +89,6 @@ export class AuthService {
                         message: {
                             to: admin.email,
                             subject: 'New Account Creation',
-                            attachments: [
-                                {
-                                    filename: 'logo.svg',
-                                    path: path.join(
-                                        process.cwd(),
-                                        'views',
-                                        'logo.svg',
-                                    ),
-                                    cid: 'logo',
-                                },
-                            ],
                         },
                         locals: {
                             config,
@@ -118,17 +106,6 @@ export class AuthService {
                     message: {
                         to: userDto.email,
                         subject: 'New Account Creation',
-                        attachments: [
-                            {
-                                filename: 'logo.svg',
-                                path: path.join(
-                                    process.cwd(),
-                                    'views',
-                                    'logo.svg',
-                                ),
-                                cid: 'logo',
-                            },
-                        ],
                     },
                     locals: {
                         config,
@@ -425,13 +402,6 @@ export class AuthService {
                 message: {
                     to: payload.email,
                     subject: 'GLEE App Alert',
-                    attachments: [
-                        {
-                            filename: 'logo.svg',
-                            path: path.join(process.cwd(), 'views', 'logo.svg'),
-                            cid: 'logo',
-                        },
-                    ],
                 },
                 locals: { config, user, date: new Date().getFullYear() },
             });
@@ -506,13 +476,6 @@ export class AuthService {
             message: {
                 to: user.email,
                 subject: 'GLEE OTP Alert',
-                attachments: [
-                    {
-                        filename: 'logo.svg',
-                        path: path.join(process.cwd(), 'views', 'logo.svg'),
-                        cid: 'logo',
-                    },
-                ],
             },
             locals: { config, user, date: new Date().getFullYear(), otp },
         });
@@ -528,13 +491,6 @@ export class AuthService {
             message: {
                 to: user.email,
                 subject: 'Your Glee login code',
-                attachments: [
-                    {
-                        filename: 'logo.svg',
-                        path: path.join(process.cwd(), 'views', 'logo.svg'),
-                        cid: 'logo',
-                    },
-                ],
             },
             locals: {
                 name: user.name,

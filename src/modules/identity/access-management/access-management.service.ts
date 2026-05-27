@@ -5,7 +5,6 @@ import { PrismaService } from '@src/infrastructure/database/prisma.service';
 import { EmailService } from '@src/infrastructure/email/email.service';
 import * as bcrypt from 'bcrypt';
 import { randomBytes } from 'crypto';
-import * as path from 'path';
 import {
     AcceptInvitationDto,
     InviteUserDto,
@@ -668,13 +667,6 @@ export class AccessManagementService {
                 message: {
                     to: invitation.email,
                     subject: 'You have been invited to Glee',
-                    attachments: [
-                        {
-                            filename: 'logo.svg',
-                            path: path.join(process.cwd(), 'views', 'logo.svg'),
-                            cid: 'logo',
-                        },
-                    ],
                 },
                 locals: {
                     name: invitation.name,

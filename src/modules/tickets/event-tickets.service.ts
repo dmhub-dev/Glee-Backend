@@ -392,7 +392,7 @@ export class EventTicketsService {
                     }).then((buf) => ({
                         filename: `glee-ticket-${i + 1}.pdf`,
                         content: buf,
-                        content_type: 'application/pdf',
+                        contentType: 'application/pdf',
                     })),
                 ),
             );
