@@ -54,6 +54,14 @@ export class AuthController {
         return this.authService.register(createUserDto, file);
     }
 
+    @Post('register/verify-otp')
+    @ApiResponses(false)
+    public async confirmRegistration(
+        @Body() payload: VerifyOtpDto,
+    ): Promise<any> {
+        return this.authService.confirmRegistration(payload);
+    }
+
     @Post('login')
     @ApiResponses(false)
     public async login(@Body() loginUserDto: LoginDto): Promise<any> {

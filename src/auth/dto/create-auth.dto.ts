@@ -44,27 +44,27 @@ export class RegisterUserDto {
         default: 'abAB**12',
         title: 'Password',
         description:
-            'At least 2 special character, 2 uppercase, 2 lowercase, 2 digits',
+            'At least 8 characters with uppercase, lowercase, number, and special character',
         type: 'string',
-        examples: ['abAB**12', 'xA9yB0**'],
+        examples: ['Glee@123', 'xA9yB0**'],
     })
     @IsNotEmpty({ message: 'Password should be required.' })
     @IsString()
-    @MinLength(6, {
-        message: 'Weak password, at least six characters required.',
+    @MinLength(8, {
+        message: 'Weak password, at least eight characters required.',
     })
     @MaxLength(20, {
         message: 'Too long password, at max twenty characters required.',
     })
-    // @MinSpecialCharacter(2, {
-    //   message: 'Weak password, at least two special characters required.',
-    // })
+    @MinSpecialCharacter(1, {
+      message: 'Weak password, at least one special character required.',
+    })
     @MinUpperCase(1, {
         message: 'Weak password, at least one uppercase characters required.',
     })
-    // @MinLowerCase(2, {
-    //   message: 'Weak password, at least two lowercase characters required.',
-    // })
+    @MinLowerCase(1, {
+      message: 'Weak password, at least one lowercase character required.',
+    })
     @MinDigits(1, {
         message: 'Weak password, at least one numeric characters required.',
     })

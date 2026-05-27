@@ -2,7 +2,7 @@ import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
 import { PrismaService } from '@src/infrastructure/database/prisma.service';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import { UserRole } from '@prisma/client';
+import { AccountStatus, UserRole } from '@prisma/client';
 import { UsersService } from '@src/modules/identity/users/users.service';
 import { OnesignalService } from '@src/infrastructure/push/onesignal/onesignal.service';
 import { EmailService } from '@src/infrastructure/email/email.service';
@@ -39,10 +39,11 @@ export class AuthService {
                 where: { role: { name: UserRole.ADMIN } },
                 select: { email: true },
             });
-            const userInDb = await this.usersService.findOne({
-                email: userDto.email,
+            const userInDb = await this.prisma.user.findFirst({
+                where: { email: userDto.email, isDeleted: false },
+                include: { role: true },
             });
-            if (userInDb)
+            if (userInDb && (userInDb.isActive === AccountStatus.ACTIVE || userInDb.role?.name !== UserRole.USER))
                 throw new HttpException(
                     'Email already exists',
                     HttpStatus.BAD_REQUEST,
@@ -53,12 +54,33 @@ export class AuthService {
                     'APP_URL',
                 )}/upload/${file.filename}`;
             }
-            const user = await this.usersService.create(userDto);
             const signupOtp = generateOtp();
-            await this.prisma.user.update({
-                where: { id: user.id },
-                data: { otp: signupOtp },
-            });
+            let user;
+            if (userInDb) {
+                const password = await bcrypt.hash(userDto.password, 10);
+                user = await this.prisma.user.update({
+                    where: { id: userInDb.id },
+                    data: {
+                        name: userDto.name,
+                        password,
+                        phone: userDto.phone,
+                        address: userDto.address,
+                        profileImage: userDto.profileImage,
+                        otp: signupOtp,
+                        isActive: AccountStatus.INACTIVE,
+                        role: { connect: { name: UserRole.USER } },
+                    },
+                    include: { role: true },
+                });
+            } else {
+                userDto.role = UserRole.USER;
+                (userDto as any).isActive = AccountStatus.INACTIVE;
+                user = await this.usersService.create(userDto);
+                await this.prisma.user.update({
+                    where: { id: user.id },
+                    data: { otp: signupOtp, isActive: AccountStatus.INACTIVE },
+                });
+            }
             const config = this.configService.get('EMAIL_SMTP');
 
             try {
@@ -122,8 +144,8 @@ export class AuthService {
 
             return {
                 success: true,
-                message: 'User registered successfully',
-                data: user,
+                message: 'Verification code sent. Please confirm your email to activate your account.',
+                data: { id: user.id, email: user.email, name: user.name },
             };
         } catch (err) {
             if (err?.code === 'P2002')
@@ -138,6 +160,52 @@ export class AuthService {
                 HttpStatus.INTERNAL_SERVER_ERROR,
             );
         }
+    }
+
+    async confirmRegistration(payload: VerifyOtpDto) {
+        const user = await this.prisma.user.findFirst({
+            where: {
+                email: payload.email,
+                otp: payload.otp,
+                role: { name: UserRole.USER },
+                isDeleted: false,
+            },
+            include: { role: true },
+        });
+
+        if (!user) {
+            throw new HttpException(
+                { message: 'Invalid OTP', isOtpInvalid: true, success: false },
+                HttpStatus.BAD_REQUEST,
+            );
+        }
+
+        const activated = await this.prisma.user.update({
+            where: { id: user.id },
+            data: {
+                otp: null,
+                isActive: AccountStatus.ACTIVE,
+                profileStatus: true,
+            },
+            include: { role: true },
+        });
+
+        await this.prisma.wallet.upsert({
+            where: { userId: activated.id },
+            update: {},
+            create: { userId: activated.id },
+        });
+
+        return {
+            success: true,
+            message: 'Account verified successfully. You can now sign in.',
+            data: {
+                id: activated.id,
+                email: activated.email,
+                name: activated.name,
+                role: activated.role?.name ?? null,
+            },
+        };
     }
 
     async login(loginUserDto: LoginDto) {

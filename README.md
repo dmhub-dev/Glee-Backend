@@ -229,6 +229,7 @@ Important routes:
 
 ```txt
 POST  /api/v1/register
+POST  /api/v1/register/verify-otp
 POST  /api/v1/login
 POST  /api/v1/login/verify-2fa
 POST  /api/v1/refresh
@@ -242,6 +243,8 @@ POST  /api/v1/reset-password
 ```
 
 Login can return a 2FA challenge if the account has `twoFactorEnabled = true`. The frontend then calls `/login/verify-2fa`.
+
+Customer signup creates an inactive `USER` account, emails a signup OTP, and activates the account through `/register/verify-otp`.
 
 Normal customer users use role:
 

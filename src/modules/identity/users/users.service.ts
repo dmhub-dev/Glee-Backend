@@ -81,6 +81,12 @@ export class UsersService {
                 HttpStatus.UNAUTHORIZED,
             );
         if (user.isActive === 'INACTIVE') {
+            if (user.role?.name === UserRole.USER && user.otp) {
+                throw new HttpException(
+                    'Please verify your email before signing in.',
+                    HttpStatus.UNAUTHORIZED,
+                );
+            }
             throw new HttpException(
                 `Account has been ${user.isActive}. Please contact your administrator.`,
                 HttpStatus.UNAUTHORIZED,
@@ -132,6 +138,12 @@ export class UsersService {
             );
 
         if (user.isActive === 'INACTIVE') {
+            if (user.role?.name === UserRole.USER && user.otp) {
+                throw new HttpException(
+                    'Please verify your email before signing in.',
+                    HttpStatus.UNAUTHORIZED,
+                );
+            }
             throw new HttpException(
                 `Account has been ${user.isActive}. Please contact your administrator.`,
                 HttpStatus.UNAUTHORIZED,
