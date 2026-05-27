@@ -269,6 +269,8 @@ export class AccessManagementService {
                     invitedAt: invitation.createdAt,
                     vendorAccountId,
                     isActive: AccountStatus.ACTIVE,
+                    profileStatus: false,
+                    twoFactorEnabled: false,
                 },
                 select: USER_SELECT,
             });

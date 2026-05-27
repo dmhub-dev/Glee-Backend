@@ -304,11 +304,11 @@ export class AuthService {
 
     async updateMe(
         currentUser: { id: string },
-        payload: { firstName?: string; lastName?: string; name?: string; phone?: string },
+        payload: { firstName?: string; lastName?: string; name?: string; phone?: string; address?: string },
     ) {
         const current = await this.prisma.user.findUnique({
             where: { id: currentUser.id },
-            select: { name: true },
+            select: { name: true, profileStatus: true },
         });
         if (!current) {
             throw new HttpException('User not found', HttpStatus.NOT_FOUND);
@@ -324,6 +324,8 @@ export class AuthService {
             data: {
                 ...(name ? { name } : {}),
                 ...(payload.phone !== undefined ? { phone: payload.phone } : {}),
+                ...(payload.address !== undefined ? { address: payload.address } : {}),
+                ...(name && payload.phone ? { profileStatus: true } : {}),
             },
             include: { role: true },
         });

@@ -91,7 +91,7 @@ export class AuthController {
     @ApiResponses(true)
     public async updateMe(
         @CurrentUser() user: any,
-        @Body() payload: { firstName?: string; lastName?: string; name?: string; phone?: string },
+        @Body() payload: { firstName?: string; lastName?: string; name?: string; phone?: string; address?: string },
     ): Promise<any> {
         return this.authService.updateMe(user, payload);
     }

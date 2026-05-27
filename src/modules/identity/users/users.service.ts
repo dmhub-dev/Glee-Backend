@@ -107,7 +107,6 @@ export class UsersService {
             data: {
                 token: accessToken,
                 refreshToken,
-                profileStatus: true,
                 lastLoginAt: new Date(),
             },
         });

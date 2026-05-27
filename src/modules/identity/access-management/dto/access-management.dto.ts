@@ -9,7 +9,9 @@ import {
     IsInt,
     IsOptional,
     IsString,
+    Matches,
     Max,
+    MaxLength,
     Min,
     MinLength,
     ValidateIf,
@@ -40,6 +42,11 @@ export class InviteUserDto {
 export class AcceptInvitationDto {
     @IsString()
     @MinLength(8)
+    @MaxLength(20)
+    @Matches(/[A-Z]/, { message: 'Password must include an uppercase letter' })
+    @Matches(/[a-z]/, { message: 'Password must include a lowercase letter' })
+    @Matches(/[0-9]/, { message: 'Password must include a number' })
+    @Matches(/[^A-Za-z0-9]/, { message: 'Password must include a special character' })
     password: string;
 
     @IsString()
