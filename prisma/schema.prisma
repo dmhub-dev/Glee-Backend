@@ -42,6 +42,13 @@ enum EventStatus {
   SOLD_OUT
 }
 
+enum TicketWaveStatus {
+  UPCOMING
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
 enum NotificationType {
   CHAT
   EVENT_TICKET
@@ -210,6 +217,7 @@ model Event {
   location         Location?        @relation(fields: [locationId], references: [id])
   category         Category?        @relation(fields: [categoryId], references: [id])
   vendor           User?            @relation("EventVendor", fields: [vendorId], references: [id], onDelete: SetNull)
+  ticketWaves      TicketWave[]
   ticketCategories TicketCategory[]
   eventTickets     EventTicket[]
   menuItems        EventMenuItem[]
@@ -217,6 +225,26 @@ model Event {
 
   @@index([isDeleted])
   @@index([vendorId])
+}
+
+model TicketWave {
+  id               String             @id @default(cuid())
+  eventId          String
+  event            Event              @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  name             String
+  description      String?
+  sequence         Int                @default(1)
+  startsAt         DateTime
+  endsAt           DateTime
+  status           TicketWaveStatus   @default(UPCOMING)
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  ticketCategories TicketCategory[]
+
+  @@index([eventId, sequence])
+  @@index([eventId, status])
+  @@index([startsAt, endsAt])
+  @@map("ticket_waves")
 }
 
 model EventSchedule {
@@ -252,6 +280,8 @@ model TicketCategory {
   id           String        @id @default(cuid())
   eventId      String
   event        Event         @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  waveId       String?
+  wave         TicketWave?   @relation(fields: [waveId], references: [id], onDelete: Cascade)
   name         String
   price        Decimal       @db.Decimal(10, 2)
   capacity     Int?
@@ -260,6 +290,7 @@ model TicketCategory {
   updatedAt    DateTime      @updatedAt
   eventTickets EventTicket[]
 
+  @@index([waveId])
   @@map("ticket_categories")
 }
 

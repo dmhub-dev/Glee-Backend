@@ -4,6 +4,7 @@ import {
     EventScheduleDto,
     MenuItemInputDto,
     TicketCategoryInputDto,
+    TicketWaveInputDto,
 } from './create-event.dto';
 import {
     IsNotEmpty,
@@ -168,6 +169,25 @@ export class UpdateEventDto {
     })
     @IsOptional()
     ticketCategories?: TicketCategoryInputDto[];
+
+    @Transform(({ value }) => {
+        if (!value) return undefined;
+        try {
+            const parsed =
+                typeof value === 'string' ? JSON.parse(value) : value;
+            return Array.isArray(parsed) ? parsed : undefined;
+        } catch {
+            return undefined;
+        }
+    })
+    @ApiProperty({
+        required: false,
+        type: 'string',
+        description:
+            'JSON array of ticket waves with nested ticketCategories.',
+    })
+    @IsOptional()
+    ticketWaves?: TicketWaveInputDto[];
 
     @Transform(({ value }) => {
         if (!value) return undefined;

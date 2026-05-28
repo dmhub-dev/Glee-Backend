@@ -1,6 +1,6 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { EventStatus, Prisma, UserRole } from '@prisma/client';
+import { EventStatus, Prisma, TicketWaveStatus, UserRole } from '@prisma/client';
 import { PrismaService } from '@src/infrastructure/database/prisma.service';
 import { AddImageDto, DeleteImageDto } from './dto/add-image.dto';
 import { CreateEventDto } from './dto/create-event.dto';
@@ -15,6 +15,10 @@ const EVENT_INCLUDE: Prisma.EventInclude = {
     location: true,
     category: true,
     ticketCategories: true,
+    ticketWaves: {
+        include: { ticketCategories: true },
+        orderBy: { sequence: 'asc' },
+    },
     menuItems: true,
     schedules: { orderBy: { startDate: 'asc' } },
     vendor: { select: { id: true, name: true, email: true, role: true } },
@@ -56,9 +60,7 @@ export class EventService {
     ) {
         const photos = await this.s3.uploadMany(files);
         const dto = createEventDto as any;
-        const ticketCapacity = this.sumTicketCategoryCapacity(
-            createEventDto.ticketCategories,
-        );
+        const ticketCapacity = this.sumTicketCapacity(createEventDto);
         const capacity =
             createEventDto.capacity !== undefined &&
             Number(createEventDto.capacity) > 0
@@ -104,7 +106,9 @@ export class EventService {
             },
         });
 
-        if (createEventDto.ticketCategories?.length) {
+        if (createEventDto.ticketWaves?.length) {
+            await this.createTicketWaves(event.id, createEventDto.ticketWaves);
+        } else if (createEventDto.ticketCategories?.length) {
             await this.prisma.ticketCategory.createMany({
                 data: createEventDto.ticketCategories.map((tc) => ({
                     eventId: event.id,
@@ -167,7 +171,7 @@ export class EventService {
         const where: any = { isDeleted: false };
         if (search) where.name = { contains: search, mode: 'insensitive' };
 
-        const [data, docCount] = await Promise.all([
+        const [rawData, docCount] = await Promise.all([
             this.prisma.event.findMany({
                 where,
                 include: EVENT_INCLUDE,
@@ -177,6 +181,14 @@ export class EventService {
             }),
             this.prisma.event.count({ where }),
         ]);
+        await this.syncTicketWavesForEvents(rawData.map((event) => event.id));
+        const data = await this.prisma.event.findMany({
+            where,
+            include: EVENT_INCLUDE,
+            skip: (page - 1) * limit,
+            take: limit,
+            orderBy: { createdAt: 'desc' },
+        });
 
         return {
             success: true,
@@ -195,7 +207,7 @@ export class EventService {
         const where: any = { isDeleted: false, vendorId };
         if (search) where.name = { contains: search, mode: 'insensitive' };
 
-        const [data, docCount] = await Promise.all([
+        const [rawData, docCount] = await Promise.all([
             this.prisma.event.findMany({
                 where,
                 include: EVENT_INCLUDE,
@@ -205,6 +217,14 @@ export class EventService {
             }),
             this.prisma.event.count({ where }),
         ]);
+        await this.syncTicketWavesForEvents(rawData.map((event) => event.id));
+        const data = await this.prisma.event.findMany({
+            where,
+            include: EVENT_INCLUDE,
+            skip: (page - 1) * limit,
+            take: limit,
+            orderBy: { createdAt: 'desc' },
+        });
 
         return {
             success: true,
@@ -216,6 +236,7 @@ export class EventService {
     }
 
     async findOne(id: string, userId: string) {
+        await this.syncTicketWavesForEvents([id]);
         const event = await this.prisma.event.findFirst({
             where: { id, isDeleted: false },
             include: EVENT_INCLUDE,
@@ -539,10 +560,11 @@ export class EventService {
 
         await this.prisma.event.update({ where: { id }, data });
 
-        if ((updateEventDto as any).ticketCategories?.length) {
-            const newTicketCapacity = this.sumTicketCategoryCapacity(
-                (updateEventDto as any).ticketCategories,
-            );
+        if (
+            (updateEventDto as any).ticketWaves?.length ||
+            (updateEventDto as any).ticketCategories?.length
+        ) {
+            const newTicketCapacity = this.sumTicketCapacity(updateEventDto as any);
             const ticketPurchased = await this.countPurchasedTickets(id);
             if (newTicketCapacity < ticketPurchased) {
                 throw new HttpException(
@@ -557,21 +579,29 @@ export class EventService {
             await this.prisma.ticketCategory.deleteMany({
                 where: { eventId: id },
             });
-            await this.prisma.ticketCategory.createMany({
-                data: (updateEventDto as any).ticketCategories.map(
-                    (tc: {
-                        name: string;
-                        price: number;
-                        capacity?: number;
-                    }) => ({
-                        eventId: id,
-                        name: tc.name,
-                        price: tc.price,
-                        capacity: tc.capacity ?? null,
-                        available: tc.capacity ?? null,
-                    }),
-                ),
-            });
+            await this.prisma.ticketWave.deleteMany({ where: { eventId: id } });
+            if ((updateEventDto as any).ticketWaves?.length) {
+                await this.createTicketWaves(
+                    id,
+                    (updateEventDto as any).ticketWaves,
+                );
+            } else if ((updateEventDto as any).ticketCategories?.length) {
+                await this.prisma.ticketCategory.createMany({
+                    data: (updateEventDto as any).ticketCategories.map(
+                        (tc: {
+                            name: string;
+                            price: number;
+                            capacity?: number;
+                        }) => ({
+                            eventId: id,
+                            name: tc.name,
+                            price: tc.price,
+                            capacity: tc.capacity ?? null,
+                            available: tc.capacity ?? null,
+                        }),
+                    ),
+                });
+            }
         }
 
         const menuItems =
@@ -943,6 +973,22 @@ export class EventService {
         );
     }
 
+    private sumTicketCapacity(input: {
+        ticketCategories?: Array<{ capacity?: number | null }>;
+        ticketWaves?: Array<{
+            ticketCategories?: Array<{ capacity?: number | null }>;
+        }>;
+    }) {
+        if (input.ticketWaves?.length) {
+            return input.ticketWaves.reduce(
+                (sum, wave) =>
+                    sum + this.sumTicketCategoryCapacity(wave.ticketCategories),
+                0,
+            );
+        }
+        return this.sumTicketCategoryCapacity(input.ticketCategories);
+    }
+
     private sumTicketCategoryCapacity(
         ticketCategories?: Array<{ capacity?: number | null }>,
     ) {
@@ -950,6 +996,186 @@ export class EventService {
             (sum, category) => sum + Number(category.capacity ?? 0),
             0,
         );
+    }
+
+    private async createTicketWaves(
+        eventId: string,
+        waves: Array<{
+            name: string;
+            description?: string;
+            startsAt: Date | string;
+            endsAt: Date | string;
+            ticketCategories?: Array<{
+                name: string;
+                price: number;
+                capacity?: number | null;
+                description?: string;
+            }>;
+        }>,
+    ) {
+        const now = new Date();
+        for (const [index, wave] of waves.entries()) {
+            const startsAt = new Date(wave.startsAt);
+            const endsAt = new Date(wave.endsAt);
+            if (Number.isNaN(startsAt.getTime()) || Number.isNaN(endsAt.getTime())) {
+                throw new HttpException(
+                    'Ticket wave dates are invalid',
+                    HttpStatus.BAD_REQUEST,
+                );
+            }
+            if (endsAt <= startsAt) {
+                throw new HttpException(
+                    'Ticket wave end date must be after start date',
+                    HttpStatus.BAD_REQUEST,
+                );
+            }
+
+            const status =
+                index === 0 && startsAt <= now
+                    ? TicketWaveStatus.ACTIVE
+                    : TicketWaveStatus.UPCOMING;
+            const created = await this.prisma.ticketWave.create({
+                data: {
+                    eventId,
+                    name: wave.name,
+                    description: wave.description ?? null,
+                    sequence: index + 1,
+                    startsAt,
+                    endsAt,
+                    status,
+                },
+            });
+
+            const categories = wave.ticketCategories ?? [];
+            if (categories.length) {
+                await this.prisma.ticketCategory.createMany({
+                    data: categories.map((tc) => ({
+                        eventId,
+                        waveId: created.id,
+                        name: tc.name,
+                        price: tc.price,
+                        capacity: tc.capacity ?? null,
+                        available: tc.capacity ?? null,
+                    })),
+                });
+            }
+        }
+    }
+
+    private async syncTicketWavesForEvents(eventIds: string[]) {
+        for (const eventId of eventIds.filter(Boolean)) {
+            await this.syncTicketWaves(eventId);
+        }
+    }
+
+    private async syncTicketWaves(eventId: string) {
+        const waves = await this.prisma.ticketWave.findMany({
+            where: { eventId, status: { not: TicketWaveStatus.CANCELLED } },
+            include: { ticketCategories: true },
+            orderBy: { sequence: 'asc' },
+        });
+        if (!waves.length) return;
+
+        const now = new Date();
+        let activeIndex = waves.findIndex(
+            (wave) => wave.status === TicketWaveStatus.ACTIVE,
+        );
+        if (activeIndex === -1) {
+            const firstReadyIndex = waves.findIndex(
+                (wave) =>
+                    wave.status === TicketWaveStatus.UPCOMING &&
+                    wave.startsAt <= now,
+            );
+            if (firstReadyIndex === -1) return;
+            await this.prisma.ticketWave.update({
+                where: { id: waves[firstReadyIndex].id },
+                data: { status: TicketWaveStatus.ACTIVE },
+            });
+            activeIndex = firstReadyIndex;
+            waves[activeIndex].status = TicketWaveStatus.ACTIVE;
+        }
+
+        for (let index = activeIndex; index < waves.length; index += 1) {
+            const wave = await this.prisma.ticketWave.findUnique({
+                where: { id: waves[index].id },
+                include: { ticketCategories: true },
+            });
+            if (!wave || wave.status !== TicketWaveStatus.ACTIVE) continue;
+
+            const available = this.sumTicketCategoryAvailable(
+                wave.ticketCategories,
+            );
+            const isSoldOut = available <= 0;
+            const isExpired = wave.endsAt <= now;
+            if (!isSoldOut && !isExpired) break;
+
+            await this.prisma.ticketWave.update({
+                where: { id: wave.id },
+                data: { status: TicketWaveStatus.COMPLETED },
+            });
+
+            const nextWave = waves
+                .slice(index + 1)
+                .find((candidate) => candidate.status === TicketWaveStatus.UPCOMING);
+            if (!nextWave) break;
+
+            if (isExpired && available > 0) {
+                await this.distributeRolloverTickets(nextWave.id, available);
+            }
+
+            await this.prisma.ticketWave.update({
+                where: { id: nextWave.id },
+                data: {
+                    status: TicketWaveStatus.ACTIVE,
+                    startsAt: nextWave.startsAt > now ? now : nextWave.startsAt,
+                },
+            });
+            nextWave.status = TicketWaveStatus.ACTIVE;
+        }
+    }
+
+    private sumTicketCategoryAvailable(
+        ticketCategories: Array<{ available: number | null; capacity: number | null }>,
+    ) {
+        return ticketCategories.reduce(
+            (sum, category) =>
+                sum + Number(category.available ?? category.capacity ?? 0),
+            0,
+        );
+    }
+
+    private async distributeRolloverTickets(waveId: string, tickets: number) {
+        const categories = await this.prisma.ticketCategory.findMany({
+            where: { waveId },
+            orderBy: { createdAt: 'asc' },
+        });
+        if (!categories.length || tickets <= 0) return;
+
+        const baseCapacity = categories.reduce(
+            (sum, category) => sum + Number(category.capacity ?? 0),
+            0,
+        );
+        let remaining = tickets;
+        for (const [index, category] of categories.entries()) {
+            const share =
+                index === categories.length - 1
+                    ? remaining
+                    : Math.floor(
+                          tickets *
+                              (baseCapacity > 0
+                                  ? Number(category.capacity ?? 0) / baseCapacity
+                                  : 1 / categories.length),
+                      );
+            remaining -= share;
+            if (share <= 0) continue;
+            await this.prisma.ticketCategory.update({
+                where: { id: category.id },
+                data: {
+                    capacity: { increment: share },
+                    available: { increment: share },
+                },
+            });
+        }
     }
 
     private async assertVendorEventAccess(eventId: string, vendorId: string) {

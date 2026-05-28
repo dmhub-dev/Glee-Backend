@@ -1,5 +1,5 @@
 import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
-import { NotificationType, UserRole } from '@prisma/client';
+import { NotificationType, TicketWaveStatus, UserRole } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { EmailService } from '@src/infrastructure/email/email.service';
 import { loggers } from '@src/common/interceptors/logger.enums';
@@ -56,6 +56,7 @@ export class EventTicketsService {
         );
         if (!event)
             throw new HttpException('Event not found', HttpStatus.BAD_REQUEST);
+        await this.syncTicketWaves(event.id);
         await this.assertEventCapacity(
             event.id,
             event.capacity,
@@ -501,6 +502,7 @@ export class EventTicketsService {
         if (!event) return;
 
         const noOfTickets = parseInt(String(metadata.noOfTickets ?? 1), 10);
+        await this.syncTicketWaves(event.id);
         await this.assertEventCapacity(
             event.id,
             event.capacity,
@@ -1009,7 +1011,7 @@ export class EventTicketsService {
                 _sum: { quantity: true },
             }),
             this.prisma.ticketCategory.findMany({
-                where: { eventId },
+                where: await this.activeTicketCategoryWhere(eventId),
                 select: { available: true, capacity: true },
             }),
         ]);
@@ -1051,6 +1053,7 @@ export class EventTicketsService {
         if (ticketCategoryId) {
             const category = await this.prisma.ticketCategory.findFirst({
                 where: { id: ticketCategoryId, eventId },
+                include: { wave: true },
             });
             if (!category) {
                 throw new HttpException(
@@ -1058,11 +1061,13 @@ export class EventTicketsService {
                     HttpStatus.BAD_REQUEST,
                 );
             }
+            this.assertTicketCategoryCanSell(category);
             return Number(category.price);
         }
 
+        const where = await this.activeTicketCategoryWhere(eventId);
         const category = await this.prisma.ticketCategory.findFirst({
-            where: { eventId },
+            where,
             orderBy: { createdAt: 'asc' },
         });
         return category ? Number(category.price) : 0;
@@ -1077,6 +1082,7 @@ export class EventTicketsService {
         if (ticketCategoryId) {
             const category = await this.prisma.ticketCategory.findFirst({
                 where: { id: ticketCategoryId, eventId },
+                include: { wave: true },
             });
             if (!category) {
                 throw new HttpException(
@@ -1084,6 +1090,7 @@ export class EventTicketsService {
                     HttpStatus.BAD_REQUEST,
                 );
             }
+            this.assertTicketCategoryCanSell(category);
             const available =
                 category.available ?? category.capacity ?? capacity ?? 0;
             if (available < requestedTickets) {
@@ -1096,7 +1103,7 @@ export class EventTicketsService {
         }
 
         const categories = await this.prisma.ticketCategory.findMany({
-            where: { eventId },
+            where: await this.activeTicketCategoryWhere(eventId),
             select: { available: true, capacity: true },
         });
         if (categories.length) {
@@ -1124,6 +1131,130 @@ export class EventTicketsService {
                 'No tickets available',
                 HttpStatus.BAD_REQUEST,
             );
+        }
+    }
+
+    private async activeTicketCategoryWhere(eventId: string) {
+        if (!(this.prisma as any).ticketWave) return { eventId };
+        const hasWaves = await this.prisma.ticketWave.count({ where: { eventId } });
+        if (!hasWaves) return { eventId };
+        return {
+            eventId,
+            wave: { status: TicketWaveStatus.ACTIVE },
+        };
+    }
+
+    private assertTicketCategoryCanSell(category: {
+        wave?: { status: TicketWaveStatus } | null;
+    }) {
+        if (category.wave && category.wave.status !== TicketWaveStatus.ACTIVE) {
+            throw new HttpException(
+                'This ticket wave is not currently available',
+                HttpStatus.BAD_REQUEST,
+            );
+        }
+    }
+
+    private async syncTicketWaves(eventId: string) {
+        if (!(this.prisma as any).ticketWave) return;
+        const waves = await this.prisma.ticketWave.findMany({
+            where: { eventId, status: { not: TicketWaveStatus.CANCELLED } },
+            include: { ticketCategories: true },
+            orderBy: { sequence: 'asc' },
+        });
+        if (!waves.length) return;
+
+        const now = new Date();
+        let activeIndex = waves.findIndex(
+            (wave) => wave.status === TicketWaveStatus.ACTIVE,
+        );
+        if (activeIndex === -1) {
+            const firstReadyIndex = waves.findIndex(
+                (wave) =>
+                    wave.status === TicketWaveStatus.UPCOMING &&
+                    wave.startsAt <= now,
+            );
+            if (firstReadyIndex === -1) return;
+            await this.prisma.ticketWave.update({
+                where: { id: waves[firstReadyIndex].id },
+                data: { status: TicketWaveStatus.ACTIVE },
+            });
+            activeIndex = firstReadyIndex;
+            waves[activeIndex].status = TicketWaveStatus.ACTIVE;
+        }
+
+        for (let index = activeIndex; index < waves.length; index += 1) {
+            const wave = await this.prisma.ticketWave.findUnique({
+                where: { id: waves[index].id },
+                include: { ticketCategories: true },
+            });
+            if (!wave || wave.status !== TicketWaveStatus.ACTIVE) continue;
+
+            const available = wave.ticketCategories.reduce(
+                (sum, category) =>
+                    sum + Number(category.available ?? category.capacity ?? 0),
+                0,
+            );
+            const isSoldOut = available <= 0;
+            const isExpired = wave.endsAt <= now;
+            if (!isSoldOut && !isExpired) break;
+
+            await this.prisma.ticketWave.update({
+                where: { id: wave.id },
+                data: { status: TicketWaveStatus.COMPLETED },
+            });
+
+            const nextWave = waves
+                .slice(index + 1)
+                .find((candidate) => candidate.status === TicketWaveStatus.UPCOMING);
+            if (!nextWave) break;
+
+            if (isExpired && available > 0) {
+                await this.distributeRolloverTickets(nextWave.id, available);
+            }
+
+            await this.prisma.ticketWave.update({
+                where: { id: nextWave.id },
+                data: {
+                    status: TicketWaveStatus.ACTIVE,
+                    startsAt: nextWave.startsAt > now ? now : nextWave.startsAt,
+                },
+            });
+            nextWave.status = TicketWaveStatus.ACTIVE;
+        }
+    }
+
+    private async distributeRolloverTickets(waveId: string, tickets: number) {
+        const categories = await this.prisma.ticketCategory.findMany({
+            where: { waveId },
+            orderBy: { createdAt: 'asc' },
+        });
+        if (!categories.length || tickets <= 0) return;
+
+        const baseCapacity = categories.reduce(
+            (sum, category) => sum + Number(category.capacity ?? 0),
+            0,
+        );
+        let remaining = tickets;
+        for (const [index, category] of categories.entries()) {
+            const share =
+                index === categories.length - 1
+                    ? remaining
+                    : Math.floor(
+                          tickets *
+                              (baseCapacity > 0
+                                  ? Number(category.capacity ?? 0) / baseCapacity
+                                  : 1 / categories.length),
+                      );
+            remaining -= share;
+            if (share <= 0) continue;
+            await this.prisma.ticketCategory.update({
+                where: { id: category.id },
+                data: {
+                    capacity: { increment: share },
+                    available: { increment: share },
+                },
+            });
         }
     }
 

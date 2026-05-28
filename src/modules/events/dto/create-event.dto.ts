@@ -8,6 +8,15 @@ export class TicketCategoryInputDto {
     name: string;
     price: number;
     capacity?: number;
+    description?: string;
+}
+
+export class TicketWaveInputDto {
+    name: string;
+    description?: string;
+    startsAt: Date;
+    endsAt: Date;
+    ticketCategories: TicketCategoryInputDto[];
 }
 
 export class EventScheduleDto {
@@ -129,6 +138,23 @@ export class CreateEventDto {
     })
     @IsOptional()
     ticketCategories?: TicketCategoryInputDto[];
+
+    @Transform(({ value }) => {
+        if (!value) return [];
+        try {
+            return toJson(value);
+        } catch {
+            return [];
+        }
+    })
+    @ApiProperty({
+        required: false,
+        type: 'string',
+        description:
+            'JSON array: [{ "name": "Wave 1", "startsAt": "2026-06-01T00:00:00.000Z", "endsAt": "2026-06-15T23:59:59.000Z", "ticketCategories": [{ "name": "Early Bird", "price": 1000, "capacity": 100 }] }]',
+    })
+    @IsOptional()
+    ticketWaves?: TicketWaveInputDto[];
 
     @Transform(({ value }) => {
         if (!value) return [];
