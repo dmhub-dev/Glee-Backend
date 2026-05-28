@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsNotEmpty, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import { IsBoolean, IsIn, IsInt, IsNotEmpty, IsNumber, IsOptional, IsString, Min, ValidateIf } from 'class-validator';
 
 export class CreateEventTicketDto {
   @ApiProperty()
@@ -30,4 +30,15 @@ export class CreateEventTicketDto {
   @IsOptional()
   @IsBoolean()
   useWallet?: boolean;
+
+  @ApiPropertyOptional({ enum: ['FULL', 'INSTALLMENT'], default: 'FULL' })
+  @IsOptional()
+  @IsIn(['FULL', 'INSTALLMENT'])
+  walletPaymentType?: 'FULL' | 'INSTALLMENT';
+
+  @ApiPropertyOptional({ description: 'Number of remaining installment payments after the 30% wallet deposit.' })
+  @ValidateIf((o) => o.walletPaymentType === 'INSTALLMENT')
+  @IsInt()
+  @Min(2)
+  installmentCount?: number;
 }

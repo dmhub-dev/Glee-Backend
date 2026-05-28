@@ -320,24 +320,28 @@ model Payment {
 }
 
 model EventTicket {
-  id               String          @id @default(cuid())
-  eventId          String
-  userId           String
-  paymentId        String          @unique
-  ticketCategoryId String?
-  checkedInById    String?
-  quantity         Int             @default(1)
-  totalPrice       Decimal         @db.Decimal(10, 2)
-  preOrderMenu     Json?
-  checkedInAt      DateTime?
-  createdAt        DateTime        @default(now())
-  updatedAt        DateTime        @updatedAt
-  event            Event           @relation(fields: [eventId], references: [id])
-  user             User            @relation(fields: [userId], references: [id])
-  payment          Payment         @relation(fields: [paymentId], references: [id])
-  ticketCategory   TicketCategory? @relation(fields: [ticketCategoryId], references: [id])
-  checkedInBy      User?           @relation("TicketCheckedInBy", fields: [checkedInById], references: [id], onDelete: SetNull)
-  notifications    Notification[]
+  id                String          @id @default(cuid())
+  eventId           String
+  userId            String
+  paymentId         String          @unique
+  ticketCategoryId  String?
+  checkedInById     String?
+  quantity          Int             @default(1)
+  totalPrice        Decimal         @db.Decimal(10, 2)
+  amountPaid        Decimal         @default(0) @db.Decimal(10, 2)
+  outstandingAmount Decimal         @default(0) @db.Decimal(10, 2)
+  paymentDueDate    DateTime?
+  paymentPlan       Json?
+  preOrderMenu      Json?
+  checkedInAt       DateTime?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  event             Event           @relation(fields: [eventId], references: [id])
+  user              User            @relation(fields: [userId], references: [id])
+  payment           Payment         @relation(fields: [paymentId], references: [id])
+  ticketCategory    TicketCategory? @relation(fields: [ticketCategoryId], references: [id])
+  checkedInBy       User?           @relation("TicketCheckedInBy", fields: [checkedInById], references: [id], onDelete: SetNull)
+  notifications     Notification[]
 
   @@index([checkedInById])
   @@index([checkedInAt])

@@ -440,15 +440,141 @@
                                                             </tr></tbody></table>
                                                 </td>
                                             </tr>
+                                            {{#if paymentPlan}}
+                                                <tr>
+                                                    <td class='summary-row'>
+                                                        <table
+                                                            width='100%'
+                                                            cellpadding='0'
+                                                            cellspacing='0'
+                                                        ><tbody><tr>
+                                                                    <td
+                                                                        class='summary-row-label'
+                                                                    >Order total</td>
+                                                                    <td
+                                                                        class='summary-row-value'
+                                                                    >KES
+                                                                        {{orderTotal}}</td>
+                                                                </tr></tbody></table>
+                                                    </td>
+                                                </tr>
+                                                <tr>
+                                                    <td class='summary-row'>
+                                                        <table
+                                                            width='100%'
+                                                            cellpadding='0'
+                                                            cellspacing='0'
+                                                        ><tbody><tr>
+                                                                    <td
+                                                                        class='summary-row-label'
+                                                                    >Remaining balance</td>
+                                                                    <td
+                                                                        class='summary-row-value'
+                                                                    >KES
+                                                                        {{paymentPlan.remainingAmount}}</td>
+                                                                </tr></tbody></table>
+                                                    </td>
+                                                </tr>
+                                            {{/if}}
                                         </tbody>
                                     </table>
                                 </div>
                             </div>
 
+                            {{#if paymentPlan}}
+                                <div
+                                    class='summary-outer'
+                                    style='padding-top:0;'
+                                >
+                                    <div class='summary-box'>
+                                        <div class='summary-header'>
+                                            <p class='summary-header-text'>Glee
+                                                Wallet Installment Plan</p>
+                                        </div>
+                                        <table
+                                            width='100%'
+                                            cellpadding='0'
+                                            cellspacing='0'
+                                        >
+                                            <tbody>
+                                                <tr>
+                                                    <td class='summary-row'>
+                                                        <table
+                                                            width='100%'
+                                                            cellpadding='0'
+                                                            cellspacing='0'
+                                                        ><tbody><tr>
+                                                                    <td
+                                                                        class='summary-row-label'
+                                                                    >Reservation
+                                                                        deposit
+                                                                        paid
+                                                                        now</td>
+                                                                    <td
+                                                                        class='summary-row-value'
+                                                                    >KES
+                                                                        {{paymentPlan.depositAmount}}</td>
+                                                                </tr></tbody></table>
+                                                    </td>
+                                                </tr>
+                                                {{#each paymentPlan.installments}}
+                                                    <tr>
+                                                        <td class='summary-row'>
+                                                            <table
+                                                                width='100%'
+                                                                cellpadding='0'
+                                                                cellspacing='0'
+                                                            ><tbody><tr>
+                                                                        <td
+                                                                            class='summary-row-label'
+                                                                        >{{this.label}}
+                                                                            due
+                                                                            {{this.dueDate}}</td>
+                                                                        <td
+                                                                            class='summary-row-value'
+                                                                        >KES
+                                                                            {{this.amount}}</td>
+                                                                    </tr></tbody></table>
+                                                        </td>
+                                                    </tr>
+                                                {{/each}}
+                                                <tr>
+                                                    <td
+                                                        class='summary-total-row'
+                                                    >
+                                                        <table
+                                                            width='100%'
+                                                            cellpadding='0'
+                                                            cellspacing='0'
+                                                        ><tbody><tr>
+                                                                    <td
+                                                                        class='summary-total-label'
+                                                                    >Final payment
+                                                                        deadline</td>
+                                                                    <td
+                                                                        class='summary-total-value'
+                                                                    >{{paymentPlan.finalDueDate}}</td>
+                                                                </tr></tbody></table>
+                                                    </td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            {{/if}}
+
                             <!-- ── NOTICE ── -->
                             <div class='notice-outer' style='padding-top:12px;'>
                                 <div class='notice-box'>
                                     <p class='notice-text'>
+                                        {{#if paymentPlan}}
+                                            <strong>Installment rule:</strong>
+                                            Your balance must be paid in full by
+                                            <em>{{paymentPlan.finalDueDate}}</em>.
+                                            We will send reminders based on the
+                                            plan above.
+                                            <br />
+                                        {{/if}}
                                         <strong>Entry rules:</strong>
                                         Open the attached PDF ticket{{#if
                                             (gt noOfItems 1)

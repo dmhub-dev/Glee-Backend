@@ -91,6 +91,24 @@ export class EventTicketsService {
 
         const totalPrice = price * createEventTicketDto.noOfTickets + menuTotal;
 
+        if (
+            createEventTicketDto.useWallet &&
+            createEventTicketDto.walletPaymentType === 'INSTALLMENT'
+        ) {
+            return this.purchaseWithWalletInstallments({
+                event,
+                userId,
+                ticketCategoryId: createEventTicketDto.ticketCategoryId,
+                noOfTickets: createEventTicketDto.noOfTickets,
+                preOrderMenu: resolvedMenuItems.length ? resolvedMenuItems : undefined,
+                totalPrice,
+                price,
+                ticketTotal: price * createEventTicketDto.noOfTickets,
+                menuTotal,
+                installmentCount: createEventTicketDto.installmentCount ?? 2,
+            });
+        }
+
         if (createEventTicketDto.useWallet) {
             return this.purchaseWithWallet({
                 event,
@@ -149,6 +167,8 @@ export class EventTicketsService {
                 userId: input.userId,
                 paymentMethod: 'WALLET',
                 walletReference: reference,
+                amountPaid: input.totalPrice,
+                outstandingAmount: 0,
             },
             reference,
         );
@@ -158,6 +178,135 @@ export class EventTicketsService {
             message: 'Ticket purchased successfully with wallet',
             data: { reference },
         };
+    }
+
+    private async purchaseWithWalletInstallments(input: {
+        event: any;
+        userId: string;
+        ticketCategoryId?: string;
+        noOfTickets: number;
+        preOrderMenu?: any[];
+        totalPrice: number;
+        price: number;
+        ticketTotal: number;
+        menuTotal: number;
+        installmentCount: number;
+    }) {
+        const paymentPlan = this.createInstallmentPlan(
+            input.totalPrice,
+            input.event.startDate,
+            input.installmentCount,
+            input.ticketTotal,
+            input.menuTotal,
+        );
+        const reference = `wallet_installment_${randomUUID()}`;
+        await this.walletService.debit(
+            input.userId,
+            paymentPlan.depositAmount,
+            `Event ticket reservation deposit: ${input.event.name}`,
+            reference,
+            {
+                eventId: input.event.id,
+                noOfTickets: input.noOfTickets,
+                paymentPlan,
+            },
+        );
+
+        await this.createPurchasedEventTicket(
+            {
+                purchasingType: PurchasingType.EVENT_TICKET,
+                eventId: input.event.id,
+                noOfTickets: input.noOfTickets,
+                ticketCategoryId: input.ticketCategoryId,
+                preOrderMenu: input.preOrderMenu,
+                userId: input.userId,
+                paymentMethod: 'WALLET_INSTALLMENT',
+                paymentStatus: 'PARTIAL',
+                isPaid: false,
+                walletReference: reference,
+                paymentPlan,
+                amountPaid: paymentPlan.depositAmount,
+                outstandingAmount: paymentPlan.remainingAmount,
+                paymentDueDate: paymentPlan.finalDueDate,
+            },
+            reference,
+        );
+
+        return {
+            success: true,
+            message: 'Ticket reserved with wallet installment plan',
+            data: { reference, paymentPlan },
+        };
+    }
+
+    private createInstallmentPlan(
+        totalPrice: number,
+        eventStartDate: Date | string | null | undefined,
+        requestedInstallments: number,
+        ticketTotal = totalPrice,
+        menuTotal = 0,
+    ) {
+        if (!eventStartDate) {
+            throw new HttpException(
+                'Installment purchases require an event date',
+                HttpStatus.BAD_REQUEST,
+            );
+        }
+
+        const finalDue = moment(eventStartDate).subtract(7, 'days').endOf('day');
+        if (finalDue.isSameOrBefore(moment())) {
+            throw new HttpException(
+                'Installments are only available when the event is more than one week away',
+                HttpStatus.BAD_REQUEST,
+            );
+        }
+
+        const installmentCount = Math.min(
+            3,
+            Math.max(2, Number(requestedInstallments) || 2),
+        );
+        const depositAmount = this.roundMoney(ticketTotal * 0.3 + menuTotal);
+        const remainingAmount = this.roundMoney(totalPrice - depositAmount);
+        const baseAmount = this.roundMoney(remainingAmount / installmentCount);
+        const installments = Array.from({ length: installmentCount }, (_, index) => {
+            const dueDate = moment()
+                .add(
+                    Math.round(
+                        ((index + 1) * finalDue.diff(moment(), 'days')) /
+                            installmentCount,
+                    ),
+                    'days',
+                )
+                .endOf('day');
+            const amount =
+                index === installmentCount - 1
+                    ? this.roundMoney(
+                          remainingAmount - baseAmount * (installmentCount - 1),
+                      )
+                    : baseAmount;
+            return {
+                label: `Payment ${index + 1}`,
+                amount,
+                dueDate: dueDate.isAfter(finalDue)
+                    ? finalDue.toISOString()
+                    : dueDate.toISOString(),
+            };
+        });
+
+        return {
+            type: 'INSTALLMENT',
+            depositPercent: 30,
+            totalAmount: this.roundMoney(totalPrice),
+            depositAmount,
+            remainingAmount,
+            finalDueDate: finalDue.toISOString(),
+            installments,
+            rule: 'The remaining balance must be fully paid one week before the event.',
+        };
+    }
+
+    private roundMoney(value: number) {
+        return Math.round(value * 100) / 100;
     }
 
     async initiateGuestPurchase(dto: CreateGuestTicketDto) {
@@ -301,17 +450,19 @@ export class EventTicketsService {
             0,
         );
         const totalPrice = price * noOfTickets + menuTotal;
+        const amountPaid = Number(metadata.amountPaid ?? totalPrice);
+        const outstandingAmount = Number(metadata.outstandingAmount ?? 0);
 
         const payment = await this.prisma.payment.create({
             data: {
                 userId: metadata.userId,
                 paystackReference,
-                paymentStatus: 'SUCCEEDED',
+                paymentStatus: metadata.paymentStatus ?? 'SUCCEEDED',
                 paymentMethod: metadata.paymentMethod ?? 'PAYSTACK',
-                totalPrice: new Decimal(totalPrice),
+                totalPrice: new Decimal(amountPaid),
                 perItemPrice: new Decimal(price),
                 noOfItems: noOfTickets,
-                isPaid: true,
+                isPaid: metadata.isPaid ?? true,
                 isAvailable: false,
             },
         });
@@ -324,6 +475,12 @@ export class EventTicketsService {
                 ticketCategoryId: metadata.ticketCategoryId,
                 quantity: noOfTickets,
                 totalPrice: new Decimal(totalPrice),
+                amountPaid: new Decimal(amountPaid),
+                outstandingAmount: new Decimal(outstandingAmount),
+                paymentDueDate: metadata.paymentDueDate
+                    ? new Date(metadata.paymentDueDate)
+                    : null,
+                paymentPlan: metadata.paymentPlan,
                 preOrderMenu: metadata.preOrderMenu,
             },
         });
@@ -413,7 +570,8 @@ export class EventTicketsService {
                     eventDate,
                     eventTime,
                     eventVenue,
-                    total: totalPrice.toLocaleString(),
+                    total: amountPaid.toLocaleString(),
+                    orderTotal: totalPrice.toLocaleString(),
                     subTotal: (price * noOfTickets).toLocaleString(),
                     menuItems: preOrderMenu.map((item) => ({
                         name: item.name,
@@ -423,6 +581,34 @@ export class EventTicketsService {
                     menuTotal:
                         menuTotal > 0 ? menuTotal.toLocaleString() : null,
                     noOfItems: noOfTickets,
+                    paymentPlan: metadata.paymentPlan
+                        ? {
+                              ...metadata.paymentPlan,
+                              depositAmount:
+                                  metadata.paymentPlan.depositAmount?.toLocaleString?.() ??
+                                  metadata.paymentPlan.depositAmount,
+                              remainingAmount:
+                                  metadata.paymentPlan.remainingAmount?.toLocaleString?.() ??
+                                  metadata.paymentPlan.remainingAmount,
+                              totalAmount:
+                                  metadata.paymentPlan.totalAmount?.toLocaleString?.() ??
+                                  metadata.paymentPlan.totalAmount,
+                              finalDueDate: moment(
+                                  metadata.paymentPlan.finalDueDate,
+                              ).format('dddd, MMMM DD, YYYY'),
+                              installments: (
+                                  metadata.paymentPlan.installments ?? []
+                              ).map((installment) => ({
+                                  ...installment,
+                                  amount:
+                                      installment.amount?.toLocaleString?.() ??
+                                      installment.amount,
+                                  dueDate: moment(installment.dueDate).format(
+                                      'MMMM DD, YYYY',
+                                  ),
+                              })),
+                          }
+                        : null,
                     productImage: event.photos?.[0] ?? null,
                     orderType: 'Event',
                 },
