@@ -22,6 +22,7 @@ import { Permissions } from '@src/auth/rbac/permissions.decorator';
 import { Permission } from '@src/auth/rbac/permissions.enum';
 import { SupportTicketNoteDto } from './dto/support-ticket-note.dto';
 import { IssueComplimentaryTicketDto } from './dto/issue-complimentary-ticket.dto';
+import { CheckInTicketQrDto } from './dto/check-in-ticket-qr.dto';
 
 @Controller('admin/event-ticket')
 @ApiTags('Admin Event Tickets Routes')
@@ -76,6 +77,13 @@ export class AdminEventTicketsController {
   // update(@Param('id') id: string, @Body() updateEventTicketDto: UpdateEventTicketDto) {
   //   return this.eventTicketsService.update(+id, updateEventTicketDto);
   // }
+  @ApiResponses(true, [UserRole.VENDOR, UserRole.VENDOR_STAFF])
+  @Permissions(Permission.BOOKINGS_UPDATE)
+  @Post('check-in/qr')
+  checkInQr(@Body() dto: CheckInTicketQrDto, @CurrentUser() user: any) {
+    return this.eventTicketsService.checkInTicketByQr(dto, user);
+  }
+
   @ApiResponses(true, [UserRole.VENDOR, UserRole.VENDOR_STAFF])
   @Permissions(Permission.BOOKINGS_UPDATE)
   @Patch(':id/check-in')

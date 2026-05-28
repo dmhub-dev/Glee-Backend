@@ -17,6 +17,7 @@ import { CreateEventTicketDto } from './dto/create-event-ticket.dto';
 import { CreateGuestTicketDto } from './dto/create-guest-ticket.dto';
 import { ConfirmPurchaseDto } from './dto/confirm-purchase.dto';
 import { IssueComplimentaryTicketDto } from './dto/issue-complimentary-ticket.dto';
+import { CheckInTicketQrDto } from './dto/check-in-ticket-qr.dto';
 import { PaginationQueryDto } from './dto/pagination-query.dto';
 import { WalletService } from '@src/modules/wallets/wallet/wallet.service';
 import { randomUUID } from 'crypto';
@@ -740,6 +741,14 @@ export class EventTicketsService {
                     checkedInBy: {
                         select: { id: true, name: true, email: true },
                     },
+                    ticketCheckIns: {
+                        include: {
+                            checkedInBy: {
+                                select: { id: true, name: true, email: true },
+                            },
+                        },
+                        orderBy: { ticketNumber: 'asc' },
+                    },
                 },
                 orderBy: { createdAt: 'desc' },
                 skip: (page - 1) * limit,
@@ -983,6 +992,12 @@ export class EventTicketsService {
 
     async checkInTicket(id: string, currentUser: any) {
         this.assertVendorCheckInRole(currentUser);
+        if (currentUser?.role === UserRole.VENDOR_STAFF) {
+            throw new HttpException(
+                'Vendor staff must validate the attendee QR code to check in tickets',
+                HttpStatus.BAD_REQUEST,
+            );
+        }
         const ticket = await this.findScopedTicketOrThrow(id, currentUser);
         if (ticket.checkedInAt) {
             return {
@@ -1031,6 +1046,162 @@ export class EventTicketsService {
         };
     }
 
+    async checkInTicketByQr(dto: CheckInTicketQrDto, currentUser: any) {
+        this.assertVendorCheckInRole(currentUser);
+        const { ticketId, ticketNumber, ticketRef } = this.parseTicketRef(
+            dto.ticketRef,
+        );
+        const ticket = await this.findScopedTicketOrThrow(ticketId, currentUser);
+
+        if (ticket.eventId !== dto.eventId) {
+            throw new HttpException(
+                'This QR code is not valid for this event',
+                HttpStatus.BAD_REQUEST,
+            );
+        }
+
+        if (ticketNumber < 1 || ticketNumber > ticket.quantity) {
+            throw new HttpException(
+                'This QR code ticket number is invalid',
+                HttpStatus.BAD_REQUEST,
+            );
+        }
+
+        const existingCheckIn = await this.prisma.ticketCheckIn.findUnique({
+            where: { ticketRef },
+            include: {
+                checkedInBy: { select: { id: true, name: true, email: true } },
+            },
+        });
+        if (existingCheckIn) {
+            throw new HttpException(
+                {
+                    message: 'This ticket QR code has already been checked in',
+                    checkedInAt: existingCheckIn.checkedInAt,
+                    checkedInBy: existingCheckIn.checkedInBy,
+                },
+                HttpStatus.CONFLICT,
+            );
+        }
+
+        const checkedInAt = new Date();
+        const result = await this.prisma.$transaction(async (tx) => {
+            const checkIn = await tx.ticketCheckIn.create({
+                data: {
+                    eventTicketId: ticket.id,
+                    ticketRef,
+                    ticketNumber,
+                    checkedInById: currentUser.id,
+                    checkedInAt,
+                },
+                include: {
+                    checkedInBy: { select: { id: true, name: true, email: true } },
+                },
+            });
+            const checkedInCount = await tx.ticketCheckIn.count({
+                where: { eventTicketId: ticket.id },
+            });
+            const updatedTicket =
+                checkedInCount >= ticket.quantity && !ticket.checkedInAt
+                    ? await tx.eventTicket.update({
+                          where: { id: ticket.id },
+                          data: {
+                              checkedInAt,
+                              checkedInById: currentUser.id,
+                          },
+                          include: {
+                              event: true,
+                              payment: true,
+                              user: {
+                                  select: {
+                                      id: true,
+                                      name: true,
+                                      email: true,
+                                      phone: true,
+                                  },
+                              },
+                              ticketCategory: true,
+                              checkedInBy: {
+                                  select: { id: true, name: true, email: true },
+                              },
+                              ticketCheckIns: {
+                                  include: {
+                                      checkedInBy: {
+                                          select: {
+                                              id: true,
+                                              name: true,
+                                              email: true,
+                                          },
+                                      },
+                                  },
+                                  orderBy: { ticketNumber: 'asc' },
+                              },
+                          },
+                      })
+                    : await tx.eventTicket.findUnique({
+                          where: { id: ticket.id },
+                          include: {
+                              event: true,
+                              payment: true,
+                              user: {
+                                  select: {
+                                      id: true,
+                                      name: true,
+                                      email: true,
+                                      phone: true,
+                                  },
+                              },
+                              ticketCategory: true,
+                              checkedInBy: {
+                                  select: { id: true, name: true, email: true },
+                              },
+                              ticketCheckIns: {
+                                  include: {
+                                      checkedInBy: {
+                                          select: {
+                                              id: true,
+                                              name: true,
+                                              email: true,
+                                          },
+                                      },
+                                  },
+                                  orderBy: { ticketNumber: 'asc' },
+                              },
+                          },
+                      });
+            return { checkIn, checkedInCount, updatedTicket };
+        });
+
+        await this.prisma.auditLog.create({
+            data: {
+                actorId: currentUser.id,
+                action: 'tickets.qr_check_in',
+                entity: 'EventTicket',
+                entityId: ticket.id,
+                metadata: {
+                    eventId: ticket.eventId,
+                    vendorId: ticket.event.vendorId,
+                    ticketRef,
+                    ticketNumber,
+                    checkedInAt: checkedInAt.toISOString(),
+                },
+            },
+        });
+
+        return {
+            success: true,
+            message: 'Ticket QR code checked in successfully',
+            data: {
+                ticket: result.updatedTicket,
+                checkIn: result.checkIn,
+                ticketRef,
+                ticketNumber,
+                checkedInCount: result.checkedInCount,
+                remainingCount: Math.max(0, ticket.quantity - result.checkedInCount),
+            },
+        };
+    }
+
     async revertTicketCheckIn(id: string, currentUser: any) {
         this.assertVendorCheckInRole(currentUser);
         const ticket = await this.findScopedTicketOrThrow(id, currentUser);
@@ -1056,6 +1227,14 @@ export class EventTicketsService {
                 },
                 ticketCategory: true,
                 checkedInBy: { select: { id: true, name: true, email: true } },
+                ticketCheckIns: {
+                    include: {
+                        checkedInBy: {
+                            select: { id: true, name: true, email: true },
+                        },
+                    },
+                    orderBy: { ticketNumber: 'asc' },
+                },
             },
         });
 
@@ -1563,5 +1742,21 @@ export class EventTicketsService {
                 HttpStatus.FORBIDDEN,
             );
         }
+    }
+
+    private parseTicketRef(rawTicketRef: string) {
+        const ticketRef = String(rawTicketRef ?? '').trim();
+        const match = ticketRef.match(/^(.+)-(\d+)$/);
+        if (!match) {
+            throw new HttpException(
+                'Invalid ticket QR code',
+                HttpStatus.BAD_REQUEST,
+            );
+        }
+        return {
+            ticketRef,
+            ticketId: match[1],
+            ticketNumber: Number(match[2]),
+        };
     }
 }

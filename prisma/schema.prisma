@@ -139,6 +139,7 @@ model User {
   blocksReceived   UserBlock[]      @relation("Blocked")
   eventTickets     EventTicket[]
   checkedInTickets EventTicket[]    @relation("TicketCheckedInBy")
+  ticketCheckIns   TicketCheckIn[]  @relation("TicketUnitCheckedInBy")
   wallet           Wallet?
   notifications    Notification[]
   auditLogs        AuditLog[]       @relation("AuditActor")
@@ -372,11 +373,28 @@ model EventTicket {
   payment           Payment         @relation(fields: [paymentId], references: [id])
   ticketCategory    TicketCategory? @relation(fields: [ticketCategoryId], references: [id])
   checkedInBy       User?           @relation("TicketCheckedInBy", fields: [checkedInById], references: [id], onDelete: SetNull)
+  ticketCheckIns    TicketCheckIn[]
   notifications     Notification[]
 
   @@index([checkedInById])
   @@index([checkedInAt])
   @@map("event_tickets")
+}
+
+model TicketCheckIn {
+  id            String      @id @default(cuid())
+  eventTicketId String
+  ticketRef     String      @unique
+  ticketNumber  Int
+  checkedInById String?
+  checkedInAt   DateTime    @default(now())
+  eventTicket   EventTicket @relation(fields: [eventTicketId], references: [id], onDelete: Cascade)
+  checkedInBy   User?       @relation("TicketUnitCheckedInBy", fields: [checkedInById], references: [id], onDelete: SetNull)
+
+  @@index([eventTicketId])
+  @@index([checkedInById])
+  @@index([checkedInAt])
+  @@map("ticket_check_ins")
 }
 
 model Wallet {
