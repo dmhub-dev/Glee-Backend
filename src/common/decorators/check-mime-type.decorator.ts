@@ -21,7 +21,7 @@ export function ApiImageFile(
     fields?: MulterField[];
   },
 ) {
-  let mimeTypes = ['jpeg', 'jpg', 'png'];
+  let mimeTypes = ['jpeg', 'jpg', 'png', 'webp'];
   if (options.type === UploadType.ARRAY)
     return ApiFiles(
       fieldName,

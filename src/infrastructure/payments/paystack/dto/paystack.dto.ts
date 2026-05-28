@@ -13,6 +13,11 @@ export class PaystackPaymentIntentDto {
   @ApiPropertyOptional()
   @IsOptional()
   metaData?: Record<string, any>;
+
+  @ApiPropertyOptional()
+  @IsString()
+  @IsOptional()
+  callbackUrl?: string;
 }
 
 export class PaystackVerifyTransactionDto {

@@ -50,6 +50,7 @@ export class EventTicketsService {
             event.id,
             event.capacity,
             createEventTicketDto.noOfTickets,
+            createEventTicketDto.ticketCategoryId,
         );
 
         const user = await this.userService.findOne({ id: userId });
@@ -136,6 +137,7 @@ export class EventTicketsService {
             email: user.email,
             amount: Math.round(totalPrice),
             metaData: metadata,
+            callbackUrl: createEventTicketDto.callbackUrl,
         });
 
         return { success: true, data: paymentIntent };
@@ -337,6 +339,7 @@ export class EventTicketsService {
             event.id,
             event.capacity,
             dto.noOfTickets,
+            dto.ticketCategoryId,
         );
 
         const price = await this.resolveTicketPrice(
@@ -405,6 +408,7 @@ export class EventTicketsService {
             email: dto.guestEmail,
             amount: Math.round(totalPrice),
             metaData: metadata,
+            callbackUrl: dto.callbackUrl,
         });
 
         return { success: true, data: paymentIntent };
@@ -452,7 +456,12 @@ export class EventTicketsService {
         if (!event) return;
 
         const noOfTickets = parseInt(String(metadata.noOfTickets ?? 1), 10);
-        await this.assertEventCapacity(event.id, event.capacity, noOfTickets);
+        await this.assertEventCapacity(
+            event.id,
+            event.capacity,
+            noOfTickets,
+            metadata.ticketCategoryId,
+        );
         const price = await this.resolveTicketPrice(
             event.id,
             metadata.ticketCategoryId,
@@ -934,7 +943,7 @@ export class EventTicketsService {
         if (!event)
             return { success: false, message: 'Event not found', data: [] };
 
-        const [tickets, ticketsCount, sold] = await Promise.all([
+        const [tickets, ticketsCount, sold, categories] = await Promise.all([
             this.prisma.eventTicket.findMany({
                 where: { eventId },
                 include: { user: true },
@@ -946,14 +955,32 @@ export class EventTicketsService {
                 where: { eventId },
                 _sum: { quantity: true },
             }),
+            this.prisma.ticketCategory.findMany({
+                where: { eventId },
+                select: { available: true, capacity: true },
+            }),
         ]);
 
         const ticketsSold = sold._sum.quantity ?? 0;
-        const ticketsAvailable = event.capacity - ticketsSold;
+        const categoryCapacity = categories.reduce(
+            (sum, category) => sum + Number(category.capacity ?? 0),
+            0,
+        );
+        const categoryAvailable = categories.reduce(
+            (sum, category) =>
+                sum + Number(category.available ?? category.capacity ?? 0),
+            0,
+        );
+        const ticketsCapacity = categories.length
+            ? categoryCapacity
+            : event.capacity;
+        const ticketsAvailable = categories.length
+            ? categoryAvailable
+            : event.capacity - ticketsSold;
         return {
             success: true,
             data: {
-                ticketsCapacity: event.capacity,
+                ticketsCapacity,
                 ticketsSold,
                 ticketsAvailable,
                 tickets,
@@ -992,7 +1019,48 @@ export class EventTicketsService {
         eventId: string,
         capacity: number,
         requestedTickets: number,
+        ticketCategoryId?: string,
     ) {
+        if (ticketCategoryId) {
+            const category = await this.prisma.ticketCategory.findFirst({
+                where: { id: ticketCategoryId, eventId },
+            });
+            if (!category) {
+                throw new HttpException(
+                    'Ticket category not found',
+                    HttpStatus.BAD_REQUEST,
+                );
+            }
+            const available =
+                category.available ?? category.capacity ?? capacity ?? 0;
+            if (available < requestedTickets) {
+                throw new HttpException(
+                    'No tickets available',
+                    HttpStatus.BAD_REQUEST,
+                );
+            }
+            return;
+        }
+
+        const categories = await this.prisma.ticketCategory.findMany({
+            where: { eventId },
+            select: { available: true, capacity: true },
+        });
+        if (categories.length) {
+            const available = categories.reduce(
+                (sum, category) =>
+                    sum + Number(category.available ?? category.capacity ?? 0),
+                0,
+            );
+            if (available < requestedTickets) {
+                throw new HttpException(
+                    'No tickets available',
+                    HttpStatus.BAD_REQUEST,
+                );
+            }
+            return;
+        }
+
         const sold = await this.prisma.eventTicket.aggregate({
             where: { eventId },
             _sum: { quantity: true },

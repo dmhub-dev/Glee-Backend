@@ -56,7 +56,14 @@ export class EventService {
     ) {
         const photos = await this.s3.uploadMany(files);
         const dto = createEventDto as any;
-        const capacity = createEventDto.capacity ? +createEventDto.capacity : 0;
+        const ticketCapacity = this.sumTicketCategoryCapacity(
+            createEventDto.ticketCategories,
+        );
+        const capacity =
+            createEventDto.capacity !== undefined &&
+            Number(createEventDto.capacity) > 0
+                ? +createEventDto.capacity
+                : ticketCapacity;
         const locationId = await this.resolveLocationId(
             createEventDto.locationId,
             true,
@@ -533,6 +540,20 @@ export class EventService {
         await this.prisma.event.update({ where: { id }, data });
 
         if ((updateEventDto as any).ticketCategories?.length) {
+            const newTicketCapacity = this.sumTicketCategoryCapacity(
+                (updateEventDto as any).ticketCategories,
+            );
+            const ticketPurchased = await this.countPurchasedTickets(id);
+            if (newTicketCapacity < ticketPurchased) {
+                throw new HttpException(
+                    'Total ticket capacity can not be less than tickets purchased.',
+                    HttpStatus.BAD_REQUEST,
+                );
+            }
+            await this.prisma.event.update({
+                where: { id },
+                data: { capacity: newTicketCapacity },
+            });
             await this.prisma.ticketCategory.deleteMany({
                 where: { eventId: id },
             });
@@ -919,6 +940,15 @@ export class EventService {
                 59,
                 999,
             ),
+        );
+    }
+
+    private sumTicketCategoryCapacity(
+        ticketCategories?: Array<{ capacity?: number | null }>,
+    ) {
+        return (ticketCategories ?? []).reduce(
+            (sum, category) => sum + Number(category.capacity ?? 0),
+            0,
         );
     }
 

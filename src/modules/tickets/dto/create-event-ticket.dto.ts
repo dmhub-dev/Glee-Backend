@@ -41,4 +41,9 @@ export class CreateEventTicketDto {
   @IsInt()
   @Min(2)
   installmentCount?: number;
+
+  @ApiPropertyOptional()
+  @IsString()
+  @IsOptional()
+  callbackUrl?: string;
 }

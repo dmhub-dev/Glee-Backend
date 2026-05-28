@@ -53,11 +53,18 @@ describe('EventTicketsService.initiateGuestPurchase', () => {
                             findFirst: jest.fn().mockResolvedValue(null),
                         },
                         ticketCategory: {
+                            findMany: jest
+                                .fn()
+                                .mockResolvedValue([
+                                    { available: 50, capacity: 50 },
+                                ]),
                             findFirst: jest
                                 .fn()
                                 .mockResolvedValue({
                                     id: 'cat-default',
                                     price: 1000,
+                                    available: 50,
+                                    capacity: 50,
                                 }),
                         },
                         payment: { findUnique: jest.fn(), create: jest.fn() },
@@ -221,11 +228,18 @@ describe('EventTicketsService.createPurchasedEventTicket - tier decrement', () =
                                 .mockResolvedValue({ _sum: { quantity: 0 } }),
                         },
                         ticketCategory: {
+                            findMany: jest
+                                .fn()
+                                .mockResolvedValue([
+                                    { available: 50, capacity: 50 },
+                                ]),
                             findFirst: jest
                                 .fn()
                                 .mockResolvedValue({
                                     id: 'cat-1',
                                     price: 1000,
+                                    available: 50,
+                                    capacity: 50,
                                 }),
                             update: jest.fn(),
                         },
@@ -333,11 +347,18 @@ describe('EventTicketsService.create - wallet payment', () => {
                                 .mockResolvedValue({ _sum: { quantity: 0 } }),
                         },
                         ticketCategory: {
+                            findMany: jest
+                                .fn()
+                                .mockResolvedValue([
+                                    { available: 50, capacity: 50 },
+                                ]),
                             findFirst: jest
                                 .fn()
                                 .mockResolvedValue({
                                     id: 'cat-default',
                                     price: 1000,
+                                    available: 50,
+                                    capacity: 50,
                                 }),
                             update: jest.fn(),
                         },

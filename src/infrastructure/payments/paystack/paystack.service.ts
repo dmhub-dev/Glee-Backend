@@ -57,6 +57,7 @@ export class PayStackService {
           amount: body.amount * 100,
           metadata: body.metaData,
           channels: ['card', 'mobile_money'],
+          ...(body.callbackUrl ? { callback_url: body.callbackUrl } : {}),
         },
         { headers: PAYSTACK_HEADERS(this.configService.get('PAYSTACK_SECRET_KEY')) },
       );

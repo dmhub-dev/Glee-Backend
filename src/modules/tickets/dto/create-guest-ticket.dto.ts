@@ -51,4 +51,9 @@ export class CreateGuestTicketDto {
   @ValidateNested({ each: true })
   @Type(() => MenuItemOrderDto)
   menuItems?: MenuItemOrderDto[];
+
+  @ApiPropertyOptional()
+  @IsString()
+  @IsOptional()
+  callbackUrl?: string;
 }
