@@ -19,6 +19,7 @@ import { ConfirmPurchaseDto } from './dto/confirm-purchase.dto';
 import { PaginationQueryDto } from './dto/pagination-query.dto';
 import { WalletService } from '@src/modules/wallets/wallet/wallet.service';
 import { randomUUID } from 'crypto';
+import { PlatformSettingsService } from '@src/modules/settings/platform-settings.service';
 
 @Injectable()
 export class EventTicketsService {
@@ -32,6 +33,7 @@ export class EventTicketsService {
         private readonly notificationService: NotificationService,
         private readonly payStackService: PayStackService,
         private readonly walletService: WalletService,
+        private readonly platformSettingsService: PlatformSettingsService,
     ) {
         // Register this service as the event ticket webhook handler
         this.payStackService.eventTicketsHandler = this;
@@ -192,17 +194,21 @@ export class EventTicketsService {
         menuTotal: number;
         installmentCount: number;
     }) {
+        const settings =
+            await this.platformSettingsService.getEventCheckoutSettings();
         const paymentPlan = this.createInstallmentPlan(
             input.totalPrice,
             input.event.startDate,
             input.installmentCount,
             input.ticketTotal,
             input.menuTotal,
+            settings.walletInstallmentDepositPercent,
+            settings.walletInstallmentSecurityFeePercent,
         );
         const reference = `wallet_installment_${randomUUID()}`;
         await this.walletService.debit(
             input.userId,
-            paymentPlan.depositAmount,
+            paymentPlan.dueNow,
             `Event ticket reservation deposit: ${input.event.name}`,
             reference,
             {
@@ -225,7 +231,7 @@ export class EventTicketsService {
                 isPaid: false,
                 walletReference: reference,
                 paymentPlan,
-                amountPaid: paymentPlan.depositAmount,
+                amountPaid: paymentPlan.dueNow,
                 outstandingAmount: paymentPlan.remainingAmount,
                 paymentDueDate: paymentPlan.finalDueDate,
             },
@@ -245,6 +251,8 @@ export class EventTicketsService {
         requestedInstallments: number,
         ticketTotal = totalPrice,
         menuTotal = 0,
+        depositPercent = 30,
+        securityFeePercent = 5,
     ) {
         if (!eventStartDate) {
             throw new HttpException(
@@ -265,7 +273,13 @@ export class EventTicketsService {
             3,
             Math.max(2, Number(requestedInstallments) || 2),
         );
-        const depositAmount = this.roundMoney(ticketTotal * 0.3 + menuTotal);
+        const depositAmount = this.roundMoney(
+            ticketTotal * (depositPercent / 100),
+        );
+        const securityFeeAmount = this.roundMoney(
+            ticketTotal * (securityFeePercent / 100),
+        );
+        const dueNow = this.roundMoney(depositAmount + menuTotal + securityFeeAmount);
         const remainingAmount = this.roundMoney(totalPrice - depositAmount);
         const baseAmount = this.roundMoney(remainingAmount / installmentCount);
         const installments = Array.from({ length: installmentCount }, (_, index) => {
@@ -295,9 +309,13 @@ export class EventTicketsService {
 
         return {
             type: 'INSTALLMENT',
-            depositPercent: 30,
+            depositPercent,
+            securityFeePercent,
             totalAmount: this.roundMoney(totalPrice),
             depositAmount,
+            menuAmount: this.roundMoney(menuTotal),
+            securityFeeAmount,
+            dueNow,
             remainingAmount,
             finalDueDate: finalDue.toISOString(),
             installments,
@@ -587,6 +605,15 @@ export class EventTicketsService {
                               depositAmount:
                                   metadata.paymentPlan.depositAmount?.toLocaleString?.() ??
                                   metadata.paymentPlan.depositAmount,
+                              menuAmount:
+                                  metadata.paymentPlan.menuAmount?.toLocaleString?.() ??
+                                  metadata.paymentPlan.menuAmount,
+                              securityFeeAmount:
+                                  metadata.paymentPlan.securityFeeAmount?.toLocaleString?.() ??
+                                  metadata.paymentPlan.securityFeeAmount,
+                              dueNow:
+                                  metadata.paymentPlan.dueNow?.toLocaleString?.() ??
+                                  metadata.paymentPlan.dueNow,
                               remainingAmount:
                                   metadata.paymentPlan.remainingAmount?.toLocaleString?.() ??
                                   metadata.paymentPlan.remainingAmount,

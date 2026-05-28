@@ -180,6 +180,7 @@ const ROLE_PERMISSIONS: Record<UserRole, string[]> = {
         'location:create',
         'location:update',
         'location:delete',
+        'settings:manage',
         'pricing:override',
         'pricing:edit',
     ],

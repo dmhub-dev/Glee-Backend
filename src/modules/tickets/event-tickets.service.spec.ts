@@ -8,6 +8,7 @@ import { EmailService } from '@src/infrastructure/email/email.service';
 import { NotificationService } from '@src/modules/notifications/notifications/notification.service';
 import { PayStackService } from '@src/infrastructure/payments/paystack/paystack.service';
 import { WalletService } from '@src/modules/wallets/wallet/wallet.service';
+import { PlatformSettingsService } from '@src/modules/settings/platform-settings.service';
 
 const mockEvent = {
     id: 'event-1',
@@ -22,6 +23,16 @@ const mockUser = {
     id: 'user-guest-1',
     email: 'jane@example.com',
     name: 'Jane Doe',
+};
+
+const mockPlatformSettingsProvider = {
+    provide: PlatformSettingsService,
+    useValue: {
+        getEventCheckoutSettings: jest.fn().mockResolvedValue({
+            walletInstallmentDepositPercent: 30,
+            walletInstallmentSecurityFeePercent: 5,
+        }),
+    },
 };
 
 describe('EventTicketsService.initiateGuestPurchase', () => {
@@ -83,6 +94,7 @@ describe('EventTicketsService.initiateGuestPurchase', () => {
                     },
                 },
                 { provide: WalletService, useValue: { debit: jest.fn() } },
+                mockPlatformSettingsProvider,
             ],
         }).compile();
 
@@ -247,6 +259,7 @@ describe('EventTicketsService.createPurchasedEventTicket - tier decrement', () =
                     useValue: { createPaymentIntent: jest.fn() },
                 },
                 { provide: WalletService, useValue: { debit: jest.fn() } },
+                mockPlatformSettingsProvider,
             ],
         }).compile();
 
@@ -372,6 +385,7 @@ describe('EventTicketsService.create - wallet payment', () => {
                     provide: WalletService,
                     useValue: { debit: jest.fn().mockResolvedValue({}) },
                 },
+                mockPlatformSettingsProvider,
             ],
         }).compile();
 

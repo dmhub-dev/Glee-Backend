@@ -22,6 +22,7 @@ import { AppService } from '@src/app.service';
 import { AccessManagementModule } from './modules/identity/access-management/access-management.module';
 import { WalletModule } from './modules/wallets/wallet/wallet.module';
 import { FinanceModule } from './modules/finance/finance/finance.module';
+import { PlatformSettingsModule } from './modules/settings/platform-settings.module';
 
 @Module({
   imports: [
@@ -50,6 +51,7 @@ import { FinanceModule } from './modules/finance/finance/finance.module';
     AccessManagementModule,
     WalletModule,
     FinanceModule,
+    PlatformSettingsModule,
   ],
   providers: [
     AppService,

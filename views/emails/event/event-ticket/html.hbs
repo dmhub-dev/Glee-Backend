@@ -508,12 +508,73 @@
                                                                         class='summary-row-label'
                                                                     >Reservation
                                                                         deposit
-                                                                        paid
-                                                                        now</td>
+                                                                        ({{paymentPlan.depositPercent}}%)</td>
                                                                     <td
                                                                         class='summary-row-value'
                                                                     >KES
                                                                         {{paymentPlan.depositAmount}}</td>
+                                                                </tr></tbody></table>
+                                                    </td>
+                                                </tr>
+                                                {{#if paymentPlan.menuAmount}}
+                                                    <tr>
+                                                        <td class='summary-row'>
+                                                            <table
+                                                                width='100%'
+                                                                cellpadding='0'
+                                                                cellspacing='0'
+                                                            ><tbody><tr>
+                                                                        <td
+                                                                            class='summary-row-label'
+                                                                        >Menu
+                                                                            add-ons
+                                                                            paid
+                                                                            now</td>
+                                                                        <td
+                                                                            class='summary-row-value'
+                                                                        >KES
+                                                                            {{paymentPlan.menuAmount}}</td>
+                                                                    </tr></tbody></table>
+                                                        </td>
+                                                    </tr>
+                                                {{/if}}
+                                                {{#if paymentPlan.securityFeeAmount}}
+                                                    <tr>
+                                                        <td class='summary-row'>
+                                                            <table
+                                                                width='100%'
+                                                                cellpadding='0'
+                                                                cellspacing='0'
+                                                            ><tbody><tr>
+                                                                        <td
+                                                                            class='summary-row-label'
+                                                                        >Security
+                                                                            fee
+                                                                            ({{paymentPlan.securityFeePercent}}%)</td>
+                                                                        <td
+                                                                            class='summary-row-value'
+                                                                        >KES
+                                                                            {{paymentPlan.securityFeeAmount}}</td>
+                                                                    </tr></tbody></table>
+                                                        </td>
+                                                    </tr>
+                                                {{/if}}
+                                                <tr>
+                                                    <td class='summary-row'>
+                                                        <table
+                                                            width='100%'
+                                                            cellpadding='0'
+                                                            cellspacing='0'
+                                                        ><tbody><tr>
+                                                                    <td
+                                                                        class='summary-row-label'
+                                                                    >Total
+                                                                        deducted
+                                                                        now</td>
+                                                                    <td
+                                                                        class='summary-row-value'
+                                                                    >KES
+                                                                        {{paymentPlan.dueNow}}</td>
                                                                 </tr></tbody></table>
                                                     </td>
                                                 </tr>
