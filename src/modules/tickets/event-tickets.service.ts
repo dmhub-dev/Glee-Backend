@@ -923,7 +923,11 @@ export class EventTicketsService {
 
         const tickets = await this.prisma.eventTicket.findMany({
             where,
-            include: { event: { include: { category: true } }, payment: true },
+            include: {
+                event: { include: { category: true, location: true } },
+                payment: true,
+                ticketCategory: true,
+            },
             orderBy: { createdAt: 'desc' },
             skip: (page - 1) * limit,
             take: limit,
