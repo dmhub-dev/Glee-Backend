@@ -29,8 +29,12 @@ const mockPlatformSettingsProvider = {
     provide: PlatformSettingsService,
     useValue: {
         getEventCheckoutSettings: jest.fn().mockResolvedValue({
+            walletInstallmentDepositType: 'PERCENTAGE',
             walletInstallmentDepositPercent: 30,
+            walletInstallmentDepositAmount: 0,
+            walletInstallmentSecurityFeeType: 'PERCENTAGE',
             walletInstallmentSecurityFeePercent: 5,
+            walletInstallmentSecurityFeeAmount: 0,
         }),
     },
 };

@@ -19,7 +19,10 @@ import { ConfirmPurchaseDto } from './dto/confirm-purchase.dto';
 import { PaginationQueryDto } from './dto/pagination-query.dto';
 import { WalletService } from '@src/modules/wallets/wallet/wallet.service';
 import { randomUUID } from 'crypto';
-import { PlatformSettingsService } from '@src/modules/settings/platform-settings.service';
+import {
+    EventCheckoutSettings,
+    PlatformSettingsService,
+} from '@src/modules/settings/platform-settings.service';
 
 @Injectable()
 export class EventTicketsService {
@@ -214,8 +217,7 @@ export class EventTicketsService {
             input.installmentCount,
             input.ticketTotal,
             input.menuTotal,
-            settings.walletInstallmentDepositPercent,
-            settings.walletInstallmentSecurityFeePercent,
+            settings,
         );
         const reference = `wallet_installment_${randomUUID()}`;
         await this.walletService.debit(
@@ -263,8 +265,7 @@ export class EventTicketsService {
         requestedInstallments: number,
         ticketTotal = totalPrice,
         menuTotal = 0,
-        depositPercent = 30,
-        securityFeePercent = 5,
+        settings?: EventCheckoutSettings,
     ) {
         if (!eventStartDate) {
             throw new HttpException(
@@ -285,11 +286,24 @@ export class EventTicketsService {
             3,
             Math.max(2, Number(requestedInstallments) || 2),
         );
+        const depositType = settings?.walletInstallmentDepositType ?? 'PERCENTAGE';
+        const securityFeeType =
+            settings?.walletInstallmentSecurityFeeType ?? 'PERCENTAGE';
+        const depositPercent = settings?.walletInstallmentDepositPercent ?? 30;
+        const securityFeePercent =
+            settings?.walletInstallmentSecurityFeePercent ?? 5;
+        const depositFixedAmount = settings?.walletInstallmentDepositAmount ?? 0;
+        const securityFeeFixedAmount =
+            settings?.walletInstallmentSecurityFeeAmount ?? 0;
         const depositAmount = this.roundMoney(
-            ticketTotal * (depositPercent / 100),
+            depositType === 'FIXED'
+                ? Math.min(ticketTotal, depositFixedAmount)
+                : ticketTotal * (depositPercent / 100),
         );
         const securityFeeAmount = this.roundMoney(
-            ticketTotal * (securityFeePercent / 100),
+            securityFeeType === 'FIXED'
+                ? securityFeeFixedAmount
+                : ticketTotal * (securityFeePercent / 100),
         );
         const dueNow = this.roundMoney(depositAmount + menuTotal + securityFeeAmount);
         const remainingAmount = this.roundMoney(totalPrice - depositAmount);
@@ -321,8 +335,12 @@ export class EventTicketsService {
 
         return {
             type: 'INSTALLMENT',
+            depositType,
             depositPercent,
+            depositFixedAmount: this.roundMoney(depositFixedAmount),
+            securityFeeType,
             securityFeePercent,
+            securityFeeFixedAmount: this.roundMoney(securityFeeFixedAmount),
             totalAmount: this.roundMoney(totalPrice),
             depositAmount,
             menuAmount: this.roundMoney(menuTotal),
