@@ -40,7 +40,14 @@ export class EventTicketsService {
     }
 
     async create(createEventTicketDto: CreateEventTicketDto, currentUser: any) {
-        const userId = createEventTicketDto.userId || currentUser.id;
+        const userId =
+            createEventTicketDto.userId || currentUser?.id || currentUser?.userId;
+        if (!userId) {
+            throw new HttpException(
+                'Authenticated user not found',
+                HttpStatus.UNAUTHORIZED,
+            );
+        }
         const event = await this.eventSharedService.helperEventFindById(
             createEventTicketDto.eventId,
         );
@@ -56,6 +63,9 @@ export class EventTicketsService {
         const user = await this.userService.findOne({ id: userId });
         if (!user)
             throw new HttpException('User not found', HttpStatus.UNAUTHORIZED);
+        const payerEmail = this.resolvePaystackEmail(
+            user.email ?? currentUser?.email,
+        );
 
         const price = await this.resolveTicketPrice(
             event.id,
@@ -134,7 +144,7 @@ export class EventTicketsService {
         };
 
         const paymentIntent = await this.payStackService.createPaymentIntent({
-            email: user.email,
+            email: payerEmail,
             amount: Math.round(totalPrice),
             metaData: metadata,
             callbackUrl: createEventTicketDto.callbackUrl,
@@ -1093,6 +1103,23 @@ export class EventTicketsService {
                 HttpStatus.BAD_REQUEST,
             );
         }
+    }
+
+    private resolvePaystackEmail(email?: string | null) {
+        const normalized = String(email ?? '').trim().toLowerCase();
+        const hasValidShape = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(
+            normalized,
+        );
+        const hasUnsupportedTestDomain = /\.(test|local|invalid)$/i.test(
+            normalized,
+        );
+        if (!hasValidShape || hasUnsupportedTestDomain) {
+            throw new HttpException(
+                'Your account email cannot be used for Paystack payments. Please update your profile with a real email address before purchasing.',
+                HttpStatus.BAD_REQUEST,
+            );
+        }
+        return normalized;
     }
 
     async remove(eventId?: string, userId?: string) {
