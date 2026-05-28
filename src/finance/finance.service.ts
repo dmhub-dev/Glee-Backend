@@ -203,6 +203,101 @@ export class FinanceService {
     return { success: true, data };
   }
 
+  async monthlyRevenueTrend(options?: { months?: number }) {
+    const now = new Date();
+    const months = Number.isFinite(options?.months) ? Math.max(1, Math.min(36, options!.months!)) : 12;
+    const start = new Date(now.getFullYear(), now.getMonth() - (months - 1), 1);
+    start.setHours(0, 0, 0, 0);
+
+    const [paymentRows, ticketRows] = await Promise.all([
+      this.prisma.$queryRaw<
+        {
+          month: string;
+          earnings: number;
+          payouts: number;
+          pending_payouts: number;
+        }[]
+      >`
+        SELECT
+          to_char(date_trunc('month', "createdAt"), 'YYYY-MM') AS month,
+          COALESCE(SUM("totalPrice"), 0)::float AS earnings,
+          COALESCE(SUM(CASE WHEN "isAvailable" = true THEN "totalPrice" ELSE 0 END), 0)::float AS payouts,
+          COALESCE(SUM(CASE WHEN "isAvailable" = false THEN "totalPrice" ELSE 0 END), 0)::float AS pending_payouts
+        FROM "payments"
+        WHERE "isPaid" = true
+          AND "createdAt" >= ${start}
+        GROUP BY 1
+        ORDER BY 1 ASC
+      `,
+      this.prisma.$queryRaw<
+        {
+          month: string;
+          tickets_sold: number;
+          ticket_revenue: number;
+          total_revenue: number;
+        }[]
+      >`
+        SELECT
+          to_char(date_trunc('month', p."createdAt"), 'YYYY-MM') AS month,
+          COALESCE(SUM(p."noOfItems"), 0)::int AS tickets_sold,
+          COALESCE(SUM(p."perItemPrice" * p."noOfItems"), 0)::float AS ticket_revenue,
+          COALESCE(SUM(p."totalPrice"), 0)::float AS total_revenue
+        FROM "event_tickets" et
+        JOIN "payments" p ON p."id" = et."paymentId"
+        WHERE p."isPaid" = true
+          AND p."createdAt" >= ${start}
+        GROUP BY 1
+        ORDER BY 1 ASC
+      `,
+    ]);
+
+    const paymentByMonth = new Map(
+      (paymentRows ?? []).map((r) => [
+        r.month,
+        {
+          earnings: Number((r as any).earnings ?? 0),
+          payouts: Number((r as any).payouts ?? 0),
+          pendingPayouts: Number((r as any).pending_payouts ?? 0),
+        },
+      ]),
+    );
+
+    const ticketByMonth = new Map(
+      (ticketRows ?? []).map((r) => [
+        r.month,
+        {
+          ticketsSold: Number((r as any).tickets_sold ?? 0),
+          ticketRevenue: Number((r as any).ticket_revenue ?? 0),
+          totalRevenue: Number((r as any).total_revenue ?? 0),
+        },
+      ]),
+    );
+
+    const data = Array.from({ length: months }).map((_, idx) => {
+      const d = new Date(start.getFullYear(), start.getMonth() + idx, 1);
+      const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+
+      const p = paymentByMonth.get(monthKey) ?? { earnings: 0, payouts: 0, pendingPayouts: 0 };
+      const t = ticketByMonth.get(monthKey) ?? { ticketsSold: 0, ticketRevenue: 0, totalRevenue: 0 };
+
+      const menuRevenue = Math.max(0, t.totalRevenue - t.ticketRevenue);
+      const balance = Math.max(0, p.earnings - p.payouts);
+
+      return {
+        month: monthKey,
+        earnings: Number(new Decimal(p.earnings).toFixed(2)),
+        payouts: Number(new Decimal(p.payouts).toFixed(2)),
+        pendingPayouts: Number(new Decimal(p.pendingPayouts).toFixed(2)),
+        balance: Number(new Decimal(balance).toFixed(2)),
+        ticketsSold: t.ticketsSold,
+        ticketRevenue: Number(new Decimal(t.ticketRevenue).toFixed(2)),
+        menuRevenue: Number(new Decimal(menuRevenue).toFixed(2)),
+      };
+    });
+
+    return { success: true, data };
+  }
+
   async paymentsSummary() {
     const now = new Date();
     const startOfToday = new Date(now);
@@ -429,6 +524,127 @@ export class FinanceService {
     return { success: true, data };
   }
 
+  async recentPayouts(options?: { limit?: number }) {
+    const limit = Number.isFinite(options?.limit) ? Math.max(1, Math.min(500, options!.limit!)) : 50;
+
+    const payments = await this.prisma.payment.findMany({
+      where: { isPaid: true, isAvailable: true },
+      include: {
+        eventTicket: {
+          include: {
+            event: { select: { id: true, name: true } },
+            user: { select: { id: true, name: true, email: true } },
+          },
+        },
+      },
+      orderBy: { updatedAt: 'desc' },
+      take: limit,
+    });
+
+    const data = payments.map((p) => {
+      const ticketRevenue = Number(new Decimal(p.perItemPrice ?? 0).mul(p.noOfItems ?? 0).toFixed(2));
+      const totalRevenue = Number(new Decimal(p.totalPrice ?? 0).toFixed(2));
+      const menuRevenue = Number(new Decimal(Math.max(0, totalRevenue - ticketRevenue)).toFixed(2));
+
+      return {
+        id: p.id,
+        createdAt: p.createdAt,
+        updatedAt: p.updatedAt,
+        payoutAmount: totalRevenue,
+        ticketRevenue,
+        menuRevenue,
+        ticketsSold: p.noOfItems ?? 0,
+        paystackReference: p.paystackReference ?? null,
+        paymentStatus: p.paymentStatus ?? null,
+        paymentMethod: p.paymentMethod ?? null,
+        event: p.eventTicket?.event ?? null,
+        user: p.eventTicket?.user ?? null,
+        eventTicketId: p.eventTicket?.id ?? null,
+      };
+    });
+
+    return { success: true, data };
+  }
+
+  async payoutStats(options?: { range?: 'today' | 'this_week' | 'this_month' | 'this_year' }) {
+    const range = options?.range ?? 'this_week';
+    const { start } = this.getStartForRange(range);
+
+    const [totalAgg, availableAgg, pendingAgg, lastSale] = await Promise.all([
+      this.prisma.payment.aggregate({
+        where: { isPaid: true, createdAt: { gte: start } },
+        _sum: { totalPrice: true },
+        _count: { _all: true },
+      }),
+      this.prisma.payment.aggregate({
+        where: { isPaid: true, isAvailable: true, createdAt: { gte: start } },
+        _sum: { totalPrice: true },
+        _count: { _all: true },
+      }),
+      this.prisma.payment.aggregate({
+        where: { isPaid: true, isAvailable: false, createdAt: { gte: start } },
+        _sum: { totalPrice: true },
+        _count: { _all: true },
+      }),
+      this.prisma.payment.findFirst({
+        where: { isPaid: true },
+        orderBy: { createdAt: 'desc' },
+        select: { createdAt: true, totalPrice: true },
+      }),
+    ]);
+
+    const total = Number(totalAgg._sum.totalPrice ?? 0);
+    const available = Number(availableAgg._sum.totalPrice ?? 0);
+    const pending = Number(pendingAgg._sum.totalPrice ?? 0);
+
+    return {
+      range,
+      totalPayouts: Number(new Decimal(available).toFixed(2)),
+      payoutBalance: Number(new Decimal(available).toFixed(2)),
+      pendingPayouts: Number(new Decimal(pending).toFixed(2)),
+      totalRevenue: Number(new Decimal(total).toFixed(2)),
+      availableCount: availableAgg._count._all,
+      pendingCount: pendingAgg._count._all,
+      totalCount: totalAgg._count._all,
+      lastSaleAt: lastSale?.createdAt ?? null,
+    };
+  }
+
+  async adminInsights(options?: { range?: 'today' | 'this_week' | 'this_month' | 'this_year' }) {
+    const range = options?.range ?? 'this_week';
+    const now = new Date();
+    const { start } = this.getStartForRange(range);
+
+    const [activeEvents, upcomingEvents, paidPaymentsInRange, unpaidPaymentsInRange] = await Promise.all([
+      this.prisma.event.count({
+        where: {
+          isDeleted: false,
+          suspended: false,
+          status: 'ACTIVE',
+          OR: [{ endDate: null }, { endDate: { gte: now } }],
+        },
+      }),
+      this.prisma.event.count({
+        where: {
+          isDeleted: false,
+          suspended: false,
+          status: 'ACTIVE',
+          startDate: { gte: now },
+        },
+      }),
+      this.prisma.payment.count({ where: { isPaid: true, createdAt: { gte: start } } }),
+      this.prisma.payment.count({ where: { isPaid: false, createdAt: { gte: start } } }),
+    ]);
+
+    return {
+      range,
+      activeEvents,
+      upcomingEvents,
+      paidPaymentsInRange,
+      unpaidPaymentsInRange,
+    };
+  }
+
   async overview(options?: {
     range?: 'today' | 'this_week' | 'this_month' | 'this_year';
     upcomingLimit?: number;
@@ -436,13 +652,15 @@ export class FinanceService {
   }) {
     const range = options?.range ?? 'this_week';
 
-    const [payments, earnings, series, menuBreakdown, upcoming, recentSales] = await Promise.all([
+    const [payments, earnings, series, menuBreakdown, upcoming, recentSales, payouts, admin] = await Promise.all([
       this.paymentsSummary(),
       this.ticketAndMenuRevenueStatsForRange({ range }),
       this.revenueSeries({ range }),
       this.menuBreakdown({ range }),
       this.upcomingEvents({ limit: options?.upcomingLimit }),
       this.recentSales({ limit: options?.recentSalesLimit }),
+      this.payoutStats({ range }),
+      this.adminInsights({ range }),
     ]);
 
     return {
@@ -451,6 +669,8 @@ export class FinanceService {
         range,
         payments,
         earnings,
+        payouts,
+        admin,
         dailyEarnings: series.data,
         menuBreakdown,
         menuItemsBreakdown: menuBreakdown,

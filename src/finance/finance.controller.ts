@@ -84,4 +84,20 @@ export class FinanceController {
   recentSales(@Query('limit') limit?: string) {
     return this.financeService.recentSales({ limit: limit ? parseInt(limit, 10) : undefined });
   }
+
+  @ApiResponses(true, [UserRole.ADMIN])
+  @Permissions(Permission.REPORTS_READ)
+  @Get('recent-payouts')
+  recentPayouts(@Query('limit') limit?: string) {
+    return this.financeService.recentPayouts({ limit: limit ? parseInt(limit, 10) : undefined });
+  }
+
+  @ApiResponses(true, [UserRole.ADMIN])
+  @Permissions(Permission.REPORTS_READ)
+  @Get('monthly-trend')
+  monthlyTrend(@Query('months') months?: string) {
+    return this.financeService.monthlyRevenueTrend({
+      months: months ? parseInt(months, 10) : undefined,
+    });
+  }
 }
