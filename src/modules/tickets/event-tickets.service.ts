@@ -1210,6 +1210,7 @@ export class EventTicketsService {
             if (!nextWave) break;
 
             if (isExpired && available > 0) {
+                await this.closeWaveRemainingInventory(wave.id);
                 await this.distributeRolloverTickets(nextWave.id, available);
             }
 
@@ -1253,6 +1254,23 @@ export class EventTicketsService {
                 data: {
                     capacity: { increment: share },
                     available: { increment: share },
+                },
+            });
+        }
+    }
+
+    private async closeWaveRemainingInventory(waveId: string) {
+        const categories = await this.prisma.ticketCategory.findMany({
+            where: { waveId },
+        });
+        for (const category of categories) {
+            const available = Number(category.available ?? category.capacity ?? 0);
+            if (available <= 0) continue;
+            await this.prisma.ticketCategory.update({
+                where: { id: category.id },
+                data: {
+                    capacity: { decrement: available },
+                    available: { decrement: available },
                 },
             });
         }
