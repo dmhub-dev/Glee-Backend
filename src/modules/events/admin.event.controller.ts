@@ -23,6 +23,7 @@ import {
 } from '@src/common/decorators/check-mime-type.decorator';
 import { UserRole } from '@prisma/client';
 import { AddImageDto, DeleteImageDto } from './dto/add-image.dto';
+import { ReviewVendorEventDto } from './dto/review-vendor-event.dto';
 
 @Controller('admin/event')
 @ApiTags('Admin Event Routes')
@@ -69,6 +70,17 @@ export class AdminEventController {
    * @param updateEventDto
    * @param files
    */
+  @Permissions(Permission.EVENTS_UPDATE)
+  @ApiResponses(true)
+  @Patch(':id/review')
+  reviewVendorEvent(
+    @Param('id') id: string,
+    @Body() dto: ReviewVendorEventDto,
+    @CurrentUser() user: any,
+  ) {
+    return this.eventService.reviewVendorEvent(id, dto, user);
+  }
+
   @Permissions(Permission.EVENTS_UPDATE)
   @ApiResponses(true)
   @ApiConsumes('multipart/form-data')

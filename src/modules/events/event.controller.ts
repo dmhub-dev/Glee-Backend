@@ -31,8 +31,8 @@ export class EventController {
   @AllowAny()
   @ApiResponses(true)
   @Get()
-  findAll(@Query() query: RetrieveEventDto) {
-    return this.eventService.findAll(query);
+  findAll(@Query() query: RetrieveEventDto, @CurrentUser() currentUser: any) {
+    return this.eventService.findAll(query, currentUser);
   }
 
   @Version('2')
@@ -76,10 +76,7 @@ export class EventController {
   @ApiResponses(true)
   @Get(':id')
   findOne(@Param('id') id: string, @CurrentUser() currentUser) {
-    const userId = (currentUser && typeof currentUser === 'object' && currentUser.role === 'USER')
-      ? currentUser.id
-      : null;
-    return this.eventService.findOne(id, userId);
+    return this.eventService.findOne(id, currentUser);
   }
 
   @Version('2')

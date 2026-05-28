@@ -10,6 +10,8 @@ import { RetrieveEventDto } from './dto/retrieve.event.dto';
 import { UpdateEventDto } from './dto/update-event.dto';
 import { EventSharedService } from './shared/shared.event.service';
 import { S3Service } from '@src/infrastructure/storage/s3.service';
+import { EmailService } from '@src/infrastructure/email/email.service';
+import { ReviewVendorEventDto } from './dto/review-vendor-event.dto';
 
 const EVENT_INCLUDE: Prisma.EventInclude = {
     location: true,
@@ -31,6 +33,7 @@ export class EventService {
         private readonly eventSharedService: EventSharedService,
         private readonly config: ConfigService,
         private readonly s3: S3Service,
+        private readonly emailService: EmailService,
     ) {}
 
     async create(
@@ -50,7 +53,15 @@ export class EventService {
         user: any,
     ) {
         const vendorId = this.resolveVendorAccountId(user);
-        return this.createInternal(createEventDto, files, vendorId);
+        return this.createInternal(
+            {
+                ...createEventDto,
+                status: EventStatus.PENDING_APPROVAL,
+                isActive: EventStatus.PENDING_APPROVAL,
+            },
+            files,
+            vendorId,
+        );
     }
 
     private async createInternal(
@@ -146,9 +157,15 @@ export class EventService {
             include: EVENT_INCLUDE,
         });
 
+        if (vendorId) {
+            await this.safeSendVendorEventSubmittedEmail(full);
+        }
+
         return {
             success: true,
-            message: 'Event created successfully.',
+            message: vendorId
+                ? 'Event submitted for approval successfully.'
+                : 'Event created successfully.',
             data: full,
         };
     }
@@ -167,8 +184,17 @@ export class EventService {
         return this.eventEarningService(id);
     }
 
-    async findAll({ page, limit, search }: RetrieveEventDto) {
+    async findAll({ page, limit, search }: RetrieveEventDto, currentUser?: any) {
         const where: any = { isDeleted: false };
+        if (!this.canViewAllEvents(currentUser)) {
+            where.status = {
+                in: [
+                    EventStatus.ACTIVE,
+                    EventStatus.POSTPONED,
+                    EventStatus.SOLD_OUT,
+                ],
+            };
+        }
         if (search) where.name = { contains: search, mode: 'insensitive' };
 
         const [rawData, docCount] = await Promise.all([
@@ -235,18 +261,11 @@ export class EventService {
         };
     }
 
-    async findOne(id: string, userId: string) {
+    async findOne(id: string, currentUser?: any) {
         await this.syncTicketWavesForEvents([id]);
         const event = await this.prisma.event.findFirst({
             where: { id, isDeleted: false },
             include: EVENT_INCLUDE,
-        });
-
-        const purchasedTickets =
-            await this.eventSharedService.getUserPurchasedEventList(userId, id);
-        let noOfTicketPurchased = 0;
-        purchasedTickets.forEach((t) => {
-            noOfTicketPurchased += (t.payment as any)?.noOfItems ?? 0;
         });
 
         if (!event) {
@@ -256,6 +275,19 @@ export class EventService {
                 data: [],
             };
         }
+
+        if (!this.canViewEvent(event, currentUser)) {
+            throw new HttpException('Event not found', HttpStatus.NOT_FOUND);
+        }
+
+        const userId =
+            currentUser?.role === UserRole.USER ? currentUser.id : null;
+        const purchasedTickets =
+            await this.eventSharedService.getUserPurchasedEventList(userId, id);
+        let noOfTicketPurchased = 0;
+        purchasedTickets.forEach((t) => {
+            noOfTicketPurchased += (t.payment as any)?.noOfItems ?? 0;
+        });
 
         return {
             success: true,
@@ -277,7 +309,7 @@ export class EventService {
     async findOneEventByVendorId(id: string, user: any) {
         const vendorId = this.resolveVendorAccountId(user);
         await this.assertVendorEventAccess(id, vendorId);
-        return this.findOne(id, user.id);
+        return this.findOne(id, user);
     }
 
     async eventParticipants(
@@ -658,7 +690,69 @@ export class EventService {
     ) {
         const vendorId = this.resolveVendorAccountId(user);
         await this.assertVendorEventAccess(id, vendorId);
-        return this.update(id, updateEventDto, files);
+        const dto = { ...(updateEventDto as any) };
+        delete dto.status;
+        delete dto.isActive;
+        return this.update(id, dto, files);
+    }
+
+    async reviewVendorEvent(
+        id: string,
+        dto: ReviewVendorEventDto,
+        currentUser: any,
+    ) {
+        const event = await this.prisma.event.findFirst({
+            where: { id, isDeleted: false },
+            include: EVENT_INCLUDE,
+        });
+        if (!event) {
+            throw new HttpException('Event not found', HttpStatus.NOT_FOUND);
+        }
+        if (!event.vendorId) {
+            throw new HttpException(
+                'Only vendor events require approval',
+                HttpStatus.BAD_REQUEST,
+            );
+        }
+
+        const nextStatus =
+            dto.decision === 'approve'
+                ? EventStatus.ACTIVE
+                : EventStatus.REJECTED;
+        const updated = await this.prisma.event.update({
+            where: { id },
+            data: { status: nextStatus },
+            include: EVENT_INCLUDE,
+        });
+
+        await this.prisma.auditLog.create({
+            data: {
+                actorId: currentUser?.id,
+                action:
+                    dto.decision === 'approve'
+                        ? 'events.vendor_approved'
+                        : 'events.vendor_rejected',
+                entity: 'Event',
+                entityId: id,
+                metadata: {
+                    vendorId: event.vendorId,
+                    eventName: event.name,
+                    reason: dto.reason ?? null,
+                    status: nextStatus,
+                },
+            },
+        });
+
+        await this.safeSendVendorEventReviewEmail(updated, dto);
+
+        return {
+            success: true,
+            message:
+                dto.decision === 'approve'
+                    ? 'Vendor event approved successfully.'
+                    : 'Vendor event rejected successfully.',
+            data: updated,
+        };
     }
 
     async remove(id: string) {
@@ -905,7 +999,8 @@ export class EventService {
         if (
             !input.locationId ||
             !input.startDate ||
-            input.status === EventStatus.CANCELLED
+            input.status === EventStatus.CANCELLED ||
+            input.status === EventStatus.REJECTED
         ) {
             return;
         }
@@ -920,7 +1015,9 @@ export class EventService {
                     : undefined,
                 locationId: input.locationId,
                 isDeleted: false,
-                status: { not: EventStatus.CANCELLED },
+                status: {
+                    notIn: [EventStatus.CANCELLED, EventStatus.REJECTED],
+                },
                 startDate: { not: null, lte: endDay },
                 OR: [
                     { endDate: { gte: startDay } },
@@ -1152,6 +1249,102 @@ export class EventService {
                 'You do not have access to this event',
                 HttpStatus.FORBIDDEN,
             );
+        }
+    }
+
+    private canViewAllEvents(user?: any) {
+        return [UserRole.SUPER_ADMIN, UserRole.ADMIN].includes(user?.role);
+    }
+
+    private canViewEvent(event: any, user?: any) {
+        if (
+            [EventStatus.ACTIVE, EventStatus.POSTPONED, EventStatus.SOLD_OUT].includes(
+                event.status,
+            )
+        ) {
+            return true;
+        }
+        if (this.canViewAllEvents(user)) return true;
+        if ([UserRole.VENDOR, UserRole.VENDOR_STAFF].includes(user?.role)) {
+            const vendorId =
+                user.role === UserRole.VENDOR ? user.id : user.vendorAccountId;
+            return event.vendorId === vendorId;
+        }
+        return false;
+    }
+
+    private eventReviewUrl(eventId: string) {
+        const baseUrl =
+            this.config.get<string>('ADMIN_APP_URL') ??
+            this.config.get<string>('APP_URL') ??
+            'http://localhost:8003';
+        return `${baseUrl.replace(/\/$/, '')}/dashboard/events/${eventId}`;
+    }
+
+    private async safeSendVendorEventSubmittedEmail(event: any) {
+        try {
+            const admins = await this.prisma.user.findMany({
+                where: {
+                    isDeleted: false,
+                    role: {
+                        name: { in: [UserRole.SUPER_ADMIN, UserRole.ADMIN] },
+                    },
+                },
+                select: { email: true },
+            });
+            const recipients = admins.map((admin) => admin.email).filter(Boolean);
+            if (!recipients.length) return;
+            await this.emailService.sendMail({
+                template: 'emails/event/vendor-event-submitted',
+                message: {
+                    to: recipients,
+                    subject: `Vendor event pending approval: ${event.name}`,
+                },
+                locals: {
+                    eventName: event.name,
+                    vendorName: event.vendor?.name ?? 'Vendor',
+                    vendorEmail: event.vendor?.email ?? '',
+                    eventDate: event.startDate
+                        ? new Date(event.startDate).toLocaleString('en-KE')
+                        : 'Date TBA',
+                    eventLocation:
+                        event.location?.name ?? event.location?.address ?? 'Location TBA',
+                    reviewUrl: this.eventReviewUrl(event.id),
+                    year: new Date().getFullYear(),
+                },
+            });
+        } catch {
+            // Event creation should not fail because email delivery is unavailable.
+        }
+    }
+
+    private async safeSendVendorEventReviewEmail(
+        event: any,
+        review: ReviewVendorEventDto,
+    ) {
+        try {
+            const vendorEmail = event.vendor?.email;
+            if (!vendorEmail) return;
+            await this.emailService.sendMail({
+                template: 'emails/event/vendor-event-reviewed',
+                message: {
+                    to: vendorEmail,
+                    subject:
+                        review.decision === 'approve'
+                            ? `Your event is live: ${event.name}`
+                            : `Your event was not approved: ${event.name}`,
+                },
+                locals: {
+                    eventName: event.name,
+                    vendorName: event.vendor?.name ?? 'Vendor',
+                    approved: review.decision === 'approve',
+                    reason: review.reason ?? '',
+                    eventUrl: this.eventReviewUrl(event.id),
+                    year: new Date().getFullYear(),
+                },
+            });
+        } catch {
+            // Approval should not fail because email delivery is unavailable.
         }
     }
 }

@@ -41,7 +41,7 @@ describe('EventService location booking conflicts', () => {
             },
         };
         s3 = { uploadMany: jest.fn().mockResolvedValue([]) };
-        service = new EventService(prisma, {} as any, {} as any, s3);
+        service = new EventService(prisma, {} as any, {} as any, s3, {} as any);
     });
 
     it('blocks creating an event when the location is already booked on that day', async () => {

@@ -36,9 +36,11 @@ enum EntityStatus {
 
 enum EventStatus {
   DRAFT
+  PENDING_APPROVAL
   ACTIVE
   POSTPONED
   CANCELLED
+  REJECTED
   SOLD_OUT
 }
 
