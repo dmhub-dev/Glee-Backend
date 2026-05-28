@@ -16,6 +16,7 @@ import { EventSharedService } from '@src/modules/events/shared/shared.event.serv
 import { CreateEventTicketDto } from './dto/create-event-ticket.dto';
 import { CreateGuestTicketDto } from './dto/create-guest-ticket.dto';
 import { ConfirmPurchaseDto } from './dto/confirm-purchase.dto';
+import { IssueComplimentaryTicketDto } from './dto/issue-complimentary-ticket.dto';
 import { PaginationQueryDto } from './dto/pagination-query.dto';
 import { WalletService } from '@src/modules/wallets/wallet/wallet.service';
 import { randomUUID } from 'crypto';
@@ -838,6 +839,148 @@ export class EventTicketsService {
         };
     }
 
+    async issueComplimentaryTicket(
+        dto: IssueComplimentaryTicketDto,
+        currentUser: any,
+    ) {
+        if (
+            ![
+                UserRole.SUPER_ADMIN,
+                UserRole.ADMIN,
+                UserRole.VENDOR,
+            ].includes(currentUser?.role)
+        ) {
+            throw new HttpException(
+                'Only admin or vendor users can issue complimentary tickets',
+                HttpStatus.FORBIDDEN,
+            );
+        }
+
+        const event = await this.prisma.event.findFirst({
+            where: { id: dto.eventId, isDeleted: false },
+            include: { location: true, ticketWaves: true },
+        });
+        if (!event) {
+            throw new HttpException('Event not found', HttpStatus.NOT_FOUND);
+        }
+        if (currentUser.role === UserRole.VENDOR && event.vendorId !== currentUser.id) {
+            throw new HttpException(
+                'You do not have access to this event',
+                HttpStatus.FORBIDDEN,
+            );
+        }
+
+        const category = await this.prisma.ticketCategory.findFirst({
+            where: { id: dto.ticketCategoryId, eventId: dto.eventId },
+            include: { wave: true },
+        });
+        if (!category) {
+            throw new HttpException(
+                'Ticket category not found',
+                HttpStatus.BAD_REQUEST,
+            );
+        }
+        if (category.wave?.status === TicketWaveStatus.CANCELLED) {
+            throw new HttpException(
+                'Cannot issue complimentary tickets from a cancelled wave',
+                HttpStatus.BAD_REQUEST,
+            );
+        }
+
+        const quantity = Number(dto.quantity) || 1;
+        const available = Number(
+            category.available ?? category.capacity ?? event.capacity ?? 0,
+        );
+        if (available < quantity) {
+            throw new HttpException(
+                'No tickets available',
+                HttpStatus.BAD_REQUEST,
+            );
+        }
+
+        const recipient = await this.getOrCreateComplimentaryRecipient(dto);
+        const reference = `complimentary_${randomUUID()}`;
+        const payment = await this.prisma.payment.create({
+            data: {
+                userId: recipient.id,
+                paystackReference: reference,
+                paymentStatus: 'SUCCEEDED',
+                paymentMethod: 'COMPLIMENTARY',
+                totalPrice: new Decimal(0),
+                perItemPrice: new Decimal(0),
+                noOfItems: quantity,
+                isPaid: true,
+                isAvailable: false,
+            },
+        });
+
+        const ticket = await this.prisma.eventTicket.create({
+            data: {
+                eventId: event.id,
+                userId: recipient.id,
+                paymentId: payment.id,
+                ticketCategoryId: category.id,
+                quantity,
+                totalPrice: new Decimal(0),
+                amountPaid: new Decimal(0),
+                outstandingAmount: new Decimal(0),
+                paymentPlan: {
+                    type: 'COMPLIMENTARY',
+                    issuedBy: currentUser.id,
+                    note: dto.note ?? null,
+                },
+                checkedInAt: dto.checkInNow ? new Date() : null,
+                checkedInById: dto.checkInNow ? currentUser.id : null,
+            },
+            include: {
+                event: true,
+                payment: true,
+                user: {
+                    select: { id: true, name: true, email: true, phone: true },
+                },
+                ticketCategory: true,
+                checkedInBy: { select: { id: true, name: true, email: true } },
+            },
+        });
+
+        await this.prisma.ticketCategory.update({
+            where: { id: category.id },
+            data: { available: { decrement: quantity } },
+        });
+
+        await this.prisma.auditLog.create({
+            data: {
+                actorId: currentUser.id,
+                action: 'tickets.complimentary_issue',
+                entity: 'EventTicket',
+                entityId: ticket.id,
+                metadata: {
+                    eventId: event.id,
+                    ticketCategoryId: category.id,
+                    quantity,
+                    recipientEmail: dto.recipientEmail,
+                    checkInNow: Boolean(dto.checkInNow),
+                    note: dto.note ?? null,
+                },
+            },
+        });
+
+        await this.sendComplimentaryTicketEmail({
+            event,
+            ticket,
+            recipientName: recipient.name,
+            recipientEmail: recipient.email,
+            quantity,
+            categoryName: category.name,
+        });
+
+        return {
+            success: true,
+            message: 'Complimentary ticket issued successfully',
+            data: ticket,
+        };
+    }
+
     async checkInTicket(id: string, currentUser: any) {
         this.assertVendorCheckInRole(currentUser);
         const ticket = await this.findScopedTicketOrThrow(id, currentUser);
@@ -1144,6 +1287,106 @@ export class EventTicketsService {
         };
     }
 
+    private async getOrCreateComplimentaryRecipient(
+        dto: IssueComplimentaryTicketDto,
+    ) {
+        const email = dto.recipientEmail.trim().toLowerCase();
+        const role = await this.prisma.role.findUnique({
+            where: { name: UserRole.USER },
+        });
+        const existing = await this.prisma.user.findUnique({
+            where: { email },
+        });
+        if (existing) {
+            return existing;
+        }
+
+        return this.prisma.user.create({
+            data: {
+                name: dto.recipientName,
+                email,
+                phone: dto.recipientPhone,
+                password: crypto.randomBytes(32).toString('hex'),
+                roleId: role?.id,
+                profileStatus: true,
+            },
+        });
+    }
+
+    private async sendComplimentaryTicketEmail(input: {
+        event: any;
+        ticket: any;
+        recipientName: string;
+        recipientEmail: string;
+        quantity: number;
+        categoryName: string;
+    }) {
+        try {
+            const purchasedOn = moment().format('MMMM DD, YYYY');
+            const eventDate = input.event.startDate
+                ? moment(input.event.startDate).format('dddd, MMMM DD, YYYY')
+                : null;
+            const eventTime = input.event.startDate
+                ? moment(input.event.startDate).format('h:mm A')
+                : null;
+            const eventVenue =
+                input.event.location?.name ?? input.event.location?.address ?? null;
+            const pdfAttachments = await Promise.all(
+                Array.from({ length: input.quantity }, (_, i) =>
+                    generateTicketPdf({
+                        ticketRef: `${input.ticket.id}-${i + 1}`,
+                        ticketNumber: i + 1,
+                        totalTickets: input.quantity,
+                        eventName: input.event.name,
+                        eventDate,
+                        eventTime,
+                        eventVenue,
+                        attendeeName: input.recipientName,
+                        attendeeEmail: input.recipientEmail,
+                        purchasedOn,
+                        orderId: input.ticket.id,
+                        price: 'Complimentary',
+                        currency: 'KES',
+                    }).then((buf) => ({
+                        filename: `glee-complimentary-ticket-${i + 1}.pdf`,
+                        content: buf,
+                        contentType: 'application/pdf',
+                    })),
+                ),
+            );
+
+            await this.emailService.sendMail({
+                template: 'emails/event/event-ticket',
+                message: {
+                    to: [input.recipientEmail],
+                    subject: `Your complimentary ticket for ${input.event.name} — Glee`,
+                    attachments: pdfAttachments,
+                },
+                locals: {
+                    purchasedOn,
+                    userEmail: input.recipientEmail,
+                    userName: input.recipientName,
+                    ticketId: input.ticket.id,
+                    productTitle: input.event.name,
+                    eventDate,
+                    eventTime,
+                    eventVenue,
+                    total: '0',
+                    orderTotal: '0',
+                    subTotal: '0',
+                    menuItems: [],
+                    menuTotal: null,
+                    noOfItems: input.quantity,
+                    paymentPlan: null,
+                    productImage: input.event.photos?.[0] ?? null,
+                    orderType: `Complimentary ${input.categoryName}`,
+                },
+            });
+        } catch (e) {
+            loggers.error('Complimentary ticket email error: %O', e);
+        }
+    }
+
     private assertTicketCategoryCanSell(category: {
         wave?: { status: TicketWaveStatus } | null;
     }) {
@@ -1209,11 +1452,6 @@ export class EventTicketsService {
                 .find((candidate) => candidate.status === TicketWaveStatus.UPCOMING);
             if (!nextWave) break;
 
-            if (isExpired && available > 0) {
-                await this.closeWaveRemainingInventory(wave.id);
-                await this.distributeRolloverTickets(nextWave.id, available);
-            }
-
             await this.prisma.ticketWave.update({
                 where: { id: nextWave.id },
                 data: {
@@ -1222,57 +1460,6 @@ export class EventTicketsService {
                 },
             });
             nextWave.status = TicketWaveStatus.ACTIVE;
-        }
-    }
-
-    private async distributeRolloverTickets(waveId: string, tickets: number) {
-        const categories = await this.prisma.ticketCategory.findMany({
-            where: { waveId },
-            orderBy: { createdAt: 'asc' },
-        });
-        if (!categories.length || tickets <= 0) return;
-
-        const baseCapacity = categories.reduce(
-            (sum, category) => sum + Number(category.capacity ?? 0),
-            0,
-        );
-        let remaining = tickets;
-        for (const [index, category] of categories.entries()) {
-            const share =
-                index === categories.length - 1
-                    ? remaining
-                    : Math.floor(
-                          tickets *
-                              (baseCapacity > 0
-                                  ? Number(category.capacity ?? 0) / baseCapacity
-                                  : 1 / categories.length),
-                      );
-            remaining -= share;
-            if (share <= 0) continue;
-            await this.prisma.ticketCategory.update({
-                where: { id: category.id },
-                data: {
-                    capacity: { increment: share },
-                    available: { increment: share },
-                },
-            });
-        }
-    }
-
-    private async closeWaveRemainingInventory(waveId: string) {
-        const categories = await this.prisma.ticketCategory.findMany({
-            where: { waveId },
-        });
-        for (const category of categories) {
-            const available = Number(category.available ?? category.capacity ?? 0);
-            if (available <= 0) continue;
-            await this.prisma.ticketCategory.update({
-                where: { id: category.id },
-                data: {
-                    capacity: { decrement: available },
-                    available: { decrement: available },
-                },
-            });
         }
     }
 

@@ -1119,11 +1119,6 @@ export class EventService {
                 .find((candidate) => candidate.status === TicketWaveStatus.UPCOMING);
             if (!nextWave) break;
 
-            if (isExpired && available > 0) {
-                await this.closeWaveRemainingInventory(wave.id);
-                await this.distributeRolloverTickets(nextWave.id, available);
-            }
-
             await this.prisma.ticketWave.update({
                 where: { id: nextWave.id },
                 data: {
@@ -1143,57 +1138,6 @@ export class EventService {
                 sum + Number(category.available ?? category.capacity ?? 0),
             0,
         );
-    }
-
-    private async distributeRolloverTickets(waveId: string, tickets: number) {
-        const categories = await this.prisma.ticketCategory.findMany({
-            where: { waveId },
-            orderBy: { createdAt: 'asc' },
-        });
-        if (!categories.length || tickets <= 0) return;
-
-        const baseCapacity = categories.reduce(
-            (sum, category) => sum + Number(category.capacity ?? 0),
-            0,
-        );
-        let remaining = tickets;
-        for (const [index, category] of categories.entries()) {
-            const share =
-                index === categories.length - 1
-                    ? remaining
-                    : Math.floor(
-                          tickets *
-                              (baseCapacity > 0
-                                  ? Number(category.capacity ?? 0) / baseCapacity
-                                  : 1 / categories.length),
-                      );
-            remaining -= share;
-            if (share <= 0) continue;
-            await this.prisma.ticketCategory.update({
-                where: { id: category.id },
-                data: {
-                    capacity: { increment: share },
-                    available: { increment: share },
-                },
-            });
-        }
-    }
-
-    private async closeWaveRemainingInventory(waveId: string) {
-        const categories = await this.prisma.ticketCategory.findMany({
-            where: { waveId },
-        });
-        for (const category of categories) {
-            const available = Number(category.available ?? category.capacity ?? 0);
-            if (available <= 0) continue;
-            await this.prisma.ticketCategory.update({
-                where: { id: category.id },
-                data: {
-                    capacity: { decrement: available },
-                    available: { decrement: available },
-                },
-            });
-        }
     }
 
     private async assertVendorEventAccess(eventId: string, vendorId: string) {

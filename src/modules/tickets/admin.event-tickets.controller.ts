@@ -21,6 +21,7 @@ import { IEventTicketAdminFilters } from './interfaces/filters';
 import { Permissions } from '@src/auth/rbac/permissions.decorator';
 import { Permission } from '@src/auth/rbac/permissions.enum';
 import { SupportTicketNoteDto } from './dto/support-ticket-note.dto';
+import { IssueComplimentaryTicketDto } from './dto/issue-complimentary-ticket.dto';
 
 @Controller('admin/event-ticket')
 @ApiTags('Admin Event Tickets Routes')
@@ -41,6 +42,16 @@ export class AdminEventTicketsController {
       filter,
       user,
     );
+  }
+
+  @ApiResponses(true, [UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.VENDOR])
+  @Permissions(Permission.BOOKINGS_UPDATE)
+  @Post('complimentary')
+  issueComplimentaryTicket(
+    @Body() dto: IssueComplimentaryTicketDto,
+    @CurrentUser() user: any,
+  ) {
+    return this.eventTicketsService.issueComplimentaryTicket(dto, user);
   }
 
   @ApiResponses(true, [UserRole.ADMIN, UserRole.CUSTOMER_SUPPORT, UserRole.VENDOR, UserRole.VENDOR_STAFF])
