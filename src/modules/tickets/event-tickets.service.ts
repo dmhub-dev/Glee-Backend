@@ -399,6 +399,9 @@ export class EventTicketsService {
             noOfTickets: dto.noOfTickets,
             ticketCategoryId: dto.ticketCategoryId,
             userId: user.id,
+            guestName: dto.guestName,
+            guestEmail: dto.guestEmail,
+            guestPhone: dto.guestPhone,
             preOrderMenu: resolvedMenuItems.length
                 ? resolvedMenuItems
                 : undefined,
@@ -415,9 +418,19 @@ export class EventTicketsService {
     }
 
     async confirmPurchase(dto: ConfirmPurchaseDto) {
-        const result = await this.payStackService.verifyTransaction(
-            dto.verificationToken,
-        );
+        if (!dto.verificationToken && !dto.reference) {
+            throw new HttpException(
+                'Payment reference is required',
+                HttpStatus.BAD_REQUEST,
+            );
+        }
+        const result = dto.verificationToken
+            ? await this.payStackService.verifyTransaction(
+                  dto.verificationToken,
+              )
+            : await this.payStackService.verifyTransactionReference(
+                  dto.reference!,
+              );
         const paystackData = (result as any)?.paystack?.data;
         this.logger.debug(
             `Paystack verify data: ${JSON.stringify(paystackData)}`,
@@ -438,7 +451,11 @@ export class EventTicketsService {
             );
         }
         await this.createPurchasedEventTicket(
-            paystackData.metadata,
+            {
+                ...paystackData.metadata,
+                customerEmail: paystackData.customer?.email,
+                customerPhone: paystackData.customer?.phone,
+            },
             paystackData.reference,
         );
         return { success: true, message: 'Ticket confirmed' };
@@ -523,6 +540,10 @@ export class EventTicketsService {
             where: { role: { name: 'ADMIN' }, isDeleted: false },
         });
         const user = await this.userService.findOne({ id: metadata.userId });
+        const attendeeName =
+            user?.name ?? metadata.guestName ?? metadata.customerName ?? 'Guest';
+        const attendeeEmail =
+            user?.email ?? metadata.guestEmail ?? metadata.customerEmail;
 
         try {
             const notification = await this.notificationService.addNotification(
@@ -535,7 +556,7 @@ export class EventTicketsService {
 
             loggers.info('Event ticket notification created: %O', {
                 type: NotificationType.EVENT_TICKET,
-                body: `A new Event Ticket has been purchased by ${user?.name}.`,
+                body: `A new Event Ticket has been purchased by ${attendeeName}.`,
                 eventTicketId: eventTicket.id,
                 _id: (notification as any)?.id,
                 userId: admin?.id,
@@ -567,8 +588,8 @@ export class EventTicketsService {
                         eventDate,
                         eventTime,
                         eventVenue,
-                        attendeeName: user?.name ?? '',
-                        attendeeEmail: user?.email ?? '',
+                        attendeeName,
+                        attendeeEmail: attendeeEmail ?? '',
                         purchasedOn,
                         orderId: eventTicket.id,
                         price: price.toLocaleString(),
@@ -584,14 +605,14 @@ export class EventTicketsService {
             await this.emailService.sendMail({
                 template: 'emails/event/event-ticket',
                 message: {
-                    to: [user?.email].filter(Boolean) as string[],
+                    to: [attendeeEmail].filter(Boolean) as string[],
                     subject: `Your ticket for ${event.name} — Glee`,
                     attachments: pdfAttachments,
                 },
                 locals: {
                     purchasedOn,
-                    userEmail: user?.email,
-                    userName: user?.name,
+                    userEmail: attendeeEmail,
+                    userName: attendeeName,
                     ticketId: eventTicket.id,
                     productTitle: event.name,
                     eventDate,

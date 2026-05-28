@@ -314,6 +314,35 @@ describe('EventTicketsService.createPurchasedEventTicket - tier decrement', () =
 
         expect(prisma.ticketCategory.update).not.toHaveBeenCalled();
     });
+
+    it('sends ticket email to metadata email when user lookup fails', async () => {
+        userService.findOne.mockResolvedValue(null);
+
+        await service.createPurchasedEventTicket(
+            {
+                userId: 'user-1',
+                eventId: 'event-1',
+                ticketCategoryId: 'cat-1',
+                noOfTickets: 1,
+                purchasingType: 'EVENT_TICKET',
+                guestName: 'Guest Buyer',
+                guestEmail: 'guest@example.com',
+            },
+            'paystack-ref-789',
+        );
+
+        expect(emailService.sendMail).toHaveBeenCalledWith(
+            expect.objectContaining({
+                message: expect.objectContaining({
+                    to: ['guest@example.com'],
+                }),
+                locals: expect.objectContaining({
+                    userEmail: 'guest@example.com',
+                    userName: 'Guest Buyer',
+                }),
+            }),
+        );
+    });
 });
 
 describe('EventTicketsService.create - wallet payment', () => {

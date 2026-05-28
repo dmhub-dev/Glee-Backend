@@ -1,7 +1,11 @@
-import { IsNotEmpty, IsString } from 'class-validator';
+import { IsOptional, IsString } from 'class-validator';
 
 export class ConfirmPurchaseDto {
   @IsString()
-  @IsNotEmpty()
-  verificationToken: string;
+  @IsOptional()
+  verificationToken?: string;
+
+  @IsString()
+  @IsOptional()
+  reference?: string;
 }

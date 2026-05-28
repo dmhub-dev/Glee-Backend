@@ -94,9 +94,14 @@ export class PayStackService {
 
   async verifyTransaction(token: string) {
     const payload = this._decodeToken(token);
+    return this.verifyTransactionReference(payload.transactionRef);
+  }
+
+  async verifyTransactionReference(reference: string) {
+    if (!reference) throw new BadRequestException('Missing transaction reference');
     try {
       const response = await axios.get<PaystackVerifyTransactionResponse>(
-        `${PAYSTACK_BASE_URL}${PAYSTACK_ENDPOINTS.VERIFY_TRANSACTION}/${encodeURIComponent(payload.transactionRef)}`,
+        `${PAYSTACK_BASE_URL}${PAYSTACK_ENDPOINTS.VERIFY_TRANSACTION}/${encodeURIComponent(reference)}`,
         { headers: PAYSTACK_HEADERS(this.configService.get('PAYSTACK_SECRET_KEY')) },
       );
       if (!response.data?.status) throw new BadRequestException(response.data?.message || 'Verification failed');
