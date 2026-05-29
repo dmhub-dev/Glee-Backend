@@ -23,6 +23,143 @@ export class FinanceService {
     return { start, days };
   }
 
+  private toPctChange(current: number, previous: number) {
+    const c = Number.isFinite(current) ? current : 0;
+    const p = Number.isFinite(previous) ? previous : 0;
+    if (p === 0) {
+      const pct = c === 0 ? 0 : 100;
+      return { current: c, previous: p, pct, direction: c === 0 ? 'flat' : 'up' as const };
+    }
+    const raw = ((c - p) / p) * 100;
+    const pct = Number(new Decimal(raw).toFixed(2));
+    const direction = c > p ? 'up' : c < p ? 'down' : 'flat';
+    return { current: c, previous: p, pct, direction };
+  }
+
+  async monthOverMonthKpis() {
+    const now = new Date();
+    const startOfToday = new Date(now);
+    startOfToday.setHours(0, 0, 0, 0);
+    const startOfTomorrow = new Date(startOfToday);
+    startOfTomorrow.setDate(startOfTomorrow.getDate() + 1);
+
+    const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    currentMonthStart.setHours(0, 0, 0, 0);
+
+    const prevMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    prevMonthStart.setHours(0, 0, 0, 0);
+
+    const dayOfMonth = now.getDate();
+    let prevMonthEndExclusive = new Date(prevMonthStart);
+    prevMonthEndExclusive.setDate(dayOfMonth + 1);
+    prevMonthEndExclusive.setHours(0, 0, 0, 0);
+    if (prevMonthEndExclusive > currentMonthStart) prevMonthEndExclusive = currentMonthStart;
+
+    const [
+      currentPaymentsAgg,
+      prevPaymentsAgg,
+      currentPayoutAgg,
+      prevPayoutAgg,
+      currentPendingAgg,
+      prevPendingAgg,
+      currentTicketRows,
+      prevTicketRows,
+    ] = await Promise.all([
+      this.prisma.payment.aggregate({
+        where: { isPaid: true, createdAt: { gte: currentMonthStart, lt: startOfTomorrow } },
+        _sum: { totalPrice: true },
+      }),
+      this.prisma.payment.aggregate({
+        where: { isPaid: true, createdAt: { gte: prevMonthStart, lt: prevMonthEndExclusive } },
+        _sum: { totalPrice: true },
+      }),
+      this.prisma.payment.aggregate({
+        where: { isPaid: true, isAvailable: true, createdAt: { gte: currentMonthStart, lt: startOfTomorrow } },
+        _sum: { totalPrice: true },
+      }),
+      this.prisma.payment.aggregate({
+        where: { isPaid: true, isAvailable: true, createdAt: { gte: prevMonthStart, lt: prevMonthEndExclusive } },
+        _sum: { totalPrice: true },
+      }),
+      this.prisma.payment.aggregate({
+        where: { isPaid: true, isAvailable: false, createdAt: { gte: currentMonthStart, lt: startOfTomorrow } },
+        _sum: { totalPrice: true },
+      }),
+      this.prisma.payment.aggregate({
+        where: { isPaid: true, isAvailable: false, createdAt: { gte: prevMonthStart, lt: prevMonthEndExclusive } },
+        _sum: { totalPrice: true },
+      }),
+      this.prisma.$queryRaw<
+        {
+          tickets_sold: number;
+          ticket_revenue: number;
+          total_revenue: number;
+        }[]
+      >`
+        SELECT
+          COALESCE(SUM(p."noOfItems"), 0)::int AS tickets_sold,
+          COALESCE(SUM(p."perItemPrice" * p."noOfItems"), 0)::float AS ticket_revenue,
+          COALESCE(SUM(p."totalPrice"), 0)::float AS total_revenue
+        FROM "event_tickets" et
+        JOIN "payments" p ON p."id" = et."paymentId"
+        WHERE p."isPaid" = true
+          AND p."createdAt" >= ${currentMonthStart}
+          AND p."createdAt" < ${startOfTomorrow}
+      `,
+      this.prisma.$queryRaw<
+        {
+          tickets_sold: number;
+          ticket_revenue: number;
+          total_revenue: number;
+        }[]
+      >`
+        SELECT
+          COALESCE(SUM(p."noOfItems"), 0)::int AS tickets_sold,
+          COALESCE(SUM(p."perItemPrice" * p."noOfItems"), 0)::float AS ticket_revenue,
+          COALESCE(SUM(p."totalPrice"), 0)::float AS total_revenue
+        FROM "event_tickets" et
+        JOIN "payments" p ON p."id" = et."paymentId"
+        WHERE p."isPaid" = true
+          AND p."createdAt" >= ${prevMonthStart}
+          AND p."createdAt" < ${prevMonthEndExclusive}
+      `,
+    ]);
+
+    const currentEarning = Number(currentPaymentsAgg._sum.totalPrice ?? 0);
+    const prevEarning = Number(prevPaymentsAgg._sum.totalPrice ?? 0);
+
+    const currentTotalPayouts = Number(currentPayoutAgg._sum.totalPrice ?? 0);
+    const prevTotalPayouts = Number(prevPayoutAgg._sum.totalPrice ?? 0);
+
+    const currentPendingPayouts = Number(currentPendingAgg._sum.totalPrice ?? 0);
+    const prevPendingPayouts = Number(prevPendingAgg._sum.totalPrice ?? 0);
+
+    const currentTicketAgg = currentTicketRows[0] ?? { tickets_sold: 0, ticket_revenue: 0, total_revenue: 0 };
+    const prevTicketAgg = prevTicketRows[0] ?? { tickets_sold: 0, ticket_revenue: 0, total_revenue: 0 };
+
+    const currentTicketRevenue = Number(currentTicketAgg.ticket_revenue ?? 0);
+    const prevTicketRevenue = Number(prevTicketAgg.ticket_revenue ?? 0);
+
+    const currentMenuRevenue = Math.max(0, Number(currentTicketAgg.total_revenue ?? 0) - Number(currentTicketAgg.ticket_revenue ?? 0));
+    const prevMenuRevenue = Math.max(0, Number(prevTicketAgg.total_revenue ?? 0) - Number(prevTicketAgg.ticket_revenue ?? 0));
+
+    const currentPayoutBalance = Math.max(0, currentTotalPayouts);
+    const prevPayoutBalance = Math.max(0, prevTotalPayouts);
+
+    return {
+      period: {
+        current: { start: currentMonthStart, endExclusive: startOfTomorrow },
+        previous: { start: prevMonthStart, endExclusive: prevMonthEndExclusive },
+      },
+      earning: this.toPctChange(currentEarning, prevEarning),
+      ticketRevenue: this.toPctChange(currentTicketRevenue, prevTicketRevenue),
+      menuRevenue: this.toPctChange(currentMenuRevenue, prevMenuRevenue),
+      totalPayouts: this.toPctChange(currentTotalPayouts, prevTotalPayouts),
+      payoutBalance: this.toPctChange(currentPayoutBalance, prevPayoutBalance),
+      pendingPayouts: this.toPctChange(currentPendingPayouts, prevPendingPayouts),
+    };
+  }
+
   async revenueSeries(options?: {
     days?: number;
     range?: 'today' | 'this_week' | 'this_month' | 'this_year';
@@ -652,7 +789,7 @@ export class FinanceService {
   }) {
     const range = options?.range ?? 'this_week';
 
-    const [payments, earnings, series, menuBreakdown, upcoming, recentSales, payouts, admin] = await Promise.all([
+    const [payments, earnings, series, menuBreakdown, upcoming, recentSales, payouts, admin, mom] = await Promise.all([
       this.paymentsSummary(),
       this.ticketAndMenuRevenueStatsForRange({ range }),
       this.revenueSeries({ range }),
@@ -661,6 +798,7 @@ export class FinanceService {
       this.recentSales({ limit: options?.recentSalesLimit }),
       this.payoutStats({ range }),
       this.adminInsights({ range }),
+      this.monthOverMonthKpis(),
     ]);
 
     return {
@@ -670,6 +808,7 @@ export class FinanceService {
         payments,
         earnings,
         payouts,
+        mom,
         admin,
         dailyEarnings: series.data,
         menuBreakdown,
