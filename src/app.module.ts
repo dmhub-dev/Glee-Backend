@@ -19,6 +19,7 @@ import { OnesignalModule } from './onesignal/onesignal.module';
 import { EmailModule } from '@src/email-server/email.module';
 import { NotificationModule } from './notification/notification.module';
 import { AppService } from '@src/app.service';
+import { FinanceModule } from '@src/finance/finance.module';
 
 @Module({
   imports: [
@@ -44,6 +45,7 @@ import { AppService } from '@src/app.service';
     OnesignalModule,
     EmailModule,
     NotificationModule,
+    FinanceModule,
   ],
   providers: [
     AppService,
