@@ -2,6 +2,9 @@
 /dist
 /node_modules
 
+# Superpowers brainstorm artifacts
+.superpowers/
+
 # Logs
 logs
 *.log
@@ -27,6 +30,7 @@ migration/outputEc2.txt
 /.idea
 .project
 .classpath
+/.claude
 .c9/
 *.launch
 .settings/
@@ -45,3 +49,11 @@ package-lock.json
 yarn.lock
 pnpm-lock.yaml
 *.env
+*.env.production
+/docs
+/generated/prisma
+/Release:prod
+rbac-seed.ts
+claude.md
+legacy/
+*.pdf

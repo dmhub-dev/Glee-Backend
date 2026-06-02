@@ -1,78 +1,60 @@
 import { Module, CacheModule } from '@nestjs/common';
-import { ConfigModule, ConfigService } from '@nestjs/config';
-import { DatabaseModule } from './config/database.module';
-import configuration from './config/configuration';
+import { ConfigModule } from '@nestjs/config';
 import { HttpModule } from '@nestjs/axios';
-import { JwtAuthGuard } from './config/auth-guard';
+import { ScheduleModule } from '@nestjs/schedule';
 import { APP_GUARD, APP_INTERCEPTOR, Reflector } from '@nestjs/core';
-import { RolesGuard } from './guards/roles.guard';
-import { ServicesModule } from './services/services.module';
-import { UsersModule } from './users/users.module';
+import configuration from './config/configuration';
+import { JwtAuthGuard } from './auth/jwt/jwt-auth.guard';
+import { PermissionsGuard } from '@src/auth/rbac/permissions.guard';
+import { HttpLogInterceptor } from '@src/common/interceptors/logger.interceptors';
+import { PrismaModule } from '@src/infrastructure/database/prisma.module';
+
+import { UsersModule } from './modules/identity/users/users.module';
 import { AuthModule } from './auth/auth.module';
-import { CategoriesModule } from './categories/categories.module';
-import { EventModule } from './event/event.module';
-import { PaymentModule } from './payment/payment.module';
-import { VendorModule } from './vendor/vendor.module';
-import { UserManagementModule } from './user-management/user-management.module';
-import { BookingsModule } from './bookings/bookings.module';
-import { HttpLogInterceptor } from '@src/interceptors/logger.interceptors';
-
-import { MongooseModule } from '@nestjs/mongoose';
-
-import { Countries, CountriesSchema } from '@src/schemas/countries.schema';
-import { Cities, CitiesSchema } from '@src/schemas/cities.schema';
-import { States, StatesSchema } from '@src/schemas/states.schema';
+import { EventModule } from './modules/events/event.module';
+import { EventTicketsModule } from './modules/tickets/event-tickets.module';
+import { CategoriesModule } from './modules/events/categories/categories.module';
+import { LocationModule } from './modules/venues/locations/location.module';
+import { OnesignalModule } from './infrastructure/push/onesignal/onesignal.module';
+import { EmailModule } from '@src/infrastructure/email/email.module';
+import { NotificationModule } from './modules/notifications/notifications/notification.module';
 import { AppService } from '@src/app.service';
-import { CommonApiModule } from '@src/common.api/common-api.module';
-import { SocketGateway } from '@src/socket/socket.gateway';
-import { SocketEventHandler } from '@src/socket/socket_event.handler';
-import { SocketModule } from '@src/socket/socket.module';
-import { OnesignalModule } from './onesignal/onesignal.module';
-import { EmailModule } from '@src/email-server/email.module';
-import { EmailService } from '@src/email-server/email.service';
-import { ChatModule } from './chat/chat.module';
-import { NotificationModule } from '@src/notification/notification.module';
+import { AccessManagementModule } from './modules/identity/access-management/access-management.module';
+import { WalletModule } from './modules/wallets/wallet/wallet.module';
+import { FinanceModule } from './modules/finance/finance/finance.module';
+import { PlatformSettingsModule } from './modules/settings/platform-settings.module';
 
 @Module({
   imports: [
-    MongooseModule.forFeature([
-      { name: Countries.name, schema: CountriesSchema },
-      { name: Cities.name, schema: CitiesSchema },
-      { name: States.name, schema: StatesSchema },
-    ]),
+    PrismaModule,
     ConfigModule.forRoot({
       isGlobal: true,
       ignoreEnvFile: false,
       load: [configuration],
-      envFilePath: `${process.cwd()}/${process.env.NODE_ENV}.env`,
+      envFilePath: [
+        `${process.cwd()}/${process.env.NODE_ENV}.env`,
+        `${process.cwd()}/.env`,
+      ],
     }),
-    DatabaseModule,
+    ScheduleModule.forRoot(),
     CacheModule.register({ isGlobal: true }),
-    HttpModule.register({
-      timeout: 5000,
-      maxRedirects: 5,
-    }),
-
+    HttpModule.register({ timeout: 5000, maxRedirects: 5 }),
     UsersModule,
     AuthModule,
     EventModule,
+    EventTicketsModule,
     CategoriesModule,
-    ServicesModule,
-    PaymentModule,
-    VendorModule,
-    UserManagementModule,
-    BookingsModule,
-    CommonApiModule,
-    SocketModule,
-    NotificationModule,
+    LocationModule,
     OnesignalModule,
     EmailModule,
-    ChatModule,
+    NotificationModule,
+    AccessManagementModule,
+    WalletModule,
+    FinanceModule,
+    PlatformSettingsModule,
   ],
   providers: [
     AppService,
-    SocketGateway,
-    SocketEventHandler,
     {
       provide: APP_INTERCEPTOR,
       useClass: HttpLogInterceptor,
@@ -84,7 +66,7 @@ import { NotificationModule } from '@src/notification/notification.module';
     },
     {
       provide: APP_GUARD,
-      useClass: RolesGuard,
+      useClass: PermissionsGuard,
     },
   ],
 })

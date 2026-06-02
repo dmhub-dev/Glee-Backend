@@ -1,0 +1,535 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  OPERATIONS_MANAGER
+  COMMERCIAL_MANAGER
+  FINANCE
+  VENDOR
+  VENDOR_STAFF
+  CUSTOMER_SUPPORT
+  CONTENT_MANAGER
+  USER
+}
+
+enum AccountStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum EntityStatus {
+  ACTIVE
+  DONE
+  SUSPENDED
+  INACTIVE
+}
+
+enum EventStatus {
+  DRAFT
+  PENDING_APPROVAL
+  ACTIVE
+  POSTPONED
+  CANCELLED
+  REJECTED
+  SOLD_OUT
+}
+
+enum TicketWaveStatus {
+  UPCOMING
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum NotificationType {
+  CHAT
+  EVENT_TICKET
+  BOOKING
+  SERVICE
+}
+
+// ─── RBAC ─────────────────────────────────────────────────────────────────────
+
+model Role {
+  id          String           @id @default(cuid())
+  name        UserRole         @unique
+  description String?
+  permissions RolePermission[]
+  users       User[]
+  invitations UserInvitation[]
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String           @id @default(cuid())
+  name        String           @unique
+  module      String
+  action      String
+  description String?
+  roles       RolePermission[]
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+// ─── Core ─────────────────────────────────────────────────────────────────────
+
+model User {
+  id                  String        @id @default(cuid())
+  name                String
+  email               String        @unique
+  phone               String?
+  password            String
+  roleId              String?
+  role                Role?         @relation(fields: [roleId], references: [id])
+  isActive            AccountStatus @default(ACTIVE)
+  profileImage        String?
+  token               String?
+  refreshToken        String?
+  twoFactorEnabled    Boolean       @default(false)
+  twoFactorCode       Int?
+  twoFactorExpiresAt  DateTime?
+  twoFactorVerifiedAt DateTime?
+  invitedById         String?
+  invitedAt           DateTime?
+  lastLoginAt         DateTime?
+  vendorAccountId     String?
+  otp                 Int?
+  address             String?
+  profileStatus       Boolean       @default(true)
+  notificationStatus  Boolean       @default(true)
+  haveNewNotification Boolean       @default(false)
+  isAllChatRead       Boolean       @default(true)
+  notificationIds     String[]
+  isDeleted           Boolean       @default(false)
+  deletedAt           DateTime?
+  playerId            String?
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+  invitedBy           User?         @relation("UserInvites", fields: [invitedById], references: [id], onDelete: SetNull)
+  invitedUsers        User[]        @relation("UserInvites")
+  vendorAccount       User?         @relation("VendorStaff", fields: [vendorAccountId], references: [id], onDelete: SetNull)
+  vendorStaff         User[]        @relation("VendorStaff")
+
+  chatsSent        Chat[]           @relation("ChatSender")
+  chatsReceived    Chat[]           @relation("ChatReceiver")
+  blocksGiven      UserBlock[]      @relation("Blocker")
+  blocksReceived   UserBlock[]      @relation("Blocked")
+  eventTickets     EventTicket[]
+  checkedInTickets EventTicket[]    @relation("TicketCheckedInBy")
+  ticketCheckIns   TicketCheckIn[]  @relation("TicketUnitCheckedInBy")
+  wallet           Wallet?
+  notifications    Notification[]
+  auditLogs        AuditLog[]       @relation("AuditActor")
+  invitationsSent  UserInvitation[] @relation("InvitationInviter")
+  invitation       UserInvitation?
+  vendorEvents     Event[]          @relation("EventVendor")
+  vendorLocations  Location[]       @relation("LocationVendor")
+
+  @@index([email])
+  @@index([isDeleted])
+  @@index([invitedById])
+  @@index([vendorAccountId])
+}
+
+model UserInvitation {
+  id          String    @id @default(cuid())
+  email       String
+  name        String
+  phone       String?
+  token       String    @unique
+  status      String    @default("PENDING")
+  expiresAt   DateTime
+  acceptedAt  DateTime?
+  roleId      String
+  role        Role      @relation(fields: [roleId], references: [id])
+  invitedById String?
+  invitedBy   User?     @relation("InvitationInviter", fields: [invitedById], references: [id], onDelete: SetNull)
+  userId      String?   @unique
+  user        User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([email])
+  @@index([status])
+  @@index([roleId])
+  @@index([invitedById])
+  @@map("user_invitations")
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String?
+  actor     User?    @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+  action    String
+  entity    String
+  entityId  String?
+  metadata  Json?
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([actorId])
+  @@index([entity])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// ─── Events ───────────────────────────────────────────────────────────────────
+
+model Event {
+  id               String           @id @default(cuid())
+  name             String
+  description      String?
+  capacity         Int              @default(0)
+  photos           String[]
+  startDate        DateTime?
+  endDate          DateTime?
+  status           EventStatus      @default(DRAFT)
+  isDeleted        Boolean          @default(false)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  locationId       String?
+  categoryId       String?
+  vendorId         String?
+  location         Location?        @relation(fields: [locationId], references: [id])
+  category         Category?        @relation(fields: [categoryId], references: [id])
+  vendor           User?            @relation("EventVendor", fields: [vendorId], references: [id], onDelete: SetNull)
+  ticketWaves      TicketWave[]
+  ticketCategories TicketCategory[]
+  eventTickets     EventTicket[]
+  menuItems        EventMenuItem[]
+  schedules        EventSchedule[]
+
+  @@index([isDeleted])
+  @@index([vendorId])
+}
+
+model TicketWave {
+  id               String             @id @default(cuid())
+  eventId          String
+  event            Event              @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  name             String
+  description      String?
+  sequence         Int                @default(1)
+  startsAt         DateTime
+  endsAt           DateTime
+  status           TicketWaveStatus   @default(UPCOMING)
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  ticketCategories TicketCategory[]
+
+  @@index([eventId, sequence])
+  @@index([eventId, status])
+  @@index([startsAt, endsAt])
+  @@map("ticket_waves")
+}
+
+model EventSchedule {
+  id          String   @id @default(cuid())
+  eventId     String
+  event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  startDate   DateTime
+  endDate     DateTime
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([eventId])
+  @@index([startDate])
+  @@map("event_schedules")
+}
+
+model EventMenuItem {
+  id          String   @id @default(cuid())
+  eventId     String
+  event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  name        String
+  category    String   @default("other")
+  price       Decimal  @db.Decimal(10, 2)
+  description String?
+  createdAt   DateTime @default(now())
+
+  @@map("event_menu_items")
+}
+
+model TicketCategory {
+  id           String        @id @default(cuid())
+  eventId      String
+  event        Event         @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  waveId       String?
+  wave         TicketWave?   @relation(fields: [waveId], references: [id], onDelete: Cascade)
+  name         String
+  price        Decimal       @db.Decimal(10, 2)
+  capacity     Int?
+  available    Int?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  eventTickets EventTicket[]
+
+  @@index([waveId])
+  @@map("ticket_categories")
+}
+
+// ─── Categories ───────────────────────────────────────────────────────────────
+
+model Category {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  events    Event[]
+}
+
+// ─── Locations ────────────────────────────────────────────────────────────────
+
+model Location {
+  id                 String       @id @default(cuid())
+  name               String
+  address            String
+  description        String?
+  capacity           Int
+  isIndoors          Boolean      @default(false)
+  isOutdoors         Boolean      @default(false)
+  latitude           Float
+  longitude          Float
+  floorPlanImageUrl  String?
+  pictures           String[]
+  isParkingAvailable Boolean      @default(false)
+  status             EntityStatus @default(ACTIVE)
+  vendorId           String?
+  vendor             User?        @relation("LocationVendor", fields: [vendorId], references: [id], onDelete: SetNull)
+  events             Event[]
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  @@index([vendorId])
+  @@map("locations")
+}
+
+// ─── Tickets & Payments ───────────────────────────────────────────────────────
+
+model Payment {
+  id                String       @id @default(cuid())
+  userId            String
+  paystackReference String       @unique
+  paymentStatus     String
+  paymentMethod     String
+  totalPrice        Decimal      @db.Decimal(10, 2)
+  perItemPrice      Decimal      @db.Decimal(10, 2)
+  noOfItems         Int          @default(1)
+  isPaid            Boolean      @default(false)
+  isAvailable       Boolean      @default(true)
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  eventTicket       EventTicket?
+
+  @@map("payments")
+}
+
+model EventTicket {
+  id                String          @id @default(cuid())
+  eventId           String
+  userId            String
+  paymentId         String          @unique
+  ticketCategoryId  String?
+  checkedInById     String?
+  quantity          Int             @default(1)
+  totalPrice        Decimal         @db.Decimal(10, 2)
+  amountPaid        Decimal         @default(0) @db.Decimal(10, 2)
+  outstandingAmount Decimal         @default(0) @db.Decimal(10, 2)
+  paymentDueDate    DateTime?
+  paymentPlan       Json?
+  preOrderMenu      Json?
+  checkedInAt       DateTime?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  event             Event           @relation(fields: [eventId], references: [id])
+  user              User            @relation(fields: [userId], references: [id])
+  payment           Payment         @relation(fields: [paymentId], references: [id])
+  ticketCategory    TicketCategory? @relation(fields: [ticketCategoryId], references: [id])
+  checkedInBy       User?           @relation("TicketCheckedInBy", fields: [checkedInById], references: [id], onDelete: SetNull)
+  ticketCheckIns    TicketCheckIn[]
+  notifications     Notification[]
+
+  @@index([checkedInById])
+  @@index([checkedInAt])
+  @@map("event_tickets")
+}
+
+model TicketCheckIn {
+  id            String      @id @default(cuid())
+  eventTicketId String
+  ticketRef     String      @unique
+  ticketNumber  Int
+  checkedInById String?
+  checkedInAt   DateTime    @default(now())
+  eventTicket   EventTicket @relation(fields: [eventTicketId], references: [id], onDelete: Cascade)
+  checkedInBy   User?       @relation("TicketUnitCheckedInBy", fields: [checkedInById], references: [id], onDelete: SetNull)
+
+  @@index([eventTicketId])
+  @@index([checkedInById])
+  @@index([checkedInAt])
+  @@map("ticket_check_ins")
+}
+
+model Wallet {
+  id           String              @id @default(cuid())
+  userId       String              @unique
+  user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  balance      Decimal             @default(0) @db.Decimal(10, 2)
+  currency     String              @default("KES")
+  isActive     Boolean             @default(true)
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+  transactions WalletTransaction[]
+
+  @@map("wallets")
+}
+
+model WalletTransaction {
+  id           String   @id @default(cuid())
+  walletId     String
+  wallet       Wallet   @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  paymentId    String?
+  type         String
+  amount       Decimal  @db.Decimal(10, 2)
+  balanceAfter Decimal  @db.Decimal(10, 2)
+  description  String?
+  reference    String?  @unique
+  metadata     Json?
+  createdAt    DateTime @default(now())
+
+  @@index([walletId])
+  @@index([type])
+  @@index([createdAt])
+  @@map("wallet_transactions")
+}
+
+model PlatformSetting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("platform_settings")
+}
+
+// ─── Chat ─────────────────────────────────────────────────────────────────────
+
+model Chat {
+  id         String   @id @default(cuid())
+  senderId   String
+  receiverId String
+  message    String
+  isRead     Boolean  @default(false)
+  sender     User     @relation("ChatSender", fields: [senderId], references: [id])
+  receiver   User     @relation("ChatReceiver", fields: [receiverId], references: [id])
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("chats")
+}
+
+model UserBlock {
+  blockerId String
+  blockedId String
+  blocker   User     @relation("Blocker", fields: [blockerId], references: [id])
+  blocked   User     @relation("Blocked", fields: [blockedId], references: [id])
+  createdAt DateTime @default(now())
+
+  @@id([blockerId, blockedId])
+  @@map("user_blocks")
+}
+
+// ─── Services ─────────────────────────────────────────────────────────────────
+
+model Service {
+  id                String             @id @default(cuid())
+  name              String
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  purchasedServices PurchasedService[]
+
+  @@map("services")
+}
+
+model PurchasedService {
+  id            String         @id @default(cuid())
+  serviceId     String
+  service       Service        @relation(fields: [serviceId], references: [id])
+  notifications Notification[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@map("purchased_services")
+}
+
+// ─── Bookings ─────────────────────────────────────────────────────────────────
+
+model Booking {
+  id                String             @id @default(cuid())
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  purchasedBookings PurchasedBooking[]
+
+  @@map("bookings")
+}
+
+model PurchasedBooking {
+  id            String         @id @default(cuid())
+  bookingId     String
+  booking       Booking        @relation(fields: [bookingId], references: [id])
+  notifications Notification[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@map("purchased_bookings")
+}
+
+// ─── Notifications ────────────────────────────────────────────────────────────
+
+model Notification {
+  id                 String            @id @default(cuid())
+  userId             String?
+  type               NotificationType
+  isRead             Boolean           @default(false)
+  eventTicketId      String?
+  purchasedServiceId String?
+  purchasedBookingId String?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+  user               User?             @relation(fields: [userId], references: [id])
+  eventTicket        EventTicket?      @relation(fields: [eventTicketId], references: [id])
+  purchasedService   PurchasedService? @relation(fields: [purchasedServiceId], references: [id])
+  purchasedBooking   PurchasedBooking? @relation(fields: [purchasedBookingId], references: [id])
+
+  @@map("notifications")
+}
