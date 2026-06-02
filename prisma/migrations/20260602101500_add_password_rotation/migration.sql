@@ -1,0 +1,3 @@
+ALTER TABLE "User"
+ADD COLUMN "passwordChangedAt" TIMESTAMP(3),
+ADD COLUMN "passwordRotationDays" INTEGER NOT NULL DEFAULT 30;

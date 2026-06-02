@@ -104,6 +104,8 @@ model User {
   email               String        @unique
   phone               String?
   password            String
+  passwordChangedAt   DateTime?
+  passwordRotationDays Int           @default(30)
   roleId              String?
   role                Role?         @relation(fields: [roleId], references: [id])
   isActive            AccountStatus @default(ACTIVE)

@@ -17,6 +17,7 @@ import {
     ForgotPassword,
     PasswordReset,
     RegisterUserDto,
+    UpdatePasswordRotationPreferenceDto,
     UpdateTwoFactorPreferenceDto,
     VerifyLoginTwoFactorDto,
     VerifyOtpDto,
@@ -103,6 +104,15 @@ export class AuthController {
         @Body() payload: { currentPassword: string; newPassword: string },
     ): Promise<any> {
         return this.authService.changeMyPassword(user, payload);
+    }
+
+    @Patch('me/password-rotation')
+    @ApiResponses(true)
+    public async updatePasswordRotationPreference(
+        @CurrentUser() user: any,
+        @Body() payload: UpdatePasswordRotationPreferenceDto,
+    ): Promise<any> {
+        return this.authService.updatePasswordRotationPreference(user, payload);
     }
 
     @Post('refresh')

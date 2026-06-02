@@ -217,7 +217,7 @@ export class UsersService {
         const password = await bcrypt.hash(data.password, 10);
         return this.prisma.user.update({
             where: { id: user.id },
-            data: { password, otp: null },
+            data: { password, otp: null, passwordChangedAt: new Date() },
             select: USER_PUBLIC_FIELDS,
         });
     }

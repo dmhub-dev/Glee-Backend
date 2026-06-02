@@ -10,6 +10,7 @@ import {
     IsPhoneNumber,
     IsMongoId,
     IsBoolean,
+    IsIn,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
@@ -211,6 +212,14 @@ export class UpdateTwoFactorPreferenceDto {
     @IsNotEmpty()
     @IsBoolean()
     enabled: boolean;
+}
+
+export class UpdatePasswordRotationPreferenceDto {
+    @ApiProperty({ enum: [7, 14, 30, 45, 60] })
+    @IsNotEmpty()
+    @IsNumber()
+    @IsIn([7, 14, 30, 45, 60])
+    days: number;
 }
 
 export class ForgotPassword {
