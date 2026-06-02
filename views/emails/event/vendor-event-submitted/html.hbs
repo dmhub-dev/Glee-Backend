@@ -1,19 +1,108 @@
 <html lang='en'>
-  <head><meta charset='utf-8' /><title>Vendor event pending approval</title></head>
-  <body style='font-family: Arial, sans-serif; color:#111827; margin:0; padding:24px; background:#f8fafc;'>
-    <table width='100%' cellspacing='0' cellpadding='0' style='max-width:560px;margin:0 auto;background:#ffffff;border:1px solid #e5e7eb;'>
-      <tr><td style='padding:24px;'>
-        {{#if logoUrl}}<img src='{{logoUrl}}' alt='Glee' style='height:40px;margin-bottom:24px;' />{{/if}}
-        <h1 style='font-size:22px;line-height:1.3;margin:0 0 16px;'>Vendor event needs approval</h1>
-        <p style='font-size:15px;line-height:1.6;margin:0 0 16px;'><strong>{{vendorName}}</strong> has submitted <strong>{{eventName}}</strong> for review.</p>
-        <p style='font-size:14px;line-height:1.6;margin:0 0 20px;color:#4b5563;'>
-          Vendor: {{vendorEmail}}<br />
-          Date: {{eventDate}}<br />
-          Location: {{eventLocation}}
-        </p>
-        <p style='margin:0 0 24px;'><a href='{{reviewUrl}}' style='display:inline-block;background:#111827;color:#ffffff;text-decoration:none;padding:12px 18px;font-size:14px;'>Review event</a></p>
-        <p style='font-size:12px;line-height:1.6;color:#9ca3af;margin:0;'>Glee Admin Notification · {{year}}</p>
-      </td></tr>
-    </table>
-  </body>
+    <head>
+        <meta charset='utf-8' />
+        <meta name='viewport' content='width=device-width, initial-scale=1' />
+        <title>Vendor event pending approval</title>
+    </head>
+    <body
+        style='margin: 0; padding: 0; background: #f5f7fb; color: #111827; font-family: Arial, Helvetica, sans-serif;'
+    >
+        <table role='presentation' width='100%' cellspacing='0' cellpadding='0'>
+            <tr>
+                <td style='padding: 32px 16px;'>
+                    <table
+                        role='presentation'
+                        width='100%'
+                        cellspacing='0'
+                        cellpadding='0'
+                        style='max-width: 600px; margin: 0 auto; background: #ffffff; border: 1px solid #e5e7eb; border-radius: 18px; overflow: hidden; box-shadow: 0 18px 40px rgba(17, 24, 39, 0.08);'
+                    >
+                        <tr>
+                            <td style='padding: 28px 30px 10px;'>
+                                {{#if logoUrl}}
+                                    <img
+                                        src='{{logoUrl}}'
+                                        alt='Glee'
+                                        style='height: 38px; width: auto; display: block; margin: 0 0 14px;'
+                                    />
+                                {{else}}
+                                    <div
+                                        style='font-size: 21px; font-weight: 800; color: #111827;'
+                                    >Glee</div>
+                                {{/if}}
+                                <div
+                                    style='height: 4px; width: 44px; background: #7c3aed; border-radius: 999px;'
+                                ></div>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td style='padding: 12px 30px 30px;'>
+                                <p
+                                    style='margin: 0 0 10px; color: #7c3aed; font-size: 11px; font-weight: 800; letter-spacing: 1.8px; text-transform: uppercase;'
+                                >Admin review</p>
+                                <h1
+                                    style='margin: 0 0 14px; color: #111827; font-size: 26px; line-height: 1.18; font-weight: 800;'
+                                >Vendor event needs approval</h1>
+                                <p
+                                    style='margin: 0 0 20px; color: #4b5563; font-size: 15px; line-height: 1.6;'
+                                ><strong style='color: #111827;'>{{vendorName}}</strong>
+                                    submitted
+                                    <strong style='color: #111827;'>{{eventName}}</strong>
+                                    for review.</p>
+                                <table
+                                    role='presentation'
+                                    width='100%'
+                                    cellspacing='0'
+                                    cellpadding='0'
+                                    style='margin: 0 0 22px; background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 14px;'
+                                >
+                                    <tr>
+                                        <td style='padding: 16px;'>
+                                            <p
+                                                style='margin: 0 0 8px; color: #6b7280; font-size: 13px; line-height: 1.5;'
+                                            ><strong
+                                                    style='color: #111827;'
+                                                >Vendor:</strong>
+                                                {{vendorEmail}}</p>
+                                            <p
+                                                style='margin: 0 0 8px; color: #6b7280; font-size: 13px; line-height: 1.5;'
+                                            ><strong
+                                                    style='color: #111827;'
+                                                >Date:</strong>
+                                                {{eventDate}}</p>
+                                            <p
+                                                style='margin: 0; color: #6b7280; font-size: 13px; line-height: 1.5;'
+                                            ><strong
+                                                    style='color: #111827;'
+                                                >Location:</strong>
+                                                {{eventLocation}}</p>
+                                        </td>
+                                    </tr>
+                                </table>
+                                <p style='margin: 0;'>
+                                    <a
+                                        href='{{reviewUrl}}'
+                                        style='display: inline-block; background: #111827; color: #ffffff; text-decoration: none; padding: 13px 18px; border-radius: 10px; font-size: 14px; font-weight: 700;'
+                                    >Review event</a>
+                                </p>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td
+                                style='padding: 18px 30px 24px; border-top: 1px solid #eef2f7; color: #9ca3af; font-size: 12px; line-height: 1.7;'
+                            >
+                                Glee Admin Notification ·
+                                {{year}}<br />
+                                Need help?
+                                <a
+                                    href='mailto:support@dmhub.cloud'
+                                    style='color: #7c3aed; font-weight: 700; text-decoration: none;'
+                                >support@dmhub.cloud</a>
+                            </td>
+                        </tr>
+                    </table>
+                </td>
+            </tr>
+        </table>
+    </body>
 </html>
