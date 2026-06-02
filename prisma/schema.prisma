@@ -51,6 +51,13 @@ enum TicketWaveStatus {
   CANCELLED
 }
 
+enum TicketStatus {
+  ACTIVE
+  USED
+  EXPIRED
+  CANCELLED
+}
+
 enum NotificationType {
   CHAT
   EVENT_TICKET
@@ -351,7 +358,7 @@ model Payment {
   isAvailable       Boolean      @default(true)
   createdAt         DateTime     @default(now())
   updatedAt         DateTime     @updatedAt
-  eventTicket       EventTicket?
+  eventTickets      EventTicket[]
 
   @@map("payments")
 }
@@ -360,9 +367,13 @@ model EventTicket {
   id                String          @id @default(cuid())
   eventId           String
   userId            String
-  paymentId         String          @unique
+  paymentId         String
   ticketCategoryId  String?
   checkedInById     String?
+  purchaseGroupId   String
+  ticketRef         String          @unique
+  ticketNumber      Int             @default(1)
+  status            TicketStatus    @default(ACTIVE)
   quantity          Int             @default(1)
   totalPrice        Decimal         @db.Decimal(10, 2)
   amountPaid        Decimal         @default(0) @db.Decimal(10, 2)
@@ -370,6 +381,9 @@ model EventTicket {
   paymentDueDate    DateTime?
   paymentPlan       Json?
   preOrderMenu      Json?
+  guestName         String?
+  guestEmail        String?
+  guestPhone        String?
   checkedInAt       DateTime?
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
@@ -383,6 +397,8 @@ model EventTicket {
 
   @@index([checkedInById])
   @@index([checkedInAt])
+  @@index([purchaseGroupId])
+  @@index([status])
   @@map("event_tickets")
 }
 

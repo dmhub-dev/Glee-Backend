@@ -226,6 +226,10 @@ describe('EventTicketsService.createPurchasedEventTicket - tier decrement', () =
                                     id: 'ticket-1',
                                     eventId: 'event-1',
                                     userId: 'user-1',
+                                    purchaseGroupId: 'group-1',
+                                    ticketRef: 'group-1-1',
+                                    ticketNumber: 1,
+                                    quantity: 1,
                                 }),
                             aggregate: jest
                                 .fn()
@@ -305,6 +309,28 @@ describe('EventTicketsService.createPurchasedEventTicket - tier decrement', () =
         });
     });
 
+    it('creates one EventTicket row per purchased QR code', async () => {
+        await service.createPurchasedEventTicket(
+            {
+                userId: 'user-1',
+                eventId: 'event-1',
+                ticketCategoryId: 'cat-1',
+                noOfTickets: 5,
+                purchasingType: 'EVENT_TICKET',
+            },
+            'paystack-ref-units',
+        );
+
+        expect(prisma.eventTicket.create).toHaveBeenCalledTimes(5);
+        const createdRows = prisma.eventTicket.create.mock.calls.map(
+            ([call]) => call.data,
+        );
+        expect(new Set(createdRows.map((row) => row.purchaseGroupId)).size).toBe(1);
+        expect(createdRows.map((row) => row.ticketNumber)).toEqual([1, 2, 3, 4, 5]);
+        expect(new Set(createdRows.map((row) => row.ticketRef)).size).toBe(5);
+        expect(createdRows.every((row) => row.quantity === 1)).toBe(true);
+    });
+
     it('does not call ticketCategory.update when no ticketCategoryId', async () => {
         await service.createPurchasedEventTicket(
             {
@@ -374,6 +400,10 @@ describe('EventTicketsService.create - wallet payment', () => {
                                     id: 'ticket-wallet-1',
                                     eventId: 'event-1',
                                     userId: 'user-1',
+                                    purchaseGroupId: 'wallet-group-1',
+                                    ticketRef: 'wallet-group-1-1',
+                                    ticketNumber: 1,
+                                    quantity: 1,
                                 }),
                             aggregate: jest
                                 .fn()
@@ -466,6 +496,85 @@ describe('EventTicketsService.create - wallet payment', () => {
                 data: expect.objectContaining({
                     paymentMethod: 'WALLET',
                     totalPrice: expect.anything(),
+                }),
+            }),
+        );
+    });
+});
+
+describe('EventTicketsService.checkInTicketByQr - ticket units', () => {
+    let service: EventTicketsService;
+    let prisma: any;
+
+    beforeEach(async () => {
+        const ticket = {
+            id: 'ticket-unit-1',
+            eventId: 'event-1',
+            userId: 'user-1',
+            ticketRef: 'unit-ref-1',
+            ticketNumber: 1,
+            quantity: 1,
+            status: 'ACTIVE',
+            checkedInAt: null,
+            event: { id: 'event-1', vendorId: 'vendor-1' },
+        };
+        const module: TestingModule = await Test.createTestingModule({
+            providers: [
+                EventTicketsService,
+                {
+                    provide: PrismaService,
+                    useValue: {
+                        eventTicket: {
+                            findFirst: jest.fn().mockResolvedValue(ticket),
+                            update: jest.fn().mockResolvedValue({
+                                ...ticket,
+                                status: 'USED',
+                                checkedInAt: new Date('2026-06-02T10:00:00Z'),
+                            }),
+                        },
+                        auditLog: { create: jest.fn() },
+                    },
+                },
+                {
+                    provide: EventSharedService,
+                    useValue: { helperEventFindById: jest.fn() },
+                },
+                { provide: UsersService, useValue: { findOne: jest.fn() } },
+                { provide: EmailService, useValue: { sendMail: jest.fn() } },
+                {
+                    provide: NotificationService,
+                    useValue: { addNotification: jest.fn() },
+                },
+                {
+                    provide: PayStackService,
+                    useValue: { createPaymentIntent: jest.fn() },
+                },
+                { provide: WalletService, useValue: { debit: jest.fn() } },
+                mockPlatformSettingsProvider,
+            ],
+        }).compile();
+
+        service = module.get<EventTicketsService>(EventTicketsService);
+        prisma = module.get(PrismaService);
+    });
+
+    it('checks in exactly one ticket unit by ticketRef', async () => {
+        await service.checkInTicketByQr(
+            { eventId: 'event-1', ticketRef: 'unit-ref-1' },
+            { id: 'vendor-1', role: 'VENDOR' },
+        );
+
+        expect(prisma.eventTicket.findFirst).toHaveBeenCalledWith(
+            expect.objectContaining({
+                where: { ticketRef: 'unit-ref-1' },
+            }),
+        );
+        expect(prisma.eventTicket.update).toHaveBeenCalledWith(
+            expect.objectContaining({
+                where: { id: 'ticket-unit-1' },
+                data: expect.objectContaining({
+                    status: 'USED',
+                    checkedInById: 'vendor-1',
                 }),
             }),
         );

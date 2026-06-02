@@ -1,5 +1,5 @@
 import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
-import { NotificationType, TicketWaveStatus, UserRole } from '@prisma/client';
+import { NotificationType, TicketStatus, TicketWaveStatus, UserRole } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { EmailService } from '@src/infrastructure/email/email.service';
 import { loggers } from '@src/common/interceptors/logger.enums';
@@ -543,23 +543,61 @@ export class EventTicketsService {
             },
         });
 
-        const eventTicket = await this.prisma.eventTicket.create({
-            data: {
-                eventId: metadata.eventId,
-                userId: metadata.userId,
-                paymentId: payment.id,
-                ticketCategoryId: metadata.ticketCategoryId,
-                quantity: noOfTickets,
-                totalPrice: new Decimal(totalPrice),
-                amountPaid: new Decimal(amountPaid),
-                outstandingAmount: new Decimal(outstandingAmount),
-                paymentDueDate: metadata.paymentDueDate
-                    ? new Date(metadata.paymentDueDate)
-                    : null,
-                paymentPlan: metadata.paymentPlan,
-                preOrderMenu: metadata.preOrderMenu,
-            },
-        });
+        const purchaseGroupId = metadata.purchaseGroupId ?? randomUUID();
+        const unitTotalPrice = this.roundMoney(totalPrice / noOfTickets);
+        const unitAmountPaid = this.roundMoney(amountPaid / noOfTickets);
+        const unitOutstandingAmount = this.roundMoney(
+            outstandingAmount / noOfTickets,
+        );
+        const ticketStatus =
+            metadata.checkInNow || metadata.status === TicketStatus.USED
+                ? TicketStatus.USED
+                : TicketStatus.ACTIVE;
+        const checkedInAt =
+            metadata.checkInNow || metadata.checkedInAt
+                ? new Date(metadata.checkedInAt ?? Date.now())
+                : null;
+        const checkedInById =
+            metadata.checkInNow || metadata.checkedInById
+                ? metadata.checkedInById ?? metadata.issuedBy ?? null
+                : null;
+        const eventTickets = [];
+
+        for (let index = 0; index < noOfTickets; index += 1) {
+            const ticketNumber = index + 1;
+            const eventTicket = await this.prisma.eventTicket.create({
+                data: {
+                    eventId: metadata.eventId,
+                    userId: metadata.userId,
+                    paymentId: payment.id,
+                    ticketCategoryId: metadata.ticketCategoryId,
+                    purchaseGroupId,
+                    ticketRef:
+                        metadata.ticketRefs?.[index] ??
+                        `${purchaseGroupId}-${ticketNumber}`,
+                    ticketNumber,
+                    status: ticketStatus,
+                    quantity: 1,
+                    totalPrice: new Decimal(unitTotalPrice),
+                    amountPaid: new Decimal(unitAmountPaid),
+                    outstandingAmount: new Decimal(unitOutstandingAmount),
+                    paymentDueDate: metadata.paymentDueDate
+                        ? new Date(metadata.paymentDueDate)
+                        : null,
+                    paymentPlan: metadata.paymentPlan,
+                    preOrderMenu: metadata.preOrderMenu,
+                    guestName: metadata.guestName ?? metadata.customerName ?? null,
+                    guestEmail:
+                        metadata.guestEmail ?? metadata.customerEmail ?? null,
+                    guestPhone:
+                        metadata.guestPhone ?? metadata.customerPhone ?? null,
+                    checkedInAt,
+                    checkedInById,
+                } as any,
+            });
+            eventTickets.push(eventTicket);
+        }
+        const eventTicket = eventTickets[0];
 
         if (metadata.ticketCategoryId) {
             await this.prisma.ticketCategory.update({
@@ -611,10 +649,10 @@ export class EventTicketsService {
                 null;
 
             const pdfAttachments = await Promise.all(
-                Array.from({ length: noOfTickets }, (_, i) =>
+                eventTickets.map((ticket, i) =>
                     generateTicketPdf({
-                        ticketRef: `${eventTicket.id}-${i + 1}`,
-                        ticketNumber: i + 1,
+                        ticketRef: ticket.ticketRef,
+                        ticketNumber: ticket.ticketNumber,
                         totalTickets: noOfTickets,
                         eventName: event.name,
                         eventDate,
@@ -623,7 +661,7 @@ export class EventTicketsService {
                         attendeeName,
                         attendeeEmail: attendeeEmail ?? '',
                         purchasedOn,
-                        orderId: eventTicket.id,
+                        orderId: purchaseGroupId,
                         price: price.toLocaleString(),
                         currency: 'KES',
                     }).then((buf) => ({
@@ -645,7 +683,7 @@ export class EventTicketsService {
                     purchasedOn,
                     userEmail: attendeeEmail,
                     userName: attendeeName,
-                    ticketId: eventTicket.id,
+                    ticketId: purchaseGroupId,
                     productTitle: event.name,
                     eventDate,
                     eventTime,
@@ -760,10 +798,15 @@ export class EventTicketsService {
         if (tickets.length === 0)
             return { success: false, message: 'No tickets sold yet', data: [] };
 
+        const data = tickets.map((ticket) => ({
+            ...ticket,
+            status: this.resolveTicketStatus(ticket),
+        }));
+
         return {
             success: true,
             message: 'Tickets fetched successfully',
-            data: tickets,
+            data,
             totalPages: Math.ceil(ticketsCount / limit),
             page,
             limit,
@@ -799,7 +842,11 @@ export class EventTicketsService {
         return {
             success: true,
             message: 'Ticket fetched successfully',
-            data: { ...ticket, supportNotes },
+            data: {
+                ...ticket,
+                status: this.resolveTicketStatus(ticket),
+                supportNotes,
+            },
         };
     }
 
@@ -923,34 +970,45 @@ export class EventTicketsService {
             },
         });
 
-        const ticket = await this.prisma.eventTicket.create({
-            data: {
-                eventId: event.id,
-                userId: recipient.id,
-                paymentId: payment.id,
-                ticketCategoryId: category.id,
-                quantity,
-                totalPrice: new Decimal(0),
-                amountPaid: new Decimal(0),
-                outstandingAmount: new Decimal(0),
-                paymentPlan: {
-                    type: 'COMPLIMENTARY',
-                    issuedBy: currentUser.id,
-                    note: dto.note ?? null,
+        const purchaseGroupId = randomUUID();
+        const issuedTickets = [];
+        for (let index = 0; index < quantity; index += 1) {
+            const ticketNumber = index + 1;
+            const ticket = await this.prisma.eventTicket.create({
+                data: {
+                    eventId: event.id,
+                    userId: recipient.id,
+                    paymentId: payment.id,
+                    ticketCategoryId: category.id,
+                    purchaseGroupId,
+                    ticketRef: `${purchaseGroupId}-${ticketNumber}`,
+                    ticketNumber,
+                    status: dto.checkInNow ? TicketStatus.USED : TicketStatus.ACTIVE,
+                    quantity: 1,
+                    totalPrice: new Decimal(0),
+                    amountPaid: new Decimal(0),
+                    outstandingAmount: new Decimal(0),
+                    paymentPlan: {
+                        type: 'COMPLIMENTARY',
+                        issuedBy: currentUser.id,
+                        note: dto.note ?? null,
+                    },
+                    checkedInAt: dto.checkInNow ? new Date() : null,
+                    checkedInById: dto.checkInNow ? currentUser.id : null,
+                } as any,
+                include: {
+                    event: true,
+                    payment: true,
+                    user: {
+                        select: { id: true, name: true, email: true, phone: true },
+                    },
+                    ticketCategory: true,
+                    checkedInBy: { select: { id: true, name: true, email: true } },
                 },
-                checkedInAt: dto.checkInNow ? new Date() : null,
-                checkedInById: dto.checkInNow ? currentUser.id : null,
-            },
-            include: {
-                event: true,
-                payment: true,
-                user: {
-                    select: { id: true, name: true, email: true, phone: true },
-                },
-                ticketCategory: true,
-                checkedInBy: { select: { id: true, name: true, email: true } },
-            },
-        });
+            });
+            issuedTickets.push(ticket);
+        }
+        const ticket = issuedTickets[0];
 
         await this.prisma.ticketCategory.update({
             where: { id: category.id },
@@ -999,7 +1057,7 @@ export class EventTicketsService {
             );
         }
         const ticket = await this.findScopedTicketOrThrow(id, currentUser);
-        if (ticket.checkedInAt) {
+        if (ticket.status === TicketStatus.USED || ticket.checkedInAt) {
             return {
                 success: true,
                 message: 'Ticket is already checked in',
@@ -1011,6 +1069,7 @@ export class EventTicketsService {
         const updated = await this.prisma.eventTicket.update({
             where: { id },
             data: {
+                status: TicketStatus.USED,
                 checkedInAt,
                 checkedInById: currentUser.id,
             },
@@ -1048,10 +1107,11 @@ export class EventTicketsService {
 
     async checkInTicketByQr(dto: CheckInTicketQrDto, currentUser: any) {
         this.assertVendorCheckInRole(currentUser);
-        const { ticketId, ticketNumber, ticketRef } = this.parseTicketRef(
-            dto.ticketRef,
+        const ticketRef = String(dto.ticketRef ?? '').trim();
+        const ticket = await this.findScopedTicketByRefOrThrow(
+            ticketRef,
+            currentUser,
         );
-        const ticket = await this.findScopedTicketOrThrow(ticketId, currentUser);
 
         if (ticket.eventId !== dto.eventId) {
             throw new HttpException(
@@ -1060,116 +1120,48 @@ export class EventTicketsService {
             );
         }
 
-        if (ticketNumber < 1 || ticketNumber > ticket.quantity) {
+        if (this.resolveTicketStatus(ticket) === TicketStatus.EXPIRED) {
             throw new HttpException(
-                'This QR code ticket number is invalid',
+                {
+                    message: 'This ticket QR code has expired',
+                },
                 HttpStatus.BAD_REQUEST,
             );
         }
-
-        const existingCheckIn = await this.prisma.ticketCheckIn.findUnique({
-            where: { ticketRef },
-            include: {
-                checkedInBy: { select: { id: true, name: true, email: true } },
-            },
-        });
-        if (existingCheckIn) {
+        if (ticket.status === TicketStatus.CANCELLED) {
+            throw new HttpException(
+                { message: 'This ticket QR code has been cancelled' },
+                HttpStatus.BAD_REQUEST,
+            );
+        }
+        if (ticket.status === TicketStatus.USED || ticket.checkedInAt) {
             throw new HttpException(
                 {
                     message: 'This ticket QR code has already been checked in',
-                    checkedInAt: existingCheckIn.checkedInAt,
-                    checkedInBy: existingCheckIn.checkedInBy,
+                    checkedInAt: ticket.checkedInAt,
+                    checkedInBy: ticket.checkedInBy,
                 },
                 HttpStatus.CONFLICT,
             );
         }
 
         const checkedInAt = new Date();
-        const result = await this.prisma.$transaction(async (tx) => {
-            const checkIn = await tx.ticketCheckIn.create({
-                data: {
-                    eventTicketId: ticket.id,
-                    ticketRef,
-                    ticketNumber,
-                    checkedInById: currentUser.id,
-                    checkedInAt,
+        const updatedTicket = await this.prisma.eventTicket.update({
+            where: { id: ticket.id },
+            data: {
+                status: TicketStatus.USED,
+                checkedInAt,
+                checkedInById: currentUser.id,
+            },
+            include: {
+                event: true,
+                payment: true,
+                user: {
+                    select: { id: true, name: true, email: true, phone: true },
                 },
-                include: {
-                    checkedInBy: { select: { id: true, name: true, email: true } },
-                },
-            });
-            const checkedInCount = await tx.ticketCheckIn.count({
-                where: { eventTicketId: ticket.id },
-            });
-            const updatedTicket =
-                checkedInCount >= ticket.quantity && !ticket.checkedInAt
-                    ? await tx.eventTicket.update({
-                          where: { id: ticket.id },
-                          data: {
-                              checkedInAt,
-                              checkedInById: currentUser.id,
-                          },
-                          include: {
-                              event: true,
-                              payment: true,
-                              user: {
-                                  select: {
-                                      id: true,
-                                      name: true,
-                                      email: true,
-                                      phone: true,
-                                  },
-                              },
-                              ticketCategory: true,
-                              checkedInBy: {
-                                  select: { id: true, name: true, email: true },
-                              },
-                              ticketCheckIns: {
-                                  include: {
-                                      checkedInBy: {
-                                          select: {
-                                              id: true,
-                                              name: true,
-                                              email: true,
-                                          },
-                                      },
-                                  },
-                                  orderBy: { ticketNumber: 'asc' },
-                              },
-                          },
-                      })
-                    : await tx.eventTicket.findUnique({
-                          where: { id: ticket.id },
-                          include: {
-                              event: true,
-                              payment: true,
-                              user: {
-                                  select: {
-                                      id: true,
-                                      name: true,
-                                      email: true,
-                                      phone: true,
-                                  },
-                              },
-                              ticketCategory: true,
-                              checkedInBy: {
-                                  select: { id: true, name: true, email: true },
-                              },
-                              ticketCheckIns: {
-                                  include: {
-                                      checkedInBy: {
-                                          select: {
-                                              id: true,
-                                              name: true,
-                                              email: true,
-                                          },
-                                      },
-                                  },
-                                  orderBy: { ticketNumber: 'asc' },
-                              },
-                          },
-                      });
-            return { checkIn, checkedInCount, updatedTicket };
+                ticketCategory: true,
+                checkedInBy: { select: { id: true, name: true, email: true } },
+            },
         });
 
         await this.prisma.auditLog.create({
@@ -1182,7 +1174,7 @@ export class EventTicketsService {
                     eventId: ticket.eventId,
                     vendorId: ticket.event.vendorId,
                     ticketRef,
-                    ticketNumber,
+                    ticketNumber: ticket.ticketNumber,
                     checkedInAt: checkedInAt.toISOString(),
                 },
             },
@@ -1192,12 +1184,9 @@ export class EventTicketsService {
             success: true,
             message: 'Ticket QR code checked in successfully',
             data: {
-                ticket: result.updatedTicket,
-                checkIn: result.checkIn,
+                ticket: updatedTicket,
                 ticketRef,
-                ticketNumber,
-                checkedInCount: result.checkedInCount,
-                remainingCount: Math.max(0, ticket.quantity - result.checkedInCount),
+                ticketNumber: ticket.ticketNumber,
             },
         };
     }
@@ -1205,7 +1194,7 @@ export class EventTicketsService {
     async revertTicketCheckIn(id: string, currentUser: any) {
         this.assertVendorCheckInRole(currentUser);
         const ticket = await this.findScopedTicketOrThrow(id, currentUser);
-        if (!ticket.checkedInAt) {
+        if (ticket.status !== TicketStatus.USED && !ticket.checkedInAt) {
             return {
                 success: true,
                 message: 'Ticket has not been checked in',
@@ -1216,6 +1205,7 @@ export class EventTicketsService {
         const updated = await this.prisma.eventTicket.update({
             where: { id },
             data: {
+                status: TicketStatus.ACTIVE,
                 checkedInAt: null,
                 checkedInById: null,
             },
@@ -1292,9 +1282,12 @@ export class EventTicketsService {
                     noOfTicketsPurchased: 0,
                     totalPrice: 0,
                 };
-            grouped[eid].tickets.push(t);
-            grouped[eid].noOfTicketsPurchased += t.payment?.noOfItems ?? 0;
-            grouped[eid].totalPrice += Number(t.payment?.totalPrice ?? 0);
+            grouped[eid].tickets.push({
+                ...t,
+                status: this.resolveTicketStatus(t),
+            });
+            grouped[eid].noOfTicketsPurchased += 1;
+            grouped[eid].totalPrice += Number(t.totalPrice ?? 0);
         });
 
         const data = Object.values(grouped).map((g) => ({
@@ -1733,6 +1726,54 @@ export class EventTicketsService {
         }
 
         return ticket;
+    }
+
+    private async findScopedTicketByRefOrThrow(
+        ticketRef: string,
+        currentUser: any,
+    ) {
+        const ticket = await this.prisma.eventTicket.findFirst({
+            where: { ticketRef },
+            include: {
+                event: true,
+                payment: true,
+                user: {
+                    select: { id: true, name: true, email: true, phone: true },
+                },
+                ticketCategory: true,
+                checkedInBy: { select: { id: true, name: true, email: true } },
+            },
+        });
+        if (!ticket)
+            throw new HttpException('Ticket not found', HttpStatus.NOT_FOUND);
+
+        if (
+            [UserRole.VENDOR, UserRole.VENDOR_STAFF].includes(currentUser?.role)
+        ) {
+            const vendorId = this.resolveVendorAccountId(currentUser);
+            if (ticket.event.vendorId !== vendorId) {
+                throw new HttpException(
+                    'You do not have access to this ticket',
+                    HttpStatus.FORBIDDEN,
+                );
+            }
+        }
+
+        return ticket;
+    }
+
+    private resolveTicketStatus(ticket: any): TicketStatus {
+        if (ticket.status === TicketStatus.USED || ticket.checkedInAt) {
+            return TicketStatus.USED;
+        }
+        if (ticket.status === TicketStatus.CANCELLED) {
+            return TicketStatus.CANCELLED;
+        }
+        const eventEnd = ticket.event?.endDate ?? ticket.event?.startDate;
+        if (eventEnd && moment(eventEnd).isBefore(moment())) {
+            return TicketStatus.EXPIRED;
+        }
+        return TicketStatus.ACTIVE;
     }
 
     private assertVendorCheckInRole(user: any) {
