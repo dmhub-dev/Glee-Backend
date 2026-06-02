@@ -16,10 +16,14 @@ import {
     ForgotPassword,
     PasswordReset,
     RegisterUserDto,
+    UpdatePasswordRotationPreferenceDto,
     UpdateTwoFactorPreferenceDto,
     VerifyLoginTwoFactorDto,
     VerifyOtpDto,
 } from './dto/create-auth.dto';
+
+const PASSWORD_ROTATION_DAYS = [7, 14, 30, 45, 60];
+const DEFAULT_PASSWORD_ROTATION_DAYS = 30;
 
 @Injectable()
 export class AuthService {
@@ -190,7 +194,7 @@ export class AuthService {
             const user = await this.usersService.validateLoginCredentials(
                 loginUserDto,
             );
-            if (!user.twoFactorEnabled) {
+            if (!this.requiresLoginTwoFactor(user)) {
                 return this.completeLogin(user, loginUserDto.playerId);
             }
 
@@ -353,10 +357,60 @@ export class AuthService {
         const password = await bcrypt.hash(payload.newPassword, 10);
         await this.prisma.user.update({
             where: { id: currentUser.id },
-            data: { password },
+            data: { password, passwordChangedAt: new Date() },
         });
 
         return { success: true, message: 'Password updated successfully' };
+    }
+
+    async updatePasswordRotationPreference(
+        currentUser: { id: string },
+        payload: UpdatePasswordRotationPreferenceDto,
+    ) {
+        if (!PASSWORD_ROTATION_DAYS.includes(payload.days)) {
+            throw new HttpException(
+                'Invalid password rotation period',
+                HttpStatus.BAD_REQUEST,
+            );
+        }
+
+        const current = await this.prisma.user.findUnique({
+            where: { id: currentUser.id },
+            select: { id: true, role: { select: { name: true } } },
+        });
+        if (!current) {
+            throw new HttpException('User not found', HttpStatus.NOT_FOUND);
+        }
+        if (current.role?.name === UserRole.USER) {
+            throw new HttpException(
+                'Password rotation settings are only available for dashboard accounts',
+                HttpStatus.FORBIDDEN,
+            );
+        }
+
+        const user = await this.prisma.user.update({
+            where: { id: currentUser.id },
+            data: { passwordRotationDays: payload.days },
+            select: {
+                id: true,
+                email: true,
+                role: { select: { name: true } },
+                passwordRotationDays: true,
+                passwordChangedAt: true,
+                createdAt: true,
+            },
+        });
+
+        return {
+            success: true,
+            message: 'Password rotation preference updated',
+            data: {
+                id: user.id,
+                email: user.email,
+                role: user.role?.name ?? null,
+                ...this.passwordRotationState(user),
+            },
+        };
     }
 
     async refreshToken(token: string) {
@@ -434,7 +488,16 @@ export class AuthService {
             where: { id: user.id },
             include: { role: true },
         });
-        return { success: true, data: full };
+        if (!full) {
+            throw new HttpException('User not found', HttpStatus.NOT_FOUND);
+        }
+        return {
+            success: true,
+            data: {
+                ...full,
+                ...this.passwordRotationState(full),
+            },
+        };
     }
 
     async validateUser(payload: { userId: string }) {
@@ -506,6 +569,10 @@ export class AuthService {
 
     private async completeLogin(user: any, playerId?: string) {
         const result = await this.usersService.issueTokens(user);
+        const userWithRotation = {
+            ...result.user,
+            ...this.passwordRotationState(user),
+        };
 
         if (result.user.role === UserRole.USER && playerId) {
             const oneSignalResponse =
@@ -521,10 +588,37 @@ export class AuthService {
             }
             return {
                 ...result,
-                user: { ...result.user, oneSignalData: oneSignalResponse.data },
+                user: { ...userWithRotation, oneSignalData: oneSignalResponse.data },
             };
         }
 
-        return result;
+        return { ...result, user: userWithRotation };
+    }
+
+    private passwordRotationState(user: any) {
+        const roleName = this.resolveRoleName(user);
+        const enabled = !!roleName && roleName !== UserRole.USER;
+        const days = Number(user.passwordRotationDays ?? DEFAULT_PASSWORD_ROTATION_DAYS);
+        const baseDate = user.passwordChangedAt ?? user.createdAt ?? new Date();
+        const changedAt = new Date(baseDate);
+        const expiresAt = new Date(changedAt);
+        expiresAt.setDate(expiresAt.getDate() + days);
+
+        return {
+            passwordRotationDays: days,
+            passwordChangedAt: changedAt.toISOString(),
+            passwordExpiresAt: expiresAt.toISOString(),
+            passwordChangeRequired: enabled ? expiresAt <= new Date() : false,
+        };
+    }
+
+    private resolveRoleName(user: any): UserRole | null {
+        const role = user?.role;
+        if (typeof role === 'string') return role as UserRole;
+        return (role?.name ?? null) as UserRole | null;
+    }
+
+    private requiresLoginTwoFactor(user: any): boolean {
+        return Boolean(user.twoFactorEnabled || user.role?.twoFactorRequired);
     }
 }

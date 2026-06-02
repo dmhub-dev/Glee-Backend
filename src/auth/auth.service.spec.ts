@@ -1,6 +1,7 @@
 import { HttpException } from '@nestjs/common';
 import { UserRole } from '@prisma/client';
 import { AuthService } from './auth.service';
+import * as bcrypt from 'bcrypt';
 
 describe('AuthService role login and 2FA', () => {
     const roles = Object.values(UserRole);
@@ -15,6 +16,7 @@ describe('AuthService role login and 2FA', () => {
             user: {
                 update: jest.fn().mockResolvedValue({}),
                 findFirst: jest.fn(),
+                findUnique: jest.fn(),
             },
         };
         usersService = {
@@ -44,11 +46,11 @@ describe('AuthService role login and 2FA', () => {
             id: `${role.toLowerCase()}-id`,
             name: `${role} User`,
             email: `${role.toLowerCase()}@glee.test`,
-            role: { name: role },
+            role: { name: role, twoFactorRequired: false },
             twoFactorEnabled: true,
         });
 
-        const result = await service.login({
+        const result: any = await service.login({
             email: `${role.toLowerCase()}@glee.test`,
             password: 'Test@1234',
             role,
@@ -85,7 +87,7 @@ describe('AuthService role login and 2FA', () => {
                 id: `${role.toLowerCase()}-id`,
                 name: `${role} User`,
                 email: `${role.toLowerCase()}@glee.test`,
-                role: { name: role },
+                role: { name: role, twoFactorRequired: false },
                 twoFactorEnabled: false,
             });
             usersService.issueTokens.mockResolvedValue({
@@ -109,6 +111,37 @@ describe('AuthService role login and 2FA', () => {
             expect(prisma.user.update).not.toHaveBeenCalled();
         },
     );
+
+    it('starts 2FA when role policy requires it even if user preference is off', async () => {
+        usersService.validateLoginCredentials.mockResolvedValue({
+            id: 'finance-id',
+            name: 'Finance User',
+            email: 'finance@glee.test',
+            role: { name: UserRole.FINANCE, twoFactorRequired: true },
+            twoFactorEnabled: false,
+        });
+
+        const result = await service.login({
+            email: 'finance@glee.test',
+            password: 'Test@1234',
+            role: UserRole.FINANCE,
+        });
+
+        expect(result).toMatchObject({
+            success: true,
+            requiresTwoFactor: true,
+            data: { role: UserRole.FINANCE },
+        });
+        expect(usersService.issueTokens).not.toHaveBeenCalled();
+        expect(prisma.user.update).toHaveBeenCalledWith({
+            where: { id: 'finance-id' },
+            data: expect.objectContaining({
+                twoFactorCode: expect.any(Number),
+                twoFactorExpiresAt: expect.any(Date),
+                twoFactorVerifiedAt: null,
+            }),
+        });
+    });
 
     it.each(roles)(
         'verifies email 2FA and issues tokens for %s',
@@ -164,5 +197,115 @@ describe('AuthService role login and 2FA', () => {
                 otp: 654321,
             }),
         ).rejects.toThrow(HttpException);
+    });
+
+    it('marks non-user login as requiring password change when rotation period is expired', async () => {
+        const createdAt = new Date('2026-01-01T00:00:00.000Z');
+        usersService.validateLoginCredentials.mockResolvedValue({
+            id: 'admin-id',
+            name: 'Admin User',
+            email: 'admin@glee.test',
+            role: { name: UserRole.ADMIN },
+            twoFactorEnabled: false,
+            createdAt,
+            passwordChangedAt: createdAt,
+            passwordRotationDays: 30,
+        });
+        usersService.issueTokens.mockResolvedValue({
+            user: { id: 'admin-id', role: UserRole.ADMIN },
+            accessToken: 'access-token',
+            refreshToken: 'refresh-token',
+        });
+
+        const result: any = await service.login({
+            email: 'admin@glee.test',
+            password: 'Test@1234',
+            role: UserRole.ADMIN,
+        });
+
+        expect(result.user).toMatchObject({
+            id: 'admin-id',
+            role: UserRole.ADMIN,
+            passwordChangeRequired: true,
+            passwordRotationDays: 30,
+        });
+        expect(result.user.passwordExpiresAt).toBe('2026-01-31T00:00:00.000Z');
+    });
+
+    it('does not require password rotation for USER accounts', async () => {
+        const createdAt = new Date('2026-01-01T00:00:00.000Z');
+        usersService.validateLoginCredentials.mockResolvedValue({
+            id: 'user-id',
+            name: 'Customer User',
+            email: 'user@glee.test',
+            role: { name: UserRole.USER },
+            twoFactorEnabled: false,
+            createdAt,
+            passwordChangedAt: createdAt,
+            passwordRotationDays: 7,
+        });
+        usersService.issueTokens.mockResolvedValue({
+            user: { id: 'user-id', role: UserRole.USER },
+            accessToken: 'access-token',
+            refreshToken: 'refresh-token',
+        });
+
+        const result: any = await service.login({
+            email: 'user@glee.test',
+            password: 'Test@1234',
+            role: UserRole.USER,
+        });
+
+        expect(result.user).toMatchObject({
+            id: 'user-id',
+            role: UserRole.USER,
+            passwordChangeRequired: false,
+        });
+    });
+
+    it('stores passwordChangedAt when current user changes password', async () => {
+        const hash = await bcrypt.hash('OldPass@123', 10);
+        prisma.user.findUnique.mockResolvedValue({ id: 'admin-id', password: hash });
+
+        await service.changeMyPassword(
+            { id: 'admin-id' },
+            { currentPassword: 'OldPass@123', newPassword: 'NewPass@123' },
+        );
+
+        expect(prisma.user.update).toHaveBeenCalledWith({
+            where: { id: 'admin-id' },
+            data: expect.objectContaining({
+                password: expect.any(String),
+                passwordChangedAt: expect.any(Date),
+            }),
+        });
+    });
+
+    it('allows non-user accounts to set a valid password rotation period', async () => {
+        prisma.user.findUnique.mockResolvedValue({
+            id: 'admin-id',
+            role: { name: UserRole.ADMIN },
+        });
+        prisma.user.update.mockResolvedValue({
+            id: 'admin-id',
+            email: 'admin@glee.test',
+            role: { name: UserRole.ADMIN },
+            passwordRotationDays: 45,
+        });
+
+        const result = await (service as any).updatePasswordRotationPreference(
+            { id: 'admin-id' },
+            { days: 45 },
+        );
+
+        expect(prisma.user.update).toHaveBeenCalledWith({
+            where: { id: 'admin-id' },
+            data: { passwordRotationDays: 45 },
+            select: expect.any(Object),
+        });
+        expect(result).toMatchObject({
+            success: true,
+            data: { passwordRotationDays: 45 },
+        });
     });
 });

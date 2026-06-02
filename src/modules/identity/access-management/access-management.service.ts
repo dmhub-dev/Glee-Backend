@@ -11,6 +11,7 @@ import {
     ListAuditLogsQueryDto,
     ListUsersQueryDto,
     UpdateRolePermissionsDto,
+    UpdateRoleTwoFactorPolicyDto,
     UpdateUserDto,
 } from './dto/access-management.dto';
 
@@ -549,6 +550,34 @@ export class AccessManagementService {
         });
 
         return this.listRoles();
+    }
+
+    async updateRoleTwoFactorPolicy(
+        roleName: UserRole,
+        dto: UpdateRoleTwoFactorPolicyDto,
+        actor: any,
+    ) {
+        const role = await this.findRoleOrThrow(roleName);
+        const updated = await this.prisma.role.update({
+            where: { id: role.id },
+            data: { twoFactorRequired: dto.required },
+            select: {
+                id: true,
+                name: true,
+                description: true,
+                twoFactorRequired: true,
+            },
+        });
+        await this.log(actor, 'roles.2fa_policy_update', 'Role', role.id, {
+            role: roleName,
+            required: dto.required,
+        });
+
+        return {
+            success: true,
+            message: 'Role 2FA policy updated successfully',
+            data: updated,
+        };
     }
 
     async listAuditLogs(query: ListAuditLogsQueryDto) {

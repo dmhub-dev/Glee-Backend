@@ -5,7 +5,7 @@ import { CurrentUser } from '@src/auth/jwt/current-user.decorator';
 import { Permissions } from '@src/auth/rbac/permissions.decorator';
 import { Permission } from '@src/auth/rbac/permissions.enum';
 import { ApiResponses } from '@src/common/responses/response';
-import { UpdateRolePermissionsDto } from './dto/access-management.dto';
+import { UpdateRolePermissionsDto, UpdateRoleTwoFactorPolicyDto } from './dto/access-management.dto';
 import { AccessManagementService } from './access-management.service';
 
 @Controller('roles')
@@ -29,6 +29,17 @@ export class RolesController {
     @CurrentUser() user: any,
   ) {
     return this.accessManagementService.updateRolePermissions(role, dto, user);
+  }
+
+  @Patch(':role/2fa-policy')
+  @ApiResponses(true, [UserRole.SUPER_ADMIN])
+  @Permissions(Permission.PERMISSIONS_MANAGE)
+  updateRoleTwoFactorPolicy(
+    @Param('role') role: UserRole,
+    @Body() dto: UpdateRoleTwoFactorPolicyDto,
+    @CurrentUser() user: any,
+  ) {
+    return this.accessManagementService.updateRoleTwoFactorPolicy(role, dto, user);
   }
 }
 

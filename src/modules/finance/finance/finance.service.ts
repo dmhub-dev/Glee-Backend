@@ -112,8 +112,8 @@ export class FinanceService {
         payment.paymentMethod,
         String(payment.totalPrice),
         String(payment.noOfItems),
-        payment.eventTicket?.user?.email ?? '',
-        payment.eventTicket?.event?.name ?? '',
+        payment.eventTickets?.[0]?.user?.email ?? '',
+        payment.eventTickets?.[0]?.event?.name ?? '',
         payment.createdAt.toISOString(),
       ]),
     ];
@@ -656,9 +656,9 @@ export class FinanceService {
       paystackReference: p.paystackReference ?? null,
       paymentStatus: p.paymentStatus ?? null,
       paymentMethod: p.paymentMethod ?? null,
-      event: p.eventTicket?.event ?? null,
-      user: p.eventTicket?.user ?? null,
-      eventTicketId: p.eventTicket?.id ?? null,
+      event: p.eventTickets?.[0]?.event ?? null,
+      user: p.eventTickets?.[0]?.user ?? null,
+      eventTicketId: p.eventTickets?.[0]?.id ?? null,
     }));
 
     return { success: true, data };
@@ -688,9 +688,9 @@ export class FinanceService {
         paystackReference: p.paystackReference ?? null,
         paymentStatus: p.paymentStatus ?? null,
         paymentMethod: p.paymentMethod ?? null,
-        event: p.eventTicket?.event ?? null,
-        user: p.eventTicket?.user ?? null,
-        eventTicketId: p.eventTicket?.id ?? null,
+        event: p.eventTickets?.[0]?.event ?? null,
+        user: p.eventTickets?.[0]?.user ?? null,
+        eventTicketId: p.eventTickets?.[0]?.id ?? null,
       };
     });
 
@@ -900,13 +900,13 @@ export class FinanceService {
     if (query.status) where.paymentStatus = query.status;
     if (query.method) where.paymentMethod = query.method;
     if (query.userId) where.userId = query.userId;
-    if (query.eventId) where.eventTicket = { eventId: query.eventId };
+    if (query.eventId) where.eventTickets = { some: { eventId: query.eventId } };
     if (query.search) {
       where.OR = [
         { paystackReference: { contains: query.search, mode: 'insensitive' } },
-        { eventTicket: { user: { email: { contains: query.search, mode: 'insensitive' } } } },
-        { eventTicket: { user: { name: { contains: query.search, mode: 'insensitive' } } } },
-        { eventTicket: { event: { name: { contains: query.search, mode: 'insensitive' } } } },
+        { eventTickets: { some: { user: { email: { contains: query.search, mode: 'insensitive' } } } } },
+        { eventTickets: { some: { user: { name: { contains: query.search, mode: 'insensitive' } } } } },
+        { eventTickets: { some: { event: { name: { contains: query.search, mode: 'insensitive' } } } } },
       ];
     }
     if (query.from || query.to) {
@@ -930,12 +930,14 @@ export class FinanceService {
 
   private paymentInclude() {
     return {
-      eventTicket: {
+      eventTickets: {
         include: {
           event: { select: { id: true, name: true, vendorId: true } },
           user: { select: { id: true, name: true, email: true, phone: true } },
           ticketCategory: true,
         },
+        take: 1,
+        orderBy: { ticketNumber: 'asc' as const },
       },
     };
   }
