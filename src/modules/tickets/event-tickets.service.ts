@@ -779,14 +779,6 @@ export class EventTicketsService {
                     checkedInBy: {
                         select: { id: true, name: true, email: true },
                     },
-                    ticketCheckIns: {
-                        include: {
-                            checkedInBy: {
-                                select: { id: true, name: true, email: true },
-                            },
-                        },
-                        orderBy: { ticketNumber: 'asc' },
-                    },
                 },
                 orderBy: { createdAt: 'desc' },
                 skip: (page - 1) * limit,
@@ -1217,14 +1209,6 @@ export class EventTicketsService {
                 },
                 ticketCategory: true,
                 checkedInBy: { select: { id: true, name: true, email: true } },
-                ticketCheckIns: {
-                    include: {
-                        checkedInBy: {
-                            select: { id: true, name: true, email: true },
-                        },
-                    },
-                    orderBy: { ticketNumber: 'asc' },
-                },
             },
         });
 

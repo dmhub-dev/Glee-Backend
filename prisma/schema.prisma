@@ -133,7 +133,6 @@ model User {
   profileStatus       Boolean       @default(true)
   notificationStatus  Boolean       @default(true)
   haveNewNotification Boolean       @default(false)
-  isAllChatRead       Boolean       @default(true)
   notificationIds     String[]
   isDeleted           Boolean       @default(false)
   deletedAt           DateTime?
@@ -145,13 +144,8 @@ model User {
   vendorAccount       User?         @relation("VendorStaff", fields: [vendorAccountId], references: [id], onDelete: SetNull)
   vendorStaff         User[]        @relation("VendorStaff")
 
-  chatsSent        Chat[]           @relation("ChatSender")
-  chatsReceived    Chat[]           @relation("ChatReceiver")
-  blocksGiven      UserBlock[]      @relation("Blocker")
-  blocksReceived   UserBlock[]      @relation("Blocked")
   eventTickets     EventTicket[]
   checkedInTickets EventTicket[]    @relation("TicketCheckedInBy")
-  ticketCheckIns   TicketCheckIn[]  @relation("TicketUnitCheckedInBy")
   wallet           Wallet?
   notifications    Notification[]
   auditLogs        AuditLog[]       @relation("AuditActor")
@@ -392,7 +386,6 @@ model EventTicket {
   payment           Payment         @relation(fields: [paymentId], references: [id])
   ticketCategory    TicketCategory? @relation(fields: [ticketCategoryId], references: [id])
   checkedInBy       User?           @relation("TicketCheckedInBy", fields: [checkedInById], references: [id], onDelete: SetNull)
-  ticketCheckIns    TicketCheckIn[]
   notifications     Notification[]
 
   @@index([checkedInById])
@@ -400,22 +393,6 @@ model EventTicket {
   @@index([purchaseGroupId])
   @@index([status])
   @@map("event_tickets")
-}
-
-model TicketCheckIn {
-  id            String      @id @default(cuid())
-  eventTicketId String
-  ticketRef     String      @unique
-  ticketNumber  Int
-  checkedInById String?
-  checkedInAt   DateTime    @default(now())
-  eventTicket   EventTicket @relation(fields: [eventTicketId], references: [id], onDelete: Cascade)
-  checkedInBy   User?       @relation("TicketUnitCheckedInBy", fields: [checkedInById], references: [id], onDelete: SetNull)
-
-  @@index([eventTicketId])
-  @@index([checkedInById])
-  @@index([checkedInAt])
-  @@map("ticket_check_ins")
 }
 
 model Wallet {
@@ -459,33 +436,6 @@ model PlatformSetting {
   updatedAt DateTime @updatedAt
 
   @@map("platform_settings")
-}
-
-// ─── Chat ─────────────────────────────────────────────────────────────────────
-
-model Chat {
-  id         String   @id @default(cuid())
-  senderId   String
-  receiverId String
-  message    String
-  isRead     Boolean  @default(false)
-  sender     User     @relation("ChatSender", fields: [senderId], references: [id])
-  receiver   User     @relation("ChatReceiver", fields: [receiverId], references: [id])
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-
-  @@map("chats")
-}
-
-model UserBlock {
-  blockerId String
-  blockedId String
-  blocker   User     @relation("Blocker", fields: [blockerId], references: [id])
-  blocked   User     @relation("Blocked", fields: [blockedId], references: [id])
-  createdAt DateTime @default(now())
-
-  @@id([blockerId, blockedId])
-  @@map("user_blocks")
 }
 
 // ─── Services ─────────────────────────────────────────────────────────────────
