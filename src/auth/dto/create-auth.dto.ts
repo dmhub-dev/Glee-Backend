@@ -13,6 +13,7 @@ import {
     IsIn,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
 import { UserRole } from '@prisma/client';
 import { CountryCodes } from '@src/common/utils/countries';
 import {
@@ -25,6 +26,11 @@ import {
 import { faker } from '@faker-js/faker';
 
 export type UserRoleType = UserRole;
+
+const toNumber = ({ value }) => {
+    if (value === '' || value === null || value === undefined) return value;
+    return Number(value);
+};
 
 export class RegisterUserDto {
     @ApiProperty({
@@ -197,6 +203,7 @@ export class VerifyLoginTwoFactorDto {
     email: string;
 
     @ApiProperty({ type: Number })
+    @Transform(toNumber)
     @IsNotEmpty()
     @IsNumber()
     otp: number;
@@ -216,6 +223,7 @@ export class UpdateTwoFactorPreferenceDto {
 
 export class UpdatePasswordRotationPreferenceDto {
     @ApiProperty({ enum: [7, 14, 30, 45, 60] })
+    @Transform(toNumber)
     @IsNotEmpty()
     @IsNumber()
     @IsIn([7, 14, 30, 45, 60])
@@ -256,6 +264,7 @@ export class PasswordReset {
     confirmPassword: string;
 
     @ApiProperty({ type: Number })
+    @Transform(toNumber)
     @IsNotEmpty()
     @IsNumber()
     otp: number;
@@ -268,6 +277,7 @@ export class VerifyOtpDto {
     email: string;
 
     @ApiProperty({ type: Number })
+    @Transform(toNumber)
     @IsNotEmpty()
     @IsNumber()
     otp: number;
