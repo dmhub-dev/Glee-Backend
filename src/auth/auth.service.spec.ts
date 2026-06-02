@@ -46,7 +46,7 @@ describe('AuthService role login and 2FA', () => {
             id: `${role.toLowerCase()}-id`,
             name: `${role} User`,
             email: `${role.toLowerCase()}@glee.test`,
-            role: { name: role },
+            role: { name: role, twoFactorRequired: false },
             twoFactorEnabled: true,
         });
 
@@ -87,7 +87,7 @@ describe('AuthService role login and 2FA', () => {
                 id: `${role.toLowerCase()}-id`,
                 name: `${role} User`,
                 email: `${role.toLowerCase()}@glee.test`,
-                role: { name: role },
+                role: { name: role, twoFactorRequired: false },
                 twoFactorEnabled: false,
             });
             usersService.issueTokens.mockResolvedValue({
@@ -111,6 +111,37 @@ describe('AuthService role login and 2FA', () => {
             expect(prisma.user.update).not.toHaveBeenCalled();
         },
     );
+
+    it('starts 2FA when role policy requires it even if user preference is off', async () => {
+        usersService.validateLoginCredentials.mockResolvedValue({
+            id: 'finance-id',
+            name: 'Finance User',
+            email: 'finance@glee.test',
+            role: { name: UserRole.FINANCE, twoFactorRequired: true },
+            twoFactorEnabled: false,
+        });
+
+        const result = await service.login({
+            email: 'finance@glee.test',
+            password: 'Test@1234',
+            role: UserRole.FINANCE,
+        });
+
+        expect(result).toMatchObject({
+            success: true,
+            requiresTwoFactor: true,
+            data: { role: UserRole.FINANCE },
+        });
+        expect(usersService.issueTokens).not.toHaveBeenCalled();
+        expect(prisma.user.update).toHaveBeenCalledWith({
+            where: { id: 'finance-id' },
+            data: expect.objectContaining({
+                twoFactorCode: expect.any(Number),
+                twoFactorExpiresAt: expect.any(Date),
+                twoFactorVerifiedAt: null,
+            }),
+        });
+    });
 
     it.each(roles)(
         'verifies email 2FA and issues tokens for %s',

@@ -113,6 +113,11 @@ export class UpdateRolePermissionsDto {
     permissions: string[];
 }
 
+export class UpdateRoleTwoFactorPolicyDto {
+    @IsBoolean()
+    required: boolean;
+}
+
 export class ListAuditLogsQueryDto {
     @IsOptional()
     @IsString()

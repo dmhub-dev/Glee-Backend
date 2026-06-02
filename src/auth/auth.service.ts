@@ -194,7 +194,7 @@ export class AuthService {
             const user = await this.usersService.validateLoginCredentials(
                 loginUserDto,
             );
-            if (!user.twoFactorEnabled) {
+            if (!this.requiresLoginTwoFactor(user)) {
                 return this.completeLogin(user, loginUserDto.playerId);
             }
 
@@ -616,5 +616,9 @@ export class AuthService {
         const role = user?.role;
         if (typeof role === 'string') return role as UserRole;
         return (role?.name ?? null) as UserRole | null;
+    }
+
+    private requiresLoginTwoFactor(user: any): boolean {
+        return Boolean(user.twoFactorEnabled || user.role?.twoFactorRequired);
     }
 }

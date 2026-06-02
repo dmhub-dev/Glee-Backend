@@ -64,6 +64,7 @@ model Role {
   id          String           @id @default(cuid())
   name        UserRole         @unique
   description String?
+  twoFactorRequired Boolean    @default(false)
   permissions RolePermission[]
   users       User[]
   invitations UserInvitation[]

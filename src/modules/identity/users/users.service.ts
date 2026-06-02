@@ -304,6 +304,7 @@ export class UsersService {
             profileStatus: user.profileStatus,
             notificationStatus: user.notificationStatus,
             twoFactorEnabled: user.twoFactorEnabled ?? false,
+            roleTwoFactorRequired: user.role?.twoFactorRequired ?? false,
         };
     }
 }
