@@ -130,8 +130,7 @@ export const populateStateData = async () => {
   }
 };
 
-export const generateOtp = (): number =>
-  Math.floor(1000 + Math.random() * 9000);
+export const generateOtp = (): number => crypto.randomInt(100000, 100000000);
 
 export const getArray = (arr) => (Array.isArray(arr) ? arr : []);
 

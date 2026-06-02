@@ -11,6 +11,9 @@ import {
     IsMongoId,
     IsBoolean,
     IsIn,
+    IsInt,
+    Max,
+    Min,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
@@ -206,6 +209,9 @@ export class VerifyLoginTwoFactorDto {
     @Transform(toNumber)
     @IsNotEmpty()
     @IsNumber()
+    @IsInt()
+    @Min(100000)
+    @Max(99999999)
     otp: number;
 
     @ApiProperty()
@@ -267,6 +273,9 @@ export class PasswordReset {
     @Transform(toNumber)
     @IsNotEmpty()
     @IsNumber()
+    @IsInt()
+    @Min(100000)
+    @Max(99999999)
     otp: number;
 }
 
@@ -280,6 +289,9 @@ export class VerifyOtpDto {
     @Transform(toNumber)
     @IsNotEmpty()
     @IsNumber()
+    @IsInt()
+    @Min(100000)
+    @Max(99999999)
     otp: number;
 }
 
