@@ -38,6 +38,8 @@ enum EventStatus {
   DRAFT
   PENDING_APPROVAL
   ACTIVE
+  LIVE
+  ENDED
   POSTPONED
   CANCELLED
   REJECTED
@@ -58,6 +60,28 @@ enum TicketStatus {
   CANCELLED
 }
 
+enum TicketAttendantStatus {
+  INVITED
+  ACTIVE
+  REVOKED
+  EXPIRED
+}
+
+enum TicketCheckInAttemptResult {
+  SUCCESS
+  DUPLICATE
+  WRONG_EVENT
+  EXPIRED
+  CANCELLED
+  UNKNOWN
+  NOT_LIVE
+}
+
+enum TicketCheckInAttemptSource {
+  QR
+  MANUAL
+}
+
 enum NotificationType {
   CHAT
   EVENT_TICKET
@@ -68,15 +92,15 @@ enum NotificationType {
 // ─── RBAC ─────────────────────────────────────────────────────────────────────
 
 model Role {
-  id          String           @id @default(cuid())
-  name        UserRole         @unique
-  description String?
-  twoFactorRequired Boolean    @default(false)
-  permissions RolePermission[]
-  users       User[]
-  invitations UserInvitation[]
-  createdAt   DateTime         @default(now())
-  updatedAt   DateTime         @updatedAt
+  id                String           @id @default(cuid())
+  name              UserRole         @unique
+  description       String?
+  twoFactorRequired Boolean          @default(false)
+  permissions       RolePermission[]
+  users             User[]
+  invitations       UserInvitation[]
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
 
   @@map("roles")
 }
@@ -107,52 +131,54 @@ model RolePermission {
 // ─── Core ─────────────────────────────────────────────────────────────────────
 
 model User {
-  id                  String        @id @default(cuid())
-  name                String
-  email               String        @unique
-  phone               String?
-  password            String
-  passwordChangedAt   DateTime?
+  id                   String        @id @default(cuid())
+  name                 String
+  email                String        @unique
+  phone                String?
+  password             String
+  passwordChangedAt    DateTime?
   passwordRotationDays Int           @default(30)
-  roleId              String?
-  role                Role?         @relation(fields: [roleId], references: [id])
-  isActive            AccountStatus @default(ACTIVE)
-  profileImage        String?
-  token               String?
-  refreshToken        String?
-  twoFactorEnabled    Boolean       @default(false)
-  twoFactorCode       Int?
-  twoFactorExpiresAt  DateTime?
-  twoFactorVerifiedAt DateTime?
-  invitedById         String?
-  invitedAt           DateTime?
-  lastLoginAt         DateTime?
-  vendorAccountId     String?
-  otp                 Int?
-  address             String?
-  profileStatus       Boolean       @default(true)
-  notificationStatus  Boolean       @default(true)
-  haveNewNotification Boolean       @default(false)
-  notificationIds     String[]
-  isDeleted           Boolean       @default(false)
-  deletedAt           DateTime?
-  playerId            String?
-  createdAt           DateTime      @default(now())
-  updatedAt           DateTime      @updatedAt
-  invitedBy           User?         @relation("UserInvites", fields: [invitedById], references: [id], onDelete: SetNull)
-  invitedUsers        User[]        @relation("UserInvites")
-  vendorAccount       User?         @relation("VendorStaff", fields: [vendorAccountId], references: [id], onDelete: SetNull)
-  vendorStaff         User[]        @relation("VendorStaff")
+  roleId               String?
+  role                 Role?         @relation(fields: [roleId], references: [id])
+  isActive             AccountStatus @default(ACTIVE)
+  profileImage         String?
+  token                String?
+  refreshToken         String?
+  twoFactorEnabled     Boolean       @default(false)
+  twoFactorCode        Int?
+  twoFactorExpiresAt   DateTime?
+  twoFactorVerifiedAt  DateTime?
+  invitedById          String?
+  invitedAt            DateTime?
+  lastLoginAt          DateTime?
+  vendorAccountId      String?
+  otp                  Int?
+  address              String?
+  profileStatus        Boolean       @default(true)
+  notificationStatus   Boolean       @default(true)
+  haveNewNotification  Boolean       @default(false)
+  notificationIds      String[]
+  isDeleted            Boolean       @default(false)
+  deletedAt            DateTime?
+  playerId             String?
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+  invitedBy            User?         @relation("UserInvites", fields: [invitedById], references: [id], onDelete: SetNull)
+  invitedUsers         User[]        @relation("UserInvites")
+  vendorAccount        User?         @relation("VendorStaff", fields: [vendorAccountId], references: [id], onDelete: SetNull)
+  vendorStaff          User[]        @relation("VendorStaff")
 
-  eventTickets     EventTicket[]
-  checkedInTickets EventTicket[]    @relation("TicketCheckedInBy")
-  wallet           Wallet?
-  notifications    Notification[]
-  auditLogs        AuditLog[]       @relation("AuditActor")
-  invitationsSent  UserInvitation[] @relation("InvitationInviter")
-  invitation       UserInvitation?
-  vendorEvents     Event[]          @relation("EventVendor")
-  vendorLocations  Location[]       @relation("LocationVendor")
+  eventTickets            EventTicket[]
+  checkedInTickets        EventTicket[]          @relation("TicketCheckedInBy")
+  wallet                  Wallet?
+  notifications           Notification[]
+  auditLogs               AuditLog[]             @relation("AuditActor")
+  invitationsSent         UserInvitation[]       @relation("InvitationInviter")
+  invitation              UserInvitation?
+  vendorEvents            Event[]                @relation("EventVendor")
+  vendorLocations         Location[]             @relation("LocationVendor")
+  createdTicketAttendants EventTicketAttendant[] @relation("TicketAttendantCreatedBy")
+  ticketCheckInAttempts   TicketCheckInAttempt[] @relation("TicketCheckInAttemptUser")
 
   @@index([email])
   @@index([isDeleted])
@@ -207,45 +233,48 @@ model AuditLog {
 // ─── Events ───────────────────────────────────────────────────────────────────
 
 model Event {
-  id               String           @id @default(cuid())
+  id               String                 @id @default(cuid())
   name             String
   description      String?
-  capacity         Int              @default(0)
+  capacity         Int                    @default(0)
   photos           String[]
   startDate        DateTime?
   endDate          DateTime?
-  status           EventStatus      @default(DRAFT)
-  isDeleted        Boolean          @default(false)
-  createdAt        DateTime         @default(now())
-  updatedAt        DateTime         @updatedAt
+  status           EventStatus            @default(DRAFT)
+  isDeleted        Boolean                @default(false)
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
   locationId       String?
   categoryId       String?
   vendorId         String?
-  location         Location?        @relation(fields: [locationId], references: [id])
-  category         Category?        @relation(fields: [categoryId], references: [id])
-  vendor           User?            @relation("EventVendor", fields: [vendorId], references: [id], onDelete: SetNull)
+  location         Location?              @relation(fields: [locationId], references: [id])
+  category         Category?              @relation(fields: [categoryId], references: [id])
+  vendor           User?                  @relation("EventVendor", fields: [vendorId], references: [id], onDelete: SetNull)
   ticketWaves      TicketWave[]
   ticketCategories TicketCategory[]
   eventTickets     EventTicket[]
   menuItems        EventMenuItem[]
   schedules        EventSchedule[]
+  ticketAttendants EventTicketAttendant[]
+  attendantSessions EventTicketAttendantSession[]
+  checkInAttempts  TicketCheckInAttempt[]
 
   @@index([isDeleted])
   @@index([vendorId])
 }
 
 model TicketWave {
-  id               String             @id @default(cuid())
+  id               String           @id @default(cuid())
   eventId          String
-  event            Event              @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  event            Event            @relation(fields: [eventId], references: [id], onDelete: Cascade)
   name             String
   description      String?
-  sequence         Int                @default(1)
+  sequence         Int              @default(1)
   startsAt         DateTime
   endsAt           DateTime
-  status           TicketWaveStatus   @default(UPCOMING)
-  createdAt        DateTime           @default(now())
-  updatedAt        DateTime           @updatedAt
+  status           TicketWaveStatus @default(UPCOMING)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
   ticketCategories TicketCategory[]
 
   @@index([eventId, sequence])
@@ -340,59 +369,134 @@ model Location {
 // ─── Tickets & Payments ───────────────────────────────────────────────────────
 
 model Payment {
-  id                String       @id @default(cuid())
+  id                String        @id @default(cuid())
   userId            String
-  paystackReference String       @unique
+  paystackReference String        @unique
   paymentStatus     String
   paymentMethod     String
-  totalPrice        Decimal      @db.Decimal(10, 2)
-  perItemPrice      Decimal      @db.Decimal(10, 2)
-  noOfItems         Int          @default(1)
-  isPaid            Boolean      @default(false)
-  isAvailable       Boolean      @default(true)
-  createdAt         DateTime     @default(now())
-  updatedAt         DateTime     @updatedAt
+  totalPrice        Decimal       @db.Decimal(10, 2)
+  perItemPrice      Decimal       @db.Decimal(10, 2)
+  noOfItems         Int           @default(1)
+  isPaid            Boolean       @default(false)
+  isAvailable       Boolean       @default(true)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
   eventTickets      EventTicket[]
 
   @@map("payments")
 }
 
 model EventTicket {
-  id                String          @id @default(cuid())
-  eventId           String
-  userId            String
-  paymentId         String
-  ticketCategoryId  String?
-  checkedInById     String?
-  purchaseGroupId   String
-  ticketRef         String          @unique
-  ticketNumber      Int             @default(1)
-  status            TicketStatus    @default(ACTIVE)
-  quantity          Int             @default(1)
-  totalPrice        Decimal         @db.Decimal(10, 2)
-  amountPaid        Decimal         @default(0) @db.Decimal(10, 2)
-  outstandingAmount Decimal         @default(0) @db.Decimal(10, 2)
-  paymentDueDate    DateTime?
-  paymentPlan       Json?
-  preOrderMenu      Json?
-  guestName         String?
-  guestEmail        String?
-  guestPhone        String?
-  checkedInAt       DateTime?
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
-  event             Event           @relation(fields: [eventId], references: [id])
-  user              User            @relation(fields: [userId], references: [id])
-  payment           Payment         @relation(fields: [paymentId], references: [id])
-  ticketCategory    TicketCategory? @relation(fields: [ticketCategoryId], references: [id])
-  checkedInBy       User?           @relation("TicketCheckedInBy", fields: [checkedInById], references: [id], onDelete: SetNull)
-  notifications     Notification[]
+  id                     String                 @id @default(cuid())
+  eventId                String
+  userId                 String
+  paymentId              String
+  ticketCategoryId       String?
+  checkedInById          String?
+  checkedInByAttendantId String?
+  purchaseGroupId        String
+  ticketRef              String                 @unique
+  ticketNumber           Int                    @default(1)
+  status                 TicketStatus           @default(ACTIVE)
+  quantity               Int                    @default(1)
+  totalPrice             Decimal                @db.Decimal(10, 2)
+  amountPaid             Decimal                @default(0) @db.Decimal(10, 2)
+  outstandingAmount      Decimal                @default(0) @db.Decimal(10, 2)
+  paymentDueDate         DateTime?
+  paymentPlan            Json?
+  preOrderMenu           Json?
+  guestName              String?
+  guestEmail             String?
+  guestPhone             String?
+  checkedInAt            DateTime?
+  createdAt              DateTime               @default(now())
+  updatedAt              DateTime               @updatedAt
+  event                  Event                  @relation(fields: [eventId], references: [id])
+  user                   User                   @relation(fields: [userId], references: [id])
+  payment                Payment                @relation(fields: [paymentId], references: [id])
+  ticketCategory         TicketCategory?        @relation(fields: [ticketCategoryId], references: [id])
+  checkedInBy            User?                  @relation("TicketCheckedInBy", fields: [checkedInById], references: [id], onDelete: SetNull)
+  checkedInByAttendant   EventTicketAttendant?  @relation("TicketCheckedInByAttendant", fields: [checkedInByAttendantId], references: [id], onDelete: SetNull)
+  checkInAttempts        TicketCheckInAttempt[]
+  notifications          Notification[]
 
   @@index([checkedInById])
+  @@index([checkedInByAttendantId])
   @@index([checkedInAt])
   @@index([purchaseGroupId])
   @@index([status])
   @@map("event_tickets")
+}
+
+model EventTicketAttendant {
+  id              String                        @id @default(cuid())
+  eventId         String
+  event           Event                         @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  name            String
+  email           String
+  pinHash         String
+  inviteTokenHash String                        @unique
+  status          TicketAttendantStatus         @default(INVITED)
+  lastSessionId   String?
+  sessionActive   Boolean                       @default(false)
+  lastLoginAt     DateTime?
+  createdById     String?
+  createdBy       User?                         @relation("TicketAttendantCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt       DateTime                      @default(now())
+  updatedAt       DateTime                      @updatedAt
+  revokedAt       DateTime?
+  sessions        EventTicketAttendantSession[]
+  checkedTickets  EventTicket[]                 @relation("TicketCheckedInByAttendant")
+  checkInAttempts TicketCheckInAttempt[]
+
+  @@index([eventId])
+  @@index([email])
+  @@index([status])
+  @@map("event_ticket_attendants")
+}
+
+model EventTicketAttendantSession {
+  id               String               @id @default(cuid())
+  attendantId      String
+  attendant        EventTicketAttendant @relation(fields: [attendantId], references: [id], onDelete: Cascade)
+  eventId          String
+  event            Event                @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  sessionTokenHash String               @unique
+  deviceLabel      String?
+  ipAddress        String?
+  userAgent        String?
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  createdAt        DateTime             @default(now())
+  lastSeenAt       DateTime?
+
+  @@index([attendantId])
+  @@index([eventId])
+  @@index([expiresAt])
+  @@map("event_ticket_attendant_sessions")
+}
+
+model TicketCheckInAttempt {
+  id             String                     @id @default(cuid())
+  eventId        String
+  event          Event                      @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  ticketId       String?
+  ticket         EventTicket?               @relation(fields: [ticketId], references: [id], onDelete: SetNull)
+  attendantId    String?
+  attendant      EventTicketAttendant?      @relation(fields: [attendantId], references: [id], onDelete: SetNull)
+  platformUserId String?
+  platformUser   User?                      @relation("TicketCheckInAttemptUser", fields: [platformUserId], references: [id], onDelete: SetNull)
+  result         TicketCheckInAttemptResult
+  source         TicketCheckInAttemptSource
+  metadata       Json?
+  createdAt      DateTime                   @default(now())
+
+  @@index([eventId])
+  @@index([ticketId])
+  @@index([attendantId])
+  @@index([result])
+  @@index([createdAt])
+  @@map("ticket_check_in_attempts")
 }
 
 model Wallet {

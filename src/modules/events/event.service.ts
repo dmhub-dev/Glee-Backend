@@ -1,6 +1,12 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { EventStatus, Prisma, TicketWaveStatus, UserRole } from '@prisma/client';
+import {
+    EventStatus,
+    Prisma,
+    TicketAttendantStatus,
+    TicketWaveStatus,
+    UserRole,
+} from '@prisma/client';
 import { PrismaService } from '@src/infrastructure/database/prisma.service';
 import { AddImageDto, DeleteImageDto } from './dto/add-image.dto';
 import { CreateEventDto } from './dto/create-event.dto';
@@ -25,6 +31,13 @@ const EVENT_INCLUDE: Prisma.EventInclude = {
     schedules: { orderBy: { startDate: 'asc' } },
     vendor: { select: { id: true, name: true, email: true, role: true } },
 };
+
+const PUBLIC_EVENT_STATUSES = [
+    EventStatus.ACTIVE,
+    EventStatus.LIVE,
+    EventStatus.POSTPONED,
+    EventStatus.SOLD_OUT,
+];
 
 @Injectable()
 export class EventService {
@@ -188,11 +201,7 @@ export class EventService {
         const where: any = { isDeleted: false };
         if (!this.canViewAllEvents(currentUser)) {
             where.status = {
-                in: [
-                    EventStatus.ACTIVE,
-                    EventStatus.POSTPONED,
-                    EventStatus.SOLD_OUT,
-                ],
+                in: PUBLIC_EVENT_STATUSES,
             };
         }
         if (search) where.name = { contains: search, mode: 'insensitive' };
@@ -452,7 +461,7 @@ export class EventService {
         FROM "Event" e
         JOIN "locations" l ON l.id = e."locationId"
         WHERE e."isDeleted" = false
-          AND e.status = 'ACTIVE'::"EventStatus"
+          AND e.status IN ('ACTIVE'::"EventStatus", 'LIVE'::"EventStatus")
           AND (e."endDate" IS NULL OR e."endDate" >= ${now})
         ORDER BY distance_km
         LIMIT ${limit} OFFSET ${offset}
@@ -464,7 +473,10 @@ export class EventService {
                 );
             }
         } else {
-            const where: any = { isDeleted: false, status: EventStatus.ACTIVE };
+            const where: any = {
+                isDeleted: false,
+                status: { in: [EventStatus.ACTIVE, EventStatus.LIVE] },
+            };
             where.OR = [{ endDate: null }, { endDate: { gte: now } }];
             if (filter.name)
                 where.name = { contains: filter.name, mode: 'insensitive' };
@@ -751,6 +763,131 @@ export class EventService {
                 dto.decision === 'approve'
                     ? 'Vendor event approved successfully.'
                     : 'Vendor event rejected successfully.',
+            data: updated,
+        };
+    }
+
+    async startEvent(id: string, currentUser: any) {
+        const event = await this.prisma.event.findFirst({
+            where: { id, isDeleted: false },
+            include: EVENT_INCLUDE,
+        });
+        if (!event) {
+            throw new HttpException('Event not found', HttpStatus.NOT_FOUND);
+        }
+        this.assertManualLifecycleAccess(event, currentUser);
+        if (event.status === EventStatus.LIVE) {
+            return {
+                success: true,
+                message: 'Event started successfully.',
+                data: event,
+            };
+        }
+        if (event.status !== EventStatus.ACTIVE) {
+            throw new HttpException(
+                'Event cannot be started from its current status',
+                HttpStatus.BAD_REQUEST,
+            );
+        }
+
+        const updated = await this.prisma.event.update({
+            where: { id },
+            data: { status: EventStatus.LIVE },
+            include: EVENT_INCLUDE,
+        });
+
+        await this.prisma.auditLog.create({
+            data: {
+                actorId: currentUser?.id,
+                action: 'events.start',
+                entity: 'Event',
+                entityId: id,
+                metadata: {
+                    status: EventStatus.LIVE,
+                },
+            },
+        });
+
+        return {
+            success: true,
+            message: 'Event started successfully.',
+            data: updated,
+        };
+    }
+
+    async endEvent(id: string, currentUser: any) {
+        const event = await this.prisma.event.findFirst({
+            where: { id, isDeleted: false },
+            include: EVENT_INCLUDE,
+        });
+        if (!event) {
+            throw new HttpException('Event not found', HttpStatus.NOT_FOUND);
+        }
+        this.assertManualLifecycleAccess(event, currentUser);
+        if (event.status === EventStatus.ENDED) {
+            return {
+                success: true,
+                message: 'Event ended successfully.',
+                data: event,
+            };
+        }
+        const endableStatuses: EventStatus[] = [
+            EventStatus.ACTIVE,
+            EventStatus.LIVE,
+        ];
+        if (!endableStatuses.includes(event.status)) {
+            throw new HttpException(
+                'Event cannot be ended from its current status',
+                HttpStatus.BAD_REQUEST,
+            );
+        }
+
+        const updated = await this.prisma.$transaction(async (tx) => {
+            const endedEvent = await tx.event.update({
+                where: { id },
+                data: { status: EventStatus.ENDED },
+                include: EVENT_INCLUDE,
+            });
+
+            await tx.eventTicketAttendant.updateMany({
+                where: {
+                    eventId: id,
+                    status: {
+                        in: [
+                            TicketAttendantStatus.INVITED,
+                            TicketAttendantStatus.ACTIVE,
+                        ],
+                    },
+                },
+                data: {
+                    status: TicketAttendantStatus.EXPIRED,
+                    sessionActive: false,
+                },
+            });
+
+            await tx.eventTicketAttendantSession.updateMany({
+                where: { eventId: id, revokedAt: null },
+                data: { revokedAt: new Date() },
+            });
+
+            await tx.auditLog.create({
+                data: {
+                    actorId: currentUser?.id,
+                    action: 'events.end',
+                    entity: 'Event',
+                    entityId: id,
+                    metadata: {
+                        status: EventStatus.ENDED,
+                    },
+                },
+            });
+
+            return endedEvent;
+        });
+
+        return {
+            success: true,
+            message: 'Event ended successfully.',
             data: updated,
         };
     }
@@ -1252,16 +1389,24 @@ export class EventService {
         }
     }
 
+    private assertManualLifecycleAccess(event: any, user: any) {
+        if ([UserRole.SUPER_ADMIN, UserRole.ADMIN].includes(user?.role)) return;
+        if ([UserRole.VENDOR, UserRole.VENDOR_STAFF].includes(user?.role)) {
+            const vendorId = this.resolveVendorAccountId(user);
+            if (event.vendorId === vendorId) return;
+        }
+        throw new HttpException(
+            'You do not have access to manage this event lifecycle',
+            HttpStatus.FORBIDDEN,
+        );
+    }
+
     private canViewAllEvents(user?: any) {
         return [UserRole.SUPER_ADMIN, UserRole.ADMIN].includes(user?.role);
     }
 
     private canViewEvent(event: any, user?: any) {
-        if (
-            [EventStatus.ACTIVE, EventStatus.POSTPONED, EventStatus.SOLD_OUT].includes(
-                event.status,
-            )
-        ) {
+        if (PUBLIC_EVENT_STATUSES.includes(event.status)) {
             return true;
         }
         if (this.canViewAllEvents(user)) return true;
