@@ -83,6 +83,20 @@ export class AdminEventController {
 
   @Permissions(Permission.EVENTS_UPDATE)
   @ApiResponses(true)
+  @Patch(':id/start')
+  startEvent(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.eventService.startEvent(id, user);
+  }
+
+  @Permissions(Permission.EVENTS_UPDATE)
+  @ApiResponses(true)
+  @Patch(':id/end')
+  endEvent(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.eventService.endEvent(id, user);
+  }
+
+  @Permissions(Permission.EVENTS_UPDATE)
+  @ApiResponses(true)
   @ApiConsumes('multipart/form-data')
   @ApiImageFile(null, {
     type: UploadType.MULTIPLE,

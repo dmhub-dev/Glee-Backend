@@ -1,5 +1,11 @@
 import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
-import { NotificationType, TicketStatus, TicketWaveStatus, UserRole } from '@prisma/client';
+import {
+    EventStatus,
+    NotificationType,
+    TicketStatus,
+    TicketWaveStatus,
+    UserRole,
+} from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { EmailService } from '@src/infrastructure/email/email.service';
 import { loggers } from '@src/common/interceptors/logger.enums';
@@ -1292,7 +1298,11 @@ export class EventTicketsService {
     async getAvailableTicktesOfEvent(queryData: PaginationQueryDto) {
         const { page, limit, eventId } = queryData;
         const event = await this.prisma.event.findFirst({
-            where: { id: eventId, isDeleted: false, status: 'ACTIVE' },
+            where: {
+                id: eventId,
+                isDeleted: false,
+                status: { in: [EventStatus.ACTIVE, EventStatus.LIVE] },
+            },
         });
         if (!event)
             return { success: false, message: 'Event not found', data: [] };

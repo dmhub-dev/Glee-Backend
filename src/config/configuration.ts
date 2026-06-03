@@ -1,6 +1,9 @@
 export default () => ({
   APP_NAME: process.env.APP_NAME,
   APP_URL: process.env.APP_URL,
+  CLIENT_APP_URL: process.env.CLIENT_APP_URL,
+  ATTENDANT_APP_URL: process.env.ATTENDANT_APP_URL,
+  ADMIN_APP_URL: process.env.ADMIN_APP_URL,
   NODE_ENV: process.env.NODE_ENV,
   PORT: process.env.PORT,
 

@@ -1,5 +1,5 @@
 import { HttpException } from '@nestjs/common';
-import { EventStatus } from '@prisma/client';
+import { EventStatus, TicketAttendantStatus, UserRole } from '@prisma/client';
 import { EventService } from './event.service';
 
 describe('EventService location booking conflicts', () => {
@@ -9,6 +9,7 @@ describe('EventService location booking conflicts', () => {
 
     beforeEach(() => {
         prisma = {
+            $transaction: jest.fn((callback) => callback(prisma)),
             location: {
                 findUnique: jest.fn().mockResolvedValue({
                     id: 'loc-1',
@@ -21,6 +22,15 @@ describe('EventService location booking conflicts', () => {
                 create: jest.fn().mockResolvedValue({ id: 'event-1' }),
                 update: jest.fn().mockResolvedValue({ id: 'event-1' }),
                 findUnique: jest.fn().mockResolvedValue({ id: 'event-1' }),
+            },
+            eventTicketAttendant: {
+                updateMany: jest.fn(),
+            },
+            eventTicketAttendantSession: {
+                updateMany: jest.fn(),
+            },
+            auditLog: {
+                create: jest.fn(),
             },
             ticketCategory: {
                 createMany: jest.fn(),
@@ -190,6 +200,173 @@ describe('EventService location booking conflicts', () => {
                 {},
             ),
         ).rejects.toThrow(HttpException);
+        expect(prisma.event.update).not.toHaveBeenCalled();
+    });
+
+    it('starts an event by marking it live and writing an audit record', async () => {
+        prisma.event.findFirst.mockResolvedValue({
+            id: 'event-1',
+            status: EventStatus.ACTIVE,
+            isDeleted: false,
+        });
+        const liveEvent = { id: 'event-1', status: EventStatus.LIVE };
+        prisma.event.update.mockResolvedValue(liveEvent);
+
+        const result = await service.startEvent('event-1', {
+            id: 'admin-1',
+            role: UserRole.ADMIN,
+        });
+
+        expect(prisma.event.update).toHaveBeenCalledWith({
+            where: { id: 'event-1' },
+            data: { status: EventStatus.LIVE },
+            include: expect.objectContaining({
+                location: true,
+                category: true,
+                ticketCategories: true,
+            }),
+        });
+        expect(prisma.auditLog.create).toHaveBeenCalledWith({
+            data: expect.objectContaining({
+                actorId: 'admin-1',
+                action: 'events.start',
+                entity: 'Event',
+                entityId: 'event-1',
+                metadata: expect.objectContaining({
+                    status: EventStatus.LIVE,
+                }),
+            }),
+        });
+        expect(result).toEqual({
+            success: true,
+            message: 'Event started successfully.',
+            data: liveEvent,
+        });
+    });
+
+    it('rejects starting a missing event with a controlled not found error', async () => {
+        prisma.event.findFirst.mockResolvedValue(null);
+
+        await expect(
+            service.startEvent('event-1', { id: 'admin-1', role: UserRole.ADMIN }),
+        ).rejects.toMatchObject({
+            status: 404,
+            response: 'Event not found',
+        });
+        expect(prisma.event.update).not.toHaveBeenCalled();
+        expect(prisma.auditLog.create).not.toHaveBeenCalled();
+    });
+
+    it('rejects starting an event from an invalid lifecycle state', async () => {
+        prisma.event.findFirst.mockResolvedValue({
+            id: 'event-1',
+            status: EventStatus.DRAFT,
+            isDeleted: false,
+        });
+
+        await expect(
+            service.startEvent('event-1', { id: 'admin-1', role: UserRole.ADMIN }),
+        ).rejects.toMatchObject({
+            status: 400,
+            response: 'Event cannot be started from its current status',
+        });
+        expect(prisma.event.update).not.toHaveBeenCalled();
+        expect(prisma.auditLog.create).not.toHaveBeenCalled();
+    });
+
+    it('ends an event by marking it ended, expiring attendants, revoking sessions, and writing an audit record', async () => {
+        prisma.event.findFirst.mockResolvedValue({
+            id: 'event-1',
+            status: EventStatus.LIVE,
+            isDeleted: false,
+        });
+        const endedEvent = { id: 'event-1', status: EventStatus.ENDED };
+        prisma.event.update.mockResolvedValue(endedEvent);
+
+        const result = await service.endEvent('event-1', {
+            id: 'admin-1',
+            role: UserRole.ADMIN,
+        });
+
+        expect(prisma.event.update).toHaveBeenCalledWith({
+            where: { id: 'event-1' },
+            data: { status: EventStatus.ENDED },
+            include: expect.objectContaining({
+                location: true,
+                category: true,
+                ticketCategories: true,
+            }),
+        });
+        expect(prisma.eventTicketAttendant.updateMany).toHaveBeenCalledWith({
+            where: {
+                eventId: 'event-1',
+                status: {
+                    in: [
+                        TicketAttendantStatus.INVITED,
+                        TicketAttendantStatus.ACTIVE,
+                    ],
+                },
+            },
+            data: {
+                status: TicketAttendantStatus.EXPIRED,
+                sessionActive: false,
+            },
+        });
+        expect(prisma.eventTicketAttendantSession.updateMany).toHaveBeenCalledWith({
+            where: { eventId: 'event-1', revokedAt: null },
+            data: { revokedAt: expect.any(Date) },
+        });
+        expect(prisma.auditLog.create).toHaveBeenCalledWith({
+            data: expect.objectContaining({
+                actorId: 'admin-1',
+                action: 'events.end',
+                entity: 'Event',
+                entityId: 'event-1',
+                metadata: expect.objectContaining({
+                    status: EventStatus.ENDED,
+                }),
+            }),
+        });
+        expect(result).toEqual({
+            success: true,
+            message: 'Event ended successfully.',
+            data: endedEvent,
+        });
+    });
+
+    it('rejects ending an event from an invalid lifecycle state', async () => {
+        prisma.event.findFirst.mockResolvedValue({
+            id: 'event-1',
+            status: EventStatus.PENDING_APPROVAL,
+            isDeleted: false,
+        });
+
+        await expect(
+            service.endEvent('event-1', { id: 'admin-1', role: UserRole.ADMIN }),
+        ).rejects.toMatchObject({
+            status: 400,
+            response: 'Event cannot be ended from its current status',
+        });
+        expect(prisma.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('rejects manual lifecycle changes for another vendor event', async () => {
+        prisma.event.findFirst.mockResolvedValue({
+            id: 'event-1',
+            vendorId: 'vendor-owner',
+            status: EventStatus.ACTIVE,
+            isDeleted: false,
+        });
+
+        await expect(
+            service.startEvent('event-1', {
+                id: 'other-vendor',
+                role: UserRole.VENDOR,
+            }),
+        ).rejects.toMatchObject({
+            status: 403,
+            response: 'You do not have access to manage this event lifecycle',
+        });
         expect(prisma.event.update).not.toHaveBeenCalled();
     });
 });

@@ -1,0 +1,67 @@
+<html xmlns='http://www.w3.org/1999/xhtml'>
+  <head>
+    <meta charset='UTF-8' />
+    <meta content='width=device-width, initial-scale=1' name='viewport' />
+    <title>Ticket attendant access</title>
+    <style type='text/css'>
+      body { margin: 0; padding: 0; background: #f5f7fb; color: #111827; font-family: Arial, Helvetica, sans-serif; }
+      a { color: #ffffff; text-decoration: none; }
+      .shell { padding: 32px 16px; background: #f5f7fb; }
+      .card { max-width: 620px; margin: 0 auto; background: #ffffff; border: 1px solid #e5e7eb; border-radius: 18px; overflow: hidden; box-shadow: 0 18px 40px rgba(17,24,39,0.08); }
+      .brand { padding: 28px 30px 12px; }
+      .brand-name { font-size: 21px; font-weight: 800; color: #111827; }
+      .accent { height: 4px; width: 44px; background: #7c3aed; border-radius: 999px; margin-top: 14px; }
+      .section { padding: 12px 30px 32px; }
+      .eyebrow { margin: 0 0 10px; color: #7c3aed; font-size: 11px; font-weight: 800; letter-spacing: 1.8px; text-transform: uppercase; }
+      .title { margin: 0 0 14px; color: #111827; font-size: 28px; line-height: 1.16; font-weight: 800; }
+      .copy { margin: 0; color: #4b5563; font-size: 15px; line-height: 1.65; }
+      .event-box { margin: 22px 0; padding: 18px; background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 14px; }
+      .event-name { margin: 0 0 8px; color: #111827; font-size: 20px; line-height: 1.25; font-weight: 800; }
+      .meta { margin: 0; color: #6b7280; font-size: 13px; line-height: 1.6; }
+      .button { display: inline-block; margin: 22px 0 14px; padding: 14px 20px; background: #7c3aed; border-radius: 12px; color: #ffffff; font-size: 14px; font-weight: 800; }
+      .notice { margin: 16px 0 0; padding: 14px 16px; background: #fbfaff; border: 1px solid #ede9fe; border-radius: 12px; color: #5b21b6; font-size: 13px; line-height: 1.65; }
+      .footer { padding: 18px 30px 24px; border-top: 1px solid #eef2f7; color: #9ca3af; font-size: 12px; line-height: 1.7; }
+      .link { color: #7c3aed; word-break: break-all; }
+      @media screen and (max-width: 480px) {
+        .shell { padding: 18px 10px !important; }
+        .brand, .section, .footer { padding-left: 18px !important; padding-right: 18px !important; }
+        .title { font-size: 23px !important; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class='shell'>
+      <div class='card'>
+        <div class='brand'>
+          {{#if logoUrl}}
+            <img src='{{logoUrl}}' alt='Glee' style='height:38px;width:auto;display:block;margin:0 0 14px;' />
+          {{else}}
+            <div class='brand-name'>Glee</div>
+          {{/if}}
+          <div class='accent'></div>
+        </div>
+
+        <div class='section'>
+          <p class='eyebrow'>Event Check-in</p>
+          <h1 class='title'>You have been invited as a ticket attendant</h1>
+          <p class='copy'>Hi {{attendantName}}, use this secure link to access the check-in desk for the event below. Your event admin or vendor will share your unique PIN separately.</p>
+
+          <div class='event-box'>
+            <p class='event-name'>{{eventName}}</p>
+            <p class='meta'>{{#if eventStartDate}}Starts: {{eventStartDate}}{{/if}}{{#if eventEndDate}}<br />Ends: {{eventEndDate}}{{/if}}</p>
+          </div>
+
+          <a class='button' href='{{inviteUrl}}'>Open check-in desk</a>
+          <p class='copy'>If the button does not work, open this link:</p>
+          <p class='copy'><a class='link' href='{{inviteUrl}}'>{{inviteUrl}}</a></p>
+
+          <p class='notice'>This access is only for this event. It opens close to event start time and expires once the event ends. Do not share your link or PIN.</p>
+        </div>
+
+        <div class='footer'>
+          Sent by Glee Tickets. If you were not expecting this invite, ignore this email.
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
