@@ -1,0 +1,57 @@
+name: Test
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Test and build backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: postgresql://glee_ci:glee_ci_password@localhost:54329/glee_ci
+      NODE_ENV: test
+      SECRETKEY: ci-secret-key
+      EXPIRESIN: 1d
+      POSTGRES_DB: glee_ci
+      POSTGRES_USER: glee_ci
+      POSTGRES_PASSWORD: glee_ci_password
+      POSTGRES_PORT: 54329
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Enable pnpm
+        run: corepack enable
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Start PostgreSQL
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d postgres
+
+      - name: Wait for PostgreSQL
+        run: |
+          for i in {1..30}; do
+            if docker compose -f docker-compose.yml -f docker-compose.ci.yml exec -T postgres pg_isready -U glee_ci -d glee_ci; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml logs postgres
+          exit 1
+
+      - name: Run tests
+        run: bash scripts/ci-test.sh
+
+      - name: Stop PostgreSQL
+        if: always()
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml down -v

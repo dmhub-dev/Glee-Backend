@@ -1,0 +1,16 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  lint:
+    name: Run lint workflow
+    uses: ./.github/workflows/lint.yml
+
+  test:
+    name: Run test workflow
+    needs: lint
+    uses: ./.github/workflows/test.yml
