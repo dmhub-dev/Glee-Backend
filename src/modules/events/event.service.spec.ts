@@ -19,6 +19,8 @@ describe('EventService location booking conflicts', () => {
             category: { findFirst: jest.fn() },
             event: {
                 findFirst: jest.fn(),
+                findMany: jest.fn().mockResolvedValue([]),
+                count: jest.fn().mockResolvedValue(0),
                 create: jest.fn().mockResolvedValue({ id: 'event-1' }),
                 update: jest.fn().mockResolvedValue({ id: 'event-1' }),
                 findUnique: jest.fn().mockResolvedValue({ id: 'event-1' }),
@@ -201,6 +203,89 @@ describe('EventService location booking conflicts', () => {
             ),
         ).rejects.toThrow(HttpException);
         expect(prisma.event.update).not.toHaveBeenCalled();
+    });
+
+    it('filters public events by category id', async () => {
+        await service.findAll(
+            {
+                page: 1,
+                limit: 10,
+                search: undefined,
+                categoryId: 'category-1',
+            } as any,
+            undefined,
+        );
+
+        expect(prisma.event.findMany).toHaveBeenCalledWith(
+            expect.objectContaining({
+                where: expect.objectContaining({
+                    isDeleted: false,
+                    categoryId: 'category-1',
+                    status: {
+                        in: [
+                            EventStatus.ACTIVE,
+                            EventStatus.LIVE,
+                            EventStatus.POSTPONED,
+                            EventStatus.SOLD_OUT,
+                        ],
+                    },
+                }),
+            }),
+        );
+        expect(prisma.event.count).toHaveBeenCalledWith({
+            where: expect.objectContaining({
+                categoryId: 'category-1',
+            }),
+        });
+    });
+
+    it('filters public events by exact status when status is provided', async () => {
+        await service.findAll(
+            {
+                page: 1,
+                limit: 10,
+                search: undefined,
+                categoryId: undefined,
+                status: 'active',
+            } as any,
+            undefined,
+        );
+
+        expect(prisma.event.findMany).toHaveBeenCalledWith(
+            expect.objectContaining({
+                where: expect.objectContaining({
+                    isDeleted: false,
+                    status: EventStatus.ACTIVE,
+                }),
+            }),
+        );
+        expect(prisma.event.count).toHaveBeenCalledWith({
+            where: expect.objectContaining({
+                status: EventStatus.ACTIVE,
+            }),
+        });
+    });
+
+    it('does not expose non-public statuses through public status filter', async () => {
+        await service.findAll(
+            {
+                page: 1,
+                limit: 10,
+                search: undefined,
+                categoryId: undefined,
+                status: 'draft',
+            } as any,
+            undefined,
+        );
+
+        expect(prisma.event.findMany).toHaveBeenCalledWith(
+            expect.objectContaining({
+                where: expect.objectContaining({
+                    isDeleted: false,
+                    status: { in: [] },
+                }),
+            }),
+        );
     });
 
     it('starts an event by marking it live and writing an audit record', async () => {

@@ -32,7 +32,7 @@ const EVENT_INCLUDE: Prisma.EventInclude = {
     vendor: { select: { id: true, name: true, email: true, role: true } },
 };
 
-const PUBLIC_EVENT_STATUSES = [
+const PUBLIC_EVENT_STATUSES: EventStatus[] = [
     EventStatus.ACTIVE,
     EventStatus.LIVE,
     EventStatus.POSTPONED,
@@ -197,14 +197,23 @@ export class EventService {
         return this.eventEarningService(id);
     }
 
-    async findAll({ page, limit, search }: RetrieveEventDto, currentUser?: any) {
+    async findAll(
+        { page, limit, search, categoryId, status }: RetrieveEventDto,
+        currentUser?: any,
+    ) {
         const where: any = { isDeleted: false };
-        if (!this.canViewAllEvents(currentUser)) {
-            where.status = {
-                in: PUBLIC_EVENT_STATUSES,
-            };
+        const requestedStatus = this.resolveEventStatusFilter(status);
+        if (requestedStatus) {
+            where.status =
+                this.canViewAllEvents(currentUser) ||
+                PUBLIC_EVENT_STATUSES.includes(requestedStatus)
+                    ? requestedStatus
+                    : { in: [] };
+        } else if (!this.canViewAllEvents(currentUser)) {
+            where.status = { in: PUBLIC_EVENT_STATUSES };
         }
         if (search) where.name = { contains: search, mode: 'insensitive' };
+        if (categoryId) where.categoryId = categoryId;
 
         const [rawData, docCount] = await Promise.all([
             this.prisma.event.findMany({
@@ -235,12 +244,15 @@ export class EventService {
     }
 
     async findAllByVendorId(
-        { page, limit, search }: RetrieveEventDto,
+        { page, limit, search, categoryId, status }: RetrieveEventDto,
         user: any,
     ) {
         const vendorId = this.resolveVendorAccountId(user);
         const where: any = { isDeleted: false, vendorId };
         if (search) where.name = { contains: search, mode: 'insensitive' };
+        if (categoryId) where.categoryId = categoryId;
+        const requestedStatus = this.resolveEventStatusFilter(status);
+        if (requestedStatus) where.status = requestedStatus;
 
         const [rawData, docCount] = await Promise.all([
             this.prisma.event.findMany({
@@ -1387,6 +1399,14 @@ export class EventService {
                 HttpStatus.FORBIDDEN,
             );
         }
+    }
+
+    private resolveEventStatusFilter(status?: string): EventStatus | null {
+        if (!status) return null;
+        const normalized = String(status).trim().toUpperCase();
+        const mapped = normalized.replace(/-/g, '_') as EventStatus;
+        if (Object.values(EventStatus).includes(mapped)) return mapped;
+        throw new HttpException('Invalid event status filter', HttpStatus.BAD_REQUEST);
     }
 
     private assertManualLifecycleAccess(event: any, user: any) {
