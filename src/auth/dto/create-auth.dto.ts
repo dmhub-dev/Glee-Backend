@@ -26,7 +26,6 @@ import {
     MinSpecialCharacter,
     MinUpperCase,
 } from '@src/common/decorators/validation.decorators';
-import { faker } from '@faker-js/faker';
 
 export type UserRoleType = UserRole;
 
@@ -38,7 +37,7 @@ const toNumber = ({ value }) => {
 export class RegisterUserDto {
     @ApiProperty({
         required: true,
-        default: faker.name.fullName(),
+        default: 'Jane Doe',
         title: 'Name',
         description: 'User name should be at three character.',
         type: 'string',
@@ -96,7 +95,7 @@ export class RegisterUserDto {
 
     @ApiProperty({
         required: true,
-        default: faker.internet.email(),
+        default: 'jane.doe@example.com',
         title: 'Name',
         description:
             'At least 2 special character, 2 uppercase, 2 lowercase, 2 digits',
@@ -109,7 +108,7 @@ export class RegisterUserDto {
 
     @ApiProperty({
         required: true,
-        default: faker.phone.number('+92 ### #######'),
+        default: '+92 342 2738117',
         title: 'Phone Number',
         description:
             'Valid Phone number. It is better to follow this pattern (+92 xxx xxxxxxx)',
@@ -138,7 +137,7 @@ export class RegisterUserDto {
 
     @ApiProperty({
         required: false,
-        default: faker.address.streetAddress(true),
+        default: '123 Example Street',
         title: 'Address',
         description: 'Is Mandatory',
         type: 'string',
@@ -387,7 +386,7 @@ export class RegisterVendorDto {
 
     @ApiProperty({
         required: true,
-        default: faker.internet.email(),
+        default: 'jane.doe@example.com',
         title: 'Name',
         description:
             'At least 2 special character, 2 uppercase, 2 lowercase, 2 digits',

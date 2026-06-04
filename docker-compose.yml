@@ -1,17 +1,52 @@
-version: '3.8'
-
 services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: glee-backend:${APP_IMAGE_TAG:-latest}
+    container_name: glee-backend-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: ${PORT:-8003}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-glee}:${POSTGRES_PASSWORD:-glee_password}@postgres:5432/${POSTGRES_DB:-glee}
+      SECRETKEY: ${SECRETKEY:-change-me-in-production}
+      EXPIRESIN: ${EXPIRESIN:-1d}
+      REFRESH_EXPIRESIN: ${REFRESH_EXPIRESIN:-30d}
+      APP_URL: ${APP_URL:-http://localhost:8003}
+      CLIENT_APP_URL: ${CLIENT_APP_URL:-http://localhost:3000}
+      ADMIN_APP_URL: ${ADMIN_APP_URL:-http://localhost:3000}
+      ATTENDANT_APP_URL: ${ATTENDANT_APP_URL:-http://localhost:3000}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      RESEND_FROM: ${RESEND_FROM:-Glee <no-reply@dmhub.cloud>}
+      EMAIL_FROM_AUTH: ${EMAIL_FROM_AUTH:-Glee Auth <auth@dmhub.cloud>}
+      EMAIL_FROM_TICKETS: ${EMAIL_FROM_TICKETS:-Glee Tickets <tickets@dmhub.cloud>}
+      EMAIL_FROM_SUPPORT: ${EMAIL_FROM_SUPPORT:-Glee Support <support@dmhub.cloud>}
+      EMAIL_FROM_NOTIFICATIONS: ${EMAIL_FROM_NOTIFICATIONS:-Glee Updates <updates@dmhub.cloud>}
+    ports:
+      - "${APP_PORT:-8003}:8003"
+    command: sh -c "pnpm exec prisma migrate deploy && node dist/src/main.js"
+
   postgres:
     image: postgres:16-alpine
+    container_name: glee-postgres
     restart: unless-stopped
-    ports:
-      - '5432:5432'
     environment:
-      POSTGRES_DB: glee
-      POSTGRES_USER: glee
-      POSTGRES_PASSWORD: glee
+      POSTGRES_DB: ${POSTGRES_DB:-glee}
+      POSTGRES_USER: ${POSTGRES_USER:-glee}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-glee_password}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
 
 volumes:
   postgres-data:

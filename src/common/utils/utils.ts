@@ -52,7 +52,7 @@ export const createFolder = (name?: string): void => {
   // Create folder for uploading files.]
   const filesDir = path.join(process.cwd(), name || 'uploads');
   if (!fs.existsSync(filesDir)) {
-    fs.mkdirSync(filesDir);
+    fs.mkdirSync(filesDir, { recursive: true });
   }
 };
 
