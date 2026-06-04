@@ -26,6 +26,16 @@ export class RetrieveEventDto {
   @IsString()
   @IsOptional()
   search: string;
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @IsOptional()
+  categoryId: string;
+
+  @ApiProperty({ required: false })
+  @IsString()
+  @IsOptional()
+  status: string;
 }
 
 export class EventParticipantFilterDto {
