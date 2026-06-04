@@ -36,17 +36,17 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Start PostgreSQL
-        run: docker compose -f docker-compose.yml up -d postgres
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d postgres
 
       - name: Wait for PostgreSQL
         run: |
           for i in {1..30}; do
-            if docker compose -f docker-compose.yml exec -T postgres pg_isready -U glee_ci -d glee_ci; then
+            if docker compose -f docker-compose.yml -f docker-compose.ci.yml exec -T postgres pg_isready -U glee_ci -d glee_ci; then
               exit 0
             fi
             sleep 2
           done
-          docker compose -f docker-compose.yml logs postgres
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml logs postgres
           exit 1
 
       - name: Run tests
@@ -54,4 +54,4 @@ jobs:
 
       - name: Stop PostgreSQL
         if: always()
-        run: docker compose -f docker-compose.yml down -v
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml down -v
