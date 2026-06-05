@@ -11,7 +11,6 @@ describe('EventStatusScheduler', () => {
     prisma = {
       $transaction: jest.fn((callback) => callback(prisma)),
       event: {
-        updateMany: jest.fn(),
         findMany: jest.fn(),
         update: jest.fn(),
       },
@@ -29,41 +28,88 @@ describe('EventStatusScheduler', () => {
     jest.useRealTimers();
   });
 
-  it('moves active events with a non-null elapsed start date to live', async () => {
-    prisma.event.findMany.mockResolvedValue([]);
+  it('moves active events to live only when their effective start date has elapsed', async () => {
+    prisma.event.findMany
+      .mockResolvedValueOnce([
+        {
+          id: 'event-1',
+          startDate: new Date('2026-06-01T12:00:00.000Z'),
+          schedules: [],
+        },
+        {
+          id: 'event-2',
+          startDate: new Date('2026-06-01T12:00:00.000Z'),
+          schedules: [{ startDate: new Date('2026-07-01T12:00:00.000Z') }],
+        },
+      ])
+      .mockResolvedValueOnce([]);
 
     await scheduler.syncEventStatuses();
 
-    expect(prisma.event.updateMany).toHaveBeenCalledWith({
+    expect(prisma.event.findMany).toHaveBeenNthCalledWith(1, {
       where: {
         isDeleted: false,
         status: EventStatus.ACTIVE,
-        startDate: { not: null, lte: now },
+        OR: [
+          { startDate: { not: null, lte: now } },
+          { schedules: { some: { startDate: { lte: now } } } },
+        ],
       },
+      select: {
+        id: true,
+        startDate: true,
+        schedules: {
+          select: { startDate: true },
+          orderBy: { startDate: 'asc' },
+        },
+      },
+    });
+    expect(prisma.event.update).toHaveBeenCalledTimes(1);
+    expect(prisma.event.update).toHaveBeenCalledWith({
+      where: { id: 'event-1' },
       data: { status: EventStatus.LIVE },
     });
   });
 
   it('moves live events with a non-null elapsed end date to ended and expires attendant access', async () => {
-    prisma.event.findMany.mockResolvedValue([{ id: 'event-1' }, { id: 'event-2' }]);
+    prisma.event.findMany
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          id: 'event-1',
+          endDate: new Date('2026-06-01T12:00:00.000Z'),
+          schedules: [],
+        },
+        {
+          id: 'event-2',
+          endDate: new Date('2026-06-01T12:00:00.000Z'),
+          schedules: [{ endDate: new Date('2026-07-01T12:00:00.000Z') }],
+        },
+      ]);
 
     await scheduler.syncEventStatuses();
 
-    expect(prisma.event.findMany).toHaveBeenCalledWith({
+    expect(prisma.event.findMany).toHaveBeenNthCalledWith(2, {
       where: {
         isDeleted: false,
         status: EventStatus.LIVE,
-        endDate: { not: null, lte: now },
+        OR: [
+          { endDate: { not: null, lte: now } },
+          { schedules: { some: { endDate: { lte: now } } } },
+        ],
       },
-      select: { id: true },
+      select: {
+        id: true,
+        endDate: true,
+        schedules: {
+          select: { endDate: true },
+          orderBy: { endDate: 'desc' },
+        },
+      },
     });
-    expect(prisma.$transaction).toHaveBeenCalledTimes(2);
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
     expect(prisma.event.update).toHaveBeenNthCalledWith(1, {
       where: { id: 'event-1' },
-      data: { status: EventStatus.ENDED },
-    });
-    expect(prisma.event.update).toHaveBeenNthCalledWith(2, {
-      where: { id: 'event-2' },
       data: { status: EventStatus.ENDED },
     });
     expect(prisma.eventTicketAttendant.updateMany).toHaveBeenNthCalledWith(1, {
@@ -78,34 +124,18 @@ describe('EventStatusScheduler', () => {
         sessionActive: false,
       },
     });
-    expect(prisma.eventTicketAttendant.updateMany).toHaveBeenNthCalledWith(2, {
-      where: {
-        eventId: 'event-2',
-        status: {
-          in: [TicketAttendantStatus.INVITED, TicketAttendantStatus.ACTIVE],
-        },
-      },
-      data: {
-        status: TicketAttendantStatus.EXPIRED,
-        sessionActive: false,
-      },
-    });
     expect(prisma.eventTicketAttendantSession.updateMany).toHaveBeenNthCalledWith(1, {
       where: { eventId: 'event-1', revokedAt: null },
-      data: { revokedAt: now },
-    });
-    expect(prisma.eventTicketAttendantSession.updateMany).toHaveBeenNthCalledWith(2, {
-      where: { eventId: 'event-2', revokedAt: null },
       data: { revokedAt: now },
     });
   });
 
   it('returns after active to live update when there are no live events to end', async () => {
-    prisma.event.findMany.mockResolvedValue([]);
+    prisma.event.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
 
     await scheduler.syncEventStatuses();
 
-    expect(prisma.event.updateMany).toHaveBeenCalledTimes(1);
+    expect(prisma.event.findMany).toHaveBeenCalledTimes(2);
     expect(prisma.$transaction).not.toHaveBeenCalled();
     expect(prisma.eventTicketAttendant.updateMany).not.toHaveBeenCalled();
     expect(prisma.eventTicketAttendantSession.updateMany).not.toHaveBeenCalled();

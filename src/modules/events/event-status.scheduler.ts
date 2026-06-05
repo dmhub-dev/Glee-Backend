@@ -14,27 +14,62 @@ export class EventStatusScheduler {
     const now = new Date();
 
     try {
-      await this.prisma.event.updateMany({
+      const eventsToStart = await this.prisma.event.findMany({
         where: {
           isDeleted: false,
           status: EventStatus.ACTIVE,
-          startDate: { not: null, lte: now },
+          OR: [
+            { startDate: { not: null, lte: now } },
+            { schedules: { some: { startDate: { lte: now } } } },
+          ],
         },
-        data: { status: EventStatus.LIVE },
+        select: {
+          id: true,
+          startDate: true,
+          schedules: {
+            select: { startDate: true },
+            orderBy: { startDate: 'asc' },
+          },
+        },
       });
+
+      for (const event of eventsToStart) {
+        const effectiveStartDate =
+          event.schedules?.[0]?.startDate ?? event.startDate;
+        if (!effectiveStartDate || effectiveStartDate > now) continue;
+
+        await this.prisma.event.update({
+          where: { id: event.id },
+          data: { status: EventStatus.LIVE },
+        });
+      }
 
       const eventsToEnd = await this.prisma.event.findMany({
         where: {
           isDeleted: false,
           status: EventStatus.LIVE,
-          endDate: { not: null, lte: now },
+          OR: [
+            { endDate: { not: null, lte: now } },
+            { schedules: { some: { endDate: { lte: now } } } },
+          ],
         },
-        select: { id: true },
+        select: {
+          id: true,
+          endDate: true,
+          schedules: {
+            select: { endDate: true },
+            orderBy: { endDate: 'desc' },
+          },
+        },
       });
 
       if (!eventsToEnd.length) return;
 
       for (const event of eventsToEnd) {
+        const effectiveEndDate =
+          event.schedules?.[0]?.endDate ?? event.endDate;
+        if (!effectiveEndDate || effectiveEndDate > now) continue;
+
         await this.prisma.$transaction(async (tx) => {
           await tx.event.update({
             where: { id: event.id },
