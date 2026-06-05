@@ -581,6 +581,7 @@ export class EventTicketsService {
                     ticketRef:
                         metadata.ticketRefs?.[index] ??
                         `${purchaseGroupId}-${ticketNumber}`,
+                    publicAccessToken: this.createPublicAccessToken(),
                     ticketNumber,
                     status: ticketStatus,
                     quantity: 1,
@@ -704,6 +705,15 @@ export class EventTicketsService {
                     })),
                     menuTotal:
                         menuTotal > 0 ? menuTotal.toLocaleString() : null,
+                    ticketLinks: eventTickets
+                        .map((ticket) => ({
+                            ticketNumber: ticket.ticketNumber,
+                            ticketRef: ticket.ticketRef,
+                            url: this.buildPublicTicketUrl(
+                                ticket.publicAccessToken,
+                            ),
+                        }))
+                        .filter((ticket) => ticket.url),
                     noOfItems: noOfTickets,
                     paymentPlan: metadata.paymentPlan
                         ? {
@@ -799,6 +809,7 @@ export class EventTicketsService {
         const data = tickets.map((ticket) => ({
             ...ticket,
             status: this.resolveTicketStatus(ticket),
+            publicUrl: this.buildPublicTicketUrl(ticket.publicAccessToken),
         }));
 
         return {
@@ -843,7 +854,116 @@ export class EventTicketsService {
             data: {
                 ...ticket,
                 status: this.resolveTicketStatus(ticket),
+                publicUrl: this.buildPublicTicketUrl(ticket.publicAccessToken),
                 supportNotes,
+            },
+        };
+    }
+
+    async getPublicTicketByToken(token: string) {
+        const publicAccessToken = String(token ?? '').trim();
+        if (!publicAccessToken) {
+            throw new HttpException('Ticket not found', HttpStatus.NOT_FOUND);
+        }
+
+        const ticket = await this.prisma.eventTicket.findFirst({
+            where: { publicAccessToken },
+            include: {
+                event: {
+                    include: {
+                        location: true,
+                        category: true,
+                        schedules: { orderBy: { startDate: 'asc' } },
+                    },
+                },
+                payment: true,
+                user: {
+                    select: { id: true, name: true, email: true, phone: true },
+                },
+                ticketCategory: true,
+            },
+        });
+
+        if (!ticket) {
+            throw new HttpException('Ticket not found', HttpStatus.NOT_FOUND);
+        }
+
+        const status = this.resolveTicketStatus(ticket);
+        const menuItems = this.normalizeTicketMenuItems(ticket.preOrderMenu);
+        const attendee = {
+            name: ticket.guestName ?? ticket.user?.name ?? 'Guest',
+            email: ticket.guestEmail ?? ticket.user?.email ?? null,
+            phone: ticket.guestPhone ?? ticket.user?.phone ?? null,
+        };
+        const event = ticket.event as any;
+
+        return {
+            success: true,
+            message: 'Public ticket fetched successfully',
+            data: {
+                ticket: {
+                    id: ticket.id,
+                    ticketRef: ticket.ticketRef,
+                    ticketNumber: ticket.ticketNumber,
+                    status,
+                    qrEnabled: status === TicketStatus.ACTIVE,
+                    checkedInAt: ticket.checkedInAt,
+                    createdAt: ticket.createdAt,
+                    publicUrl: this.buildPublicTicketUrl(
+                        ticket.publicAccessToken,
+                    ),
+                    ticketType:
+                        ticket.ticketCategory?.name ?? 'Event ticket',
+                    ticketCategory: ticket.ticketCategory
+                        ? {
+                              id: ticket.ticketCategory.id,
+                              name: ticket.ticketCategory.name,
+                              price: Number(ticket.ticketCategory.price ?? 0),
+                          }
+                        : null,
+                    payment: ticket.payment
+                        ? {
+                              method: ticket.payment.paymentMethod,
+                              status: ticket.payment.paymentStatus,
+                              isPaid: ticket.payment.isPaid,
+                              totalPrice: Number(ticket.totalPrice ?? 0),
+                              amountPaid: Number(ticket.amountPaid ?? 0),
+                              outstandingAmount: Number(
+                                  ticket.outstandingAmount ?? 0,
+                              ),
+                          }
+                        : null,
+                    menuItems,
+                },
+                attendee,
+                event: {
+                    id: event.id,
+                    name: event.name,
+                    description: event.description,
+                    startDate: event.startDate,
+                    endDate: event.endDate,
+                    photos: event.photos ?? [],
+                    location: event.location
+                        ? {
+                              id: event.location.id,
+                              name: event.location.name,
+                              address: event.location.address,
+                          }
+                        : null,
+                    category: event.category
+                        ? {
+                              id: event.category.id,
+                              name: event.category.name,
+                          }
+                        : null,
+                    schedules: (event.schedules ?? []).map((schedule) => ({
+                        id: schedule.id,
+                        name: schedule.name,
+                        description: schedule.description,
+                        startDate: schedule.startDate,
+                        endDate: schedule.endDate,
+                    })),
+                },
             },
         };
     }
@@ -980,6 +1100,7 @@ export class EventTicketsService {
                     ticketCategoryId: category.id,
                     purchaseGroupId,
                     ticketRef: `${purchaseGroupId}-${ticketNumber}`,
+                    publicAccessToken: this.createPublicAccessToken(),
                     ticketNumber,
                     status: dto.checkInNow ? TicketStatus.USED : TicketStatus.ACTIVE,
                     quantity: 1,
@@ -1032,7 +1153,7 @@ export class EventTicketsService {
 
         await this.sendComplimentaryTicketEmail({
             event,
-            ticket,
+            tickets: issuedTickets,
             recipientName: recipient.name,
             recipientEmail: recipient.email,
             quantity,
@@ -1275,6 +1396,7 @@ export class EventTicketsService {
             grouped[eid].tickets.push({
                 ...t,
                 status: this.resolveTicketStatus(t),
+                publicUrl: this.buildPublicTicketUrl(t.publicAccessToken),
             });
             grouped[eid].noOfTicketsPurchased += 1;
             grouped[eid].totalPrice += Number(t.totalPrice ?? 0);
@@ -1481,7 +1603,7 @@ export class EventTicketsService {
 
     private async sendComplimentaryTicketEmail(input: {
         event: any;
-        ticket: any;
+        tickets: any[];
         recipientName: string;
         recipientEmail: string;
         quantity: number;
@@ -1498,10 +1620,10 @@ export class EventTicketsService {
             const eventVenue =
                 input.event.location?.name ?? input.event.location?.address ?? null;
             const pdfAttachments = await Promise.all(
-                Array.from({ length: input.quantity }, (_, i) =>
+                input.tickets.map((ticket, i) =>
                     generateTicketPdf({
-                        ticketRef: `${input.ticket.id}-${i + 1}`,
-                        ticketNumber: i + 1,
+                        ticketRef: ticket.ticketRef,
+                        ticketNumber: ticket.ticketNumber ?? i + 1,
                         totalTickets: input.quantity,
                         eventName: input.event.name,
                         eventDate,
@@ -1510,7 +1632,7 @@ export class EventTicketsService {
                         attendeeName: input.recipientName,
                         attendeeEmail: input.recipientEmail,
                         purchasedOn,
-                        orderId: input.ticket.id,
+                        orderId: ticket.purchaseGroupId,
                         price: 'Complimentary',
                         currency: 'KES',
                     }).then((buf) => ({
@@ -1532,7 +1654,7 @@ export class EventTicketsService {
                     purchasedOn,
                     userEmail: input.recipientEmail,
                     userName: input.recipientName,
-                    ticketId: input.ticket.id,
+                    ticketId: input.tickets[0]?.purchaseGroupId ?? input.tickets[0]?.id,
                     productTitle: input.event.name,
                     eventDate,
                     eventTime,
@@ -1542,6 +1664,15 @@ export class EventTicketsService {
                     subTotal: '0',
                     menuItems: [],
                     menuTotal: null,
+                    ticketLinks: input.tickets
+                        .map((ticket) => ({
+                            ticketNumber: ticket.ticketNumber,
+                            ticketRef: ticket.ticketRef,
+                            url: this.buildPublicTicketUrl(
+                                ticket.publicAccessToken,
+                            ),
+                        }))
+                        .filter((ticket) => ticket.url),
                     noOfItems: input.quantity,
                     paymentPlan: null,
                     productImage: input.event.photos?.[0] ?? null,
@@ -1768,6 +1899,38 @@ export class EventTicketsService {
             return TicketStatus.EXPIRED;
         }
         return TicketStatus.ACTIVE;
+    }
+
+    private createPublicAccessToken() {
+        return crypto
+            .randomBytes(32)
+            .toString('base64')
+            .replace(/\+/g, '-')
+            .replace(/\//g, '_')
+            .replace(/=+$/g, '');
+    }
+
+    private buildPublicTicketUrl(token?: string | null) {
+        if (!token) return null;
+        const baseUrl = (
+            process.env.CLIENT_APP_URL ??
+            process.env.FRONTEND_URL ??
+            process.env.APP_URL ??
+            ''
+        ).replace(/\/+$/g, '');
+        return baseUrl ? `${baseUrl}/t/${token}` : `/t/${token}`;
+    }
+
+    private normalizeTicketMenuItems(preOrderMenu: any) {
+        if (!Array.isArray(preOrderMenu)) return [];
+        return preOrderMenu
+            .map((item) => ({
+                id: item.id ?? null,
+                name: item.name ?? item.title ?? 'Menu item',
+                price: Number(item.price ?? 0),
+                quantity: Number(item.quantity ?? 1),
+            }))
+            .filter((item) => item.quantity > 0);
     }
 
     private assertVendorCheckInRole(user: any) {
