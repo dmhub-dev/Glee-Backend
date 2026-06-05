@@ -28,6 +28,10 @@ services:
       EMAIL_FROM_TICKETS: ${EMAIL_FROM_TICKETS:-Glee Tickets <tickets@dmhub.cloud>}
       EMAIL_FROM_SUPPORT: ${EMAIL_FROM_SUPPORT:-Glee Support <support@dmhub.cloud>}
       EMAIL_FROM_NOTIFICATIONS: ${EMAIL_FROM_NOTIFICATIONS:-Glee Updates <updates@dmhub.cloud>}
+      AWS_REGION: ${AWS_REGION:-}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_S3_BUCKET: ${AWS_S3_BUCKET:-}
     ports:
       - "${APP_PORT:-8003}:8003"
     command: sh -c "pnpm exec prisma migrate deploy && node dist/src/main.js"
