@@ -1092,28 +1092,26 @@ export class EventService {
         const scheduleEnds =
             schedules?.map((schedule) => schedule.endDate) ?? [];
         const startDate = this.parseOptionalDate(
-            date?.start ??
-                (scheduleStarts.length
-                    ? new Date(
-                          Math.min(
-                              ...scheduleStarts.map((schedule) =>
-                                  schedule.getTime(),
-                              ),
+            scheduleStarts.length
+                ? new Date(
+                      Math.min(
+                          ...scheduleStarts.map((schedule) =>
+                              schedule.getTime(),
                           ),
-                      )
-                    : fallback?.startDate),
+                      ),
+                  )
+                : date?.start ?? fallback?.startDate,
         );
         const endDate = this.parseOptionalDate(
-            date?.end ??
-                (scheduleEnds.length
-                    ? new Date(
-                          Math.max(
-                              ...scheduleEnds.map((schedule) =>
-                                  schedule.getTime(),
-                              ),
+            scheduleEnds.length
+                ? new Date(
+                      Math.max(
+                          ...scheduleEnds.map((schedule) =>
+                              schedule.getTime(),
                           ),
-                      )
-                    : fallback?.endDate ?? startDate),
+                      ),
+                  )
+                : date?.end ?? fallback?.endDate ?? startDate,
         );
 
         if (startDate && endDate && endDate < startDate) {

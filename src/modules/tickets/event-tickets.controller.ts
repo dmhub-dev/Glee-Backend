@@ -53,6 +53,13 @@ export class EventTicketsController {
     return this.eventTicketsService.getAvailableTicktesOfEvent(queryData);
   }
 
+  @AllowAny()
+  @ApiResponses(false)
+  @Get('public/:token')
+  getPublicTicketByToken(@Param('token') token: string) {
+    return this.eventTicketsService.getPublicTicketByToken(token);
+  }
+
   @ApiResponses(false)
   @Get(':id')
   getTicketsById(@Param('id') id: string) {

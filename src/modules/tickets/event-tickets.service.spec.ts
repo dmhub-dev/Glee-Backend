@@ -328,6 +328,14 @@ describe('EventTicketsService.createPurchasedEventTicket - tier decrement', () =
         expect(new Set(createdRows.map((row) => row.purchaseGroupId)).size).toBe(1);
         expect(createdRows.map((row) => row.ticketNumber)).toEqual([1, 2, 3, 4, 5]);
         expect(new Set(createdRows.map((row) => row.ticketRef)).size).toBe(5);
+        expect(new Set(createdRows.map((row) => row.publicAccessToken)).size).toBe(5);
+        expect(
+            createdRows.every(
+                (row) =>
+                    typeof row.publicAccessToken === 'string' &&
+                    row.publicAccessToken.length >= 32,
+            ),
+        ).toBe(true);
         expect(createdRows.every((row) => row.quantity === 1)).toBe(true);
     });
 
@@ -578,5 +586,176 @@ describe('EventTicketsService.checkInTicketByQr - ticket units', () => {
                 }),
             }),
         );
+    });
+});
+
+describe('EventTicketsService.getPublicTicketByToken', () => {
+    let service: EventTicketsService;
+    let prisma: any;
+
+    const publicTicket = {
+        id: 'ticket-public-1',
+        eventId: 'event-1',
+        userId: 'user-1',
+        paymentId: 'payment-1',
+        ticketCategoryId: 'category-1',
+        purchaseGroupId: 'group-public',
+        ticketRef: 'group-public-1',
+        ticketNumber: 1,
+        status: 'ACTIVE',
+        quantity: 1,
+        totalPrice: 2500,
+        amountPaid: 2500,
+        outstandingAmount: 0,
+        paymentDueDate: null,
+        paymentPlan: null,
+        preOrderMenu: [{ name: 'Chicken sliders', price: 800, quantity: 1 }],
+        guestName: 'Guest Buyer',
+        guestEmail: 'guest@example.com',
+        guestPhone: '+254700000000',
+        checkedInAt: null,
+        createdAt: new Date('2026-06-01T12:00:00Z'),
+        updatedAt: new Date('2026-06-01T12:00:00Z'),
+        publicAccessToken: 'public-token-123',
+        event: {
+            id: 'event-1',
+            name: 'Glee Saturday',
+            description: 'A real event',
+            startDate: new Date('2026-07-04T18:00:00Z'),
+            endDate: new Date('2026-07-04T23:00:00Z'),
+            photos: ['https://example.com/poster.jpg'],
+            location: {
+                id: 'location-1',
+                name: 'The Volt',
+                address: 'Westlands',
+            },
+            category: { id: 'category-main', name: 'Nightlife' },
+            schedules: [
+                {
+                    id: 'schedule-1',
+                    name: 'Main event',
+                    startDate: new Date('2026-07-04T18:00:00Z'),
+                    endDate: new Date('2026-07-04T23:00:00Z'),
+                },
+            ],
+        },
+        payment: {
+            id: 'payment-1',
+            paymentMethod: 'PAYSTACK',
+            paymentStatus: 'SUCCEEDED',
+            isPaid: true,
+        },
+        user: {
+            id: 'user-1',
+            name: 'Jane Doe',
+            email: 'jane@example.com',
+            phone: '+254711111111',
+        },
+        ticketCategory: {
+            id: 'category-1',
+            name: 'Regular',
+            price: 2500,
+        },
+    };
+
+    beforeEach(async () => {
+        process.env.CLIENT_APP_URL = 'https://glee-app.dmhub.cloud';
+        const module: TestingModule = await Test.createTestingModule({
+            providers: [
+                EventTicketsService,
+                {
+                    provide: PrismaService,
+                    useValue: {
+                        eventTicket: {
+                            findFirst: jest.fn().mockResolvedValue(publicTicket),
+                        },
+                    },
+                },
+                {
+                    provide: EventSharedService,
+                    useValue: { helperEventFindById: jest.fn() },
+                },
+                { provide: UsersService, useValue: { findOne: jest.fn() } },
+                { provide: EmailService, useValue: { sendMail: jest.fn() } },
+                {
+                    provide: NotificationService,
+                    useValue: { addNotification: jest.fn() },
+                },
+                {
+                    provide: PayStackService,
+                    useValue: { createPaymentIntent: jest.fn() },
+                },
+                { provide: WalletService, useValue: { debit: jest.fn() } },
+                mockPlatformSettingsProvider,
+            ],
+        }).compile();
+
+        service = module.get<EventTicketsService>(EventTicketsService);
+        prisma = module.get(PrismaService);
+    });
+
+    it('returns a QR-first public ticket payload by access token', async () => {
+        const response = await service.getPublicTicketByToken(' public-token-123 ');
+
+        expect(prisma.eventTicket.findFirst).toHaveBeenCalledWith(
+            expect.objectContaining({
+                where: { publicAccessToken: 'public-token-123' },
+            }),
+        );
+        expect(response).toMatchObject({
+            success: true,
+            data: {
+                ticket: {
+                    id: 'ticket-public-1',
+                    ticketRef: 'group-public-1',
+                    ticketNumber: 1,
+                    status: 'ACTIVE',
+                    publicUrl:
+                        'https://glee-app.dmhub.cloud/t/public-token-123',
+                    menuItems: [
+                        { name: 'Chicken sliders', price: 800, quantity: 1 },
+                    ],
+                },
+                attendee: {
+                    name: 'Guest Buyer',
+                    email: 'guest@example.com',
+                    phone: '+254700000000',
+                },
+                event: {
+                    id: 'event-1',
+                    name: 'Glee Saturday',
+                    location: {
+                        name: 'The Volt',
+                        address: 'Westlands',
+                    },
+                    category: { name: 'Nightlife' },
+                },
+            },
+        });
+    });
+
+    it('marks the public ticket as expired after the event ends', async () => {
+        prisma.eventTicket.findFirst.mockResolvedValue({
+            ...publicTicket,
+            event: {
+                ...publicTicket.event,
+                endDate: new Date('2025-07-04T23:00:00Z'),
+            },
+        });
+
+        const response = await service.getPublicTicketByToken('public-token-123');
+
+        expect(response.data.ticket.status).toBe('EXPIRED');
+        expect(response.data.ticket.qrEnabled).toBe(false);
+    });
+
+    it('throws 404 when the public token does not exist', async () => {
+        prisma.eventTicket.findFirst.mockResolvedValue(null);
+
+        await expect(
+            service.getPublicTicketByToken('missing-token'),
+        ).rejects.toMatchObject({
+            status: 404,
+        });
     });
 });

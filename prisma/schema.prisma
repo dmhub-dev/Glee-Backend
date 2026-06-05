@@ -396,6 +396,7 @@ model EventTicket {
   checkedInByAttendantId String?
   purchaseGroupId        String
   ticketRef              String                 @unique
+  publicAccessToken      String?                @unique
   ticketNumber           Int                    @default(1)
   status                 TicketStatus           @default(ACTIVE)
   quantity               Int                    @default(1)

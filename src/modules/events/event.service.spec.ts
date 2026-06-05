@@ -169,6 +169,40 @@ describe('EventService location booking conflicts', () => {
         });
     });
 
+    it('uses schedule dates for the event lifecycle range when stale top-level dates are submitted', async () => {
+        prisma.event.findFirst.mockResolvedValue(null);
+
+        await service.create(
+            {
+                name: 'Future Scheduled Event',
+                locationId: 'loc-1',
+                status: EventStatus.ACTIVE,
+                date: {
+                    start: new Date('2026-06-01T09:00:00Z'),
+                    end: new Date('2026-06-01T18:00:00Z'),
+                },
+                eventSchedule: [
+                    {
+                        name: 'Future program',
+                        description: 'Future event schedule',
+                        startDate: '2026-07-10T09:00:00Z',
+                        endDate: '2026-07-10T18:00:00Z',
+                    },
+                ],
+            } as any,
+            [],
+        );
+
+        expect(prisma.event.create).toHaveBeenCalledWith(
+            expect.objectContaining({
+                data: expect.objectContaining({
+                    startDate: new Date('2026-07-10T09:00:00Z'),
+                    endDate: new Date('2026-07-10T18:00:00Z'),
+                }),
+            }),
+        );
+    });
+
     it('blocks updating an event into another event location-day booking', async () => {
         prisma.event.findFirst
             .mockResolvedValueOnce({
