@@ -197,6 +197,8 @@ const ROLE_PERMISSIONS: Record<UserRole, string[]> = {
         'bookings:override',
         'reports:read',
         'notifications:read',
+        'chat:read',
+        'chat:create',
         'location:read',
     ],
     [UserRole.COMMERCIAL_MANAGER]: [
@@ -243,6 +245,8 @@ const ROLE_PERMISSIONS: Record<UserRole, string[]> = {
         'payments:read',
         'wallet:read',
         'notifications:read',
+        'chat:read',
+        'chat:create',
     ],
     [UserRole.VENDOR_STAFF]: [
         'events:read',
@@ -254,6 +258,8 @@ const ROLE_PERMISSIONS: Record<UserRole, string[]> = {
         'bookings:read',
         'bookings:update',
         'notifications:read',
+        'chat:read',
+        'chat:create',
     ],
     [UserRole.CUSTOMER_SUPPORT]: [
         'users:read',
