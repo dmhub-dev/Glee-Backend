@@ -68,7 +68,6 @@ jobs:
         run: |
           SSH_HOST="$(printf '%s' "$VPS_HOST" | tr -d '[:space:]')"
           SSH_PORT="$(printf '%s' "${VPS_PORT:-22}" | tr -d '[:space:]')"
-          timeout 20 bash -c "</dev/tcp/$SSH_HOST/$SSH_PORT"
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new -o ConnectTimeout=30 -p "$SSH_PORT" "$VPS_USER@$SSH_HOST" \
             "cd '$VPS_APP_PATH' && git pull --ff-only && docker compose --env-file .env up -d --build"
 
