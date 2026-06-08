@@ -89,6 +89,18 @@ enum NotificationType {
   SERVICE
 }
 
+enum EventChatRoomStatus {
+  ACTIVE
+  READ_ONLY
+  LOCKED
+}
+
+enum EventChatMessageType {
+  MESSAGE
+  ANNOUNCEMENT
+  SYSTEM
+}
+
 // ─── RBAC ─────────────────────────────────────────────────────────────────────
 
 model Role {
@@ -179,6 +191,9 @@ model User {
   vendorLocations         Location[]             @relation("LocationVendor")
   createdTicketAttendants EventTicketAttendant[] @relation("TicketAttendantCreatedBy")
   ticketCheckInAttempts   TicketCheckInAttempt[] @relation("TicketCheckInAttemptUser")
+  eventChatMessages        EventChatMessage[]    @relation("EventChatMessageSender")
+  deletedEventChatMessages EventChatMessage[]    @relation("EventChatMessageDeletedBy")
+  eventChatReadStates      EventChatReadState[]
 
   @@index([email])
   @@index([isDeleted])
@@ -258,6 +273,9 @@ model Event {
   ticketAttendants EventTicketAttendant[]
   attendantSessions EventTicketAttendantSession[]
   checkInAttempts  TicketCheckInAttempt[]
+  chatRoom         EventChatRoom?
+  chatMessages     EventChatMessage[]
+  chatReadStates   EventChatReadState[]
 
   @@index([isDeleted])
   @@index([vendorId])
@@ -475,6 +493,73 @@ model EventTicketAttendantSession {
   @@index([eventId])
   @@index([expiresAt])
   @@map("event_ticket_attendant_sessions")
+}
+
+model EventChatRoom {
+  id                String              @id @default(cuid())
+  eventId           String              @unique
+  event             Event               @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  status            EventChatRoomStatus @default(ACTIVE)
+  finalUpdatesUntil DateTime?
+  lockedAt          DateTime?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  messages          EventChatMessage[]
+  readStates        EventChatReadState[]
+
+  @@unique([id, eventId])
+  @@index([status])
+  @@index([finalUpdatesUntil])
+  @@map("event_chat_rooms")
+}
+
+model EventChatMessage {
+  id           String               @id @default(cuid())
+  roomId       String
+  eventId      String
+  senderId     String?
+  type         EventChatMessageType @default(MESSAGE)
+  body         String
+  isPinned     Boolean              @default(false)
+  deletedAt    DateTime?
+  deletedById  String?
+  deleteReason String?
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+  room         EventChatRoom        @relation(fields: [roomId, eventId], references: [id, eventId], onDelete: Cascade)
+  event        Event                @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  sender       User?                @relation("EventChatMessageSender", fields: [senderId], references: [id], onDelete: SetNull)
+  deletedBy    User?                @relation("EventChatMessageDeletedBy", fields: [deletedById], references: [id], onDelete: SetNull)
+  readStates   EventChatReadState[] @relation("EventChatReadStateLastReadMessage")
+
+  @@unique([id, roomId, eventId])
+  @@index([roomId, createdAt])
+  @@index([roomId, isPinned, createdAt])
+  @@index([eventId])
+  @@index([senderId])
+  @@index([deletedAt])
+  @@map("event_chat_messages")
+}
+
+model EventChatReadState {
+  id                String        @id @default(cuid())
+  roomId            String
+  eventId           String
+  userId            String
+  lastReadMessageId String?
+  lastReadAt        DateTime      @default(now())
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  room              EventChatRoom @relation(fields: [roomId, eventId], references: [id, eventId], onDelete: Cascade)
+  event             Event         @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user              User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lastReadMessage   EventChatMessage? @relation("EventChatReadStateLastReadMessage", fields: [lastReadMessageId, roomId, eventId], references: [id, roomId, eventId], onDelete: SetNull)
+
+  @@unique([roomId, userId])
+  @@index([eventId])
+  @@index([userId])
+  @@index([lastReadMessageId])
+  @@map("event_chat_read_states")
 }
 
 model TicketCheckInAttempt {
