@@ -316,6 +316,7 @@ describe('EventChatService access rules', () => {
       id: 'vendor-1',
       displayName: 'Vendor O.',
       profileImage: null,
+      role: 'VENDOR',
     });
     expect(result.sender).not.toHaveProperty('password');
     expect(result.sender).not.toHaveProperty('refreshToken');
