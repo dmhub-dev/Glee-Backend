@@ -13,6 +13,7 @@ import { UsersModule } from './modules/identity/users/users.module';
 import { AuthModule } from './auth/auth.module';
 import { EventModule } from './modules/events/event.module';
 import { EventTicketsModule } from './modules/tickets/event-tickets.module';
+import { EventChatModule } from './modules/chat/event-chat.module';
 import { CategoriesModule } from './modules/events/categories/categories.module';
 import { LocationModule } from './modules/venues/locations/location.module';
 import { OnesignalModule } from './infrastructure/push/onesignal/onesignal.module';
@@ -43,6 +44,7 @@ import { PlatformSettingsModule } from './modules/settings/platform-settings.mod
     AuthModule,
     EventModule,
     EventTicketsModule,
+    EventChatModule,
     CategoriesModule,
     LocationModule,
     OnesignalModule,
