@@ -73,6 +73,26 @@ describe('EventChatGateway', () => {
     expect(client.disconnect).toHaveBeenCalledWith(true);
   });
 
+  it('authenticates using authorization bearer header', async () => {
+    const client = createClient();
+    client.handshake.headers.authorization = 'Bearer header-token';
+
+    await gateway.handleConnection(client);
+
+    expect(jwtService.verifyAsync).toHaveBeenCalledWith('header-token', { secret: 'secret' });
+    expect(client.data.user).toEqual(user);
+  });
+
+  it('authenticates using token query', async () => {
+    const client = createClient();
+    client.handshake.query.token = 'query-token';
+
+    await gateway.handleConnection(client);
+
+    expect(jwtService.verifyAsync).toHaveBeenCalledWith('query-token', { secret: 'secret' });
+    expect(client.data.user).toEqual(user);
+  });
+
   it('joins event room after access check', async () => {
     const room = { id: 'room-1', eventId: 'event-1', access: { canRead: true } };
     eventChatService.getRoom.mockResolvedValue(room);
@@ -86,6 +106,17 @@ describe('EventChatGateway', () => {
     expect(client.join).toHaveBeenCalledWith('event:event-1');
     expect(client.emit).toHaveBeenCalledWith('chat:room', room);
     expect(ack).toHaveBeenCalledWith({ success: true, data: room });
+  });
+
+  it('leaves event room', async () => {
+    const client = createClient('token');
+    await gateway.handleConnection(client);
+    const ack = jest.fn();
+
+    await gateway.handleLeave(client, { eventId: 'event-1' }, ack);
+
+    expect(client.leave).toHaveBeenCalledWith('event:event-1');
+    expect(ack).toHaveBeenCalledWith({ success: true, data: { eventId: 'event-1' } });
   });
 
   it('broadcasts created messages to the event room', async () => {
@@ -111,6 +142,103 @@ describe('EventChatGateway', () => {
     expect(server.to).toHaveBeenCalledWith('event:event-1');
     expect(roomEmitter.emit).toHaveBeenCalledWith('chat:message', message);
     expect(ack).toHaveBeenCalledWith({ success: true, data: message });
+  });
+
+  it('marks an event room as read', async () => {
+    const readState = { roomId: 'room-1', userId: 'user-1', lastReadMessageId: 'message-1' };
+    eventChatService.markRead.mockResolvedValue(readState);
+    const client = createClient('token');
+    await gateway.handleConnection(client);
+    const ack = jest.fn();
+
+    await gateway.handleRead(
+      client,
+      { eventId: 'event-1', lastReadMessageId: 'message-1' },
+      ack,
+    );
+
+    expect(eventChatService.markRead).toHaveBeenCalledWith(
+      'event-1',
+      { lastReadMessageId: 'message-1' },
+      user,
+    );
+    expect(ack).toHaveBeenCalledWith({ success: true, data: readState });
+  });
+
+  it('rejects missing event id before calling service', async () => {
+    const client = createClient('token');
+    await gateway.handleConnection(client);
+    const ack = jest.fn();
+
+    await gateway.handleJoin(client, { eventId: '' }, ack);
+
+    expect(eventChatService.getRoom).not.toHaveBeenCalled();
+    expect(client.join).not.toHaveBeenCalled();
+    expect(client.emit).toHaveBeenCalledWith('chat:error', {
+      message: 'eventId is required',
+      statusCode: 400,
+    });
+    expect(ack).toHaveBeenCalledWith({
+      success: false,
+      error: { message: 'eventId is required', statusCode: 400 },
+    });
+  });
+
+  it('rejects invalid message type and body before calling service', async () => {
+    const client = createClient('token');
+    await gateway.handleConnection(client);
+    const ack = jest.fn();
+
+    await gateway.handleMessage(
+      client,
+      { eventId: 'event-1', body: '   ', type: 'SYSTEM' as any },
+      ack,
+    );
+
+    expect(eventChatService.createMessage).not.toHaveBeenCalled();
+    expect(server.to).not.toHaveBeenCalled();
+    expect(ack).toHaveBeenCalledWith({
+      success: false,
+      error: {
+        message: 'body should not be empty, type must be MESSAGE or ANNOUNCEMENT',
+        statusCode: 400,
+      },
+    });
+  });
+
+  it('rejects malformed read payload before calling service', async () => {
+    const client = createClient('token');
+    await gateway.handleConnection(client);
+    const ack = jest.fn();
+
+    await gateway.handleRead(
+      client,
+      { eventId: 'event-1', lastReadMessageId: 123 as any },
+      ack,
+    );
+
+    expect(eventChatService.markRead).not.toHaveBeenCalled();
+    expect(ack).toHaveBeenCalledWith({
+      success: false,
+      error: { message: 'lastReadMessageId must be a string', statusCode: 400 },
+    });
+  });
+
+  it('does not broadcast when create message fails', async () => {
+    eventChatService.createMessage.mockRejectedValue(
+      new HttpException('Chat is locked', HttpStatus.CONFLICT),
+    );
+    const client = createClient('token');
+    await gateway.handleConnection(client);
+    const ack = jest.fn();
+
+    await gateway.handleMessage(client, { eventId: 'event-1', body: 'Hello' }, ack);
+
+    expect(server.to).not.toHaveBeenCalled();
+    expect(ack).toHaveBeenCalledWith({
+      success: false,
+      error: { message: 'Chat is locked', statusCode: 409 },
+    });
   });
 
   it('acknowledges and emits service errors', async () => {

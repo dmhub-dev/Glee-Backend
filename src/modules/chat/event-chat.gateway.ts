@@ -48,8 +48,9 @@ export class EventChatGateway implements OnGatewayConnection {
     ack?: (response: any) => void,
   ) {
     return this.safeHandle(client, ack, async () => {
-      const room = await this.eventChatService.getRoom(payload?.eventId, client.data.user);
-      await client.join(this.eventRoom(payload.eventId));
+      const eventId = this.validateEventId(payload?.eventId);
+      const room = await this.eventChatService.getRoom(eventId, client.data.user);
+      await client.join(this.eventRoom(eventId));
       client.emit('chat:room', room);
       return room;
     });
@@ -62,8 +63,9 @@ export class EventChatGateway implements OnGatewayConnection {
     ack?: (response: any) => void,
   ) {
     return this.safeHandle(client, ack, async () => {
-      await client.leave(this.eventRoom(payload?.eventId));
-      return { eventId: payload?.eventId };
+      const eventId = this.validateEventId(payload?.eventId);
+      await client.leave(this.eventRoom(eventId));
+      return { eventId };
     });
   }
 
@@ -74,12 +76,14 @@ export class EventChatGateway implements OnGatewayConnection {
     ack?: (response: any) => void,
   ) {
     return this.safeHandle(client, ack, async () => {
+      const eventId = this.validateEventId(payload?.eventId);
+      const dto = this.validateMessagePayload(payload);
       const message = await this.eventChatService.createMessage(
-        payload?.eventId,
-        { body: payload?.body, type: payload?.type },
+        eventId,
+        dto,
         client.data.user,
       );
-      this.server.to(this.eventRoom(payload.eventId)).emit('chat:message', message);
+      this.server.to(this.eventRoom(eventId)).emit('chat:message', message);
       return message;
     });
   }
@@ -91,9 +95,11 @@ export class EventChatGateway implements OnGatewayConnection {
     ack?: (response: any) => void,
   ) {
     return this.safeHandle(client, ack, async () => {
+      const eventId = this.validateEventId(payload?.eventId);
+      const dto = this.validateReadPayload(payload);
       return this.eventChatService.markRead(
-        payload?.eventId,
-        { lastReadMessageId: payload?.lastReadMessageId },
+        eventId,
+        dto,
         client.data.user,
       );
     });
@@ -175,6 +181,52 @@ export class EventChatGateway implements OnGatewayConnection {
     return {
       message: Array.isArray(message) ? message.join(', ') : message,
       statusCode: error?.getStatus?.() ?? HttpStatus.INTERNAL_SERVER_ERROR,
+    };
+  }
+
+  private validateEventId(eventId: unknown) {
+    if (typeof eventId !== 'string' || !eventId.trim()) {
+      throw new HttpException('eventId is required', HttpStatus.BAD_REQUEST);
+    }
+
+    return eventId.trim();
+  }
+
+  private validateMessagePayload(payload: any): CreateEventChatMessageDto {
+    const errors: string[] = [];
+    const body = typeof payload?.body === 'string' ? payload.body.trim() : payload?.body;
+    const type = payload?.type;
+
+    if (typeof payload?.body !== 'string') {
+      errors.push('body must be a string');
+    } else if (!body) {
+      errors.push('body should not be empty');
+    } else if (body.length > 1000) {
+      errors.push('body must be shorter than or equal to 1000 characters');
+    }
+
+    if (type !== undefined && type !== 'MESSAGE' && type !== 'ANNOUNCEMENT') {
+      errors.push('type must be MESSAGE or ANNOUNCEMENT');
+    }
+
+    if (errors.length) {
+      throw new HttpException(errors.join(', '), HttpStatus.BAD_REQUEST);
+    }
+
+    return {
+      body,
+      ...(type ? { type } : {}),
+    };
+  }
+
+  private validateReadPayload(payload: any): MarkEventChatReadDto {
+    const lastReadMessageId = payload?.lastReadMessageId;
+    if (lastReadMessageId !== undefined && typeof lastReadMessageId !== 'string') {
+      throw new HttpException('lastReadMessageId must be a string', HttpStatus.BAD_REQUEST);
+    }
+
+    return {
+      ...(lastReadMessageId ? { lastReadMessageId: lastReadMessageId.trim() } : {}),
     };
   }
 
