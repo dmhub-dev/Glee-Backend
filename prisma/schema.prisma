@@ -504,6 +504,7 @@ model EventChatRoom {
   status            EventChatRoomStatus @default(ACTIVE)
   finalUpdatesUntil DateTime?
   lockedAt          DateTime?
+  staffOnly         Boolean             @default(false)
   createdAt         DateTime            @default(now())
   updatedAt         DateTime            @updatedAt
   messages          EventChatMessage[]

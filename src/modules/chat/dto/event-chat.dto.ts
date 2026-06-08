@@ -63,3 +63,9 @@ export class MarkEventChatReadDto {
   @IsString()
   lastReadMessageId?: string;
 }
+
+export class UpdateChatSettingsDto {
+  @Type(() => Boolean)
+  @IsBoolean()
+  staffOnly: boolean;
+}

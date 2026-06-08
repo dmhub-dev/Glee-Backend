@@ -230,6 +230,10 @@ export class EventChatGateway implements OnGatewayConnection {
     };
   }
 
+  broadcastRoomUpdate(eventId: string, room: any) {
+    this.server.to(this.eventRoom(eventId)).emit('chat:room:updated', room);
+  }
+
   broadcastMessage(eventId: string, message: any) {
     this.server.to(this.eventRoom(eventId)).emit('chat:message', message);
   }
