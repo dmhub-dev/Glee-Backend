@@ -854,10 +854,11 @@ export class EventService {
             );
         }
 
+        const endedAt = new Date();
         const updated = await this.prisma.$transaction(async (tx) => {
             const endedEvent = await tx.event.update({
                 where: { id },
-                data: { status: EventStatus.ENDED },
+                data: { status: EventStatus.ENDED, endedAt },
                 include: EVENT_INCLUDE,
             });
 
@@ -879,7 +880,7 @@ export class EventService {
 
             await tx.eventTicketAttendantSession.updateMany({
                 where: { eventId: id, revokedAt: null },
-                data: { revokedAt: new Date() },
+                data: { revokedAt: endedAt },
             });
 
             await tx.auditLog.create({
@@ -890,6 +891,7 @@ export class EventService {
                     entityId: id,
                     metadata: {
                         status: EventStatus.ENDED,
+                        endedAt,
                     },
                 },
             });

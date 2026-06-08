@@ -110,7 +110,10 @@ describe('EventStatusScheduler', () => {
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
     expect(prisma.event.update).toHaveBeenNthCalledWith(1, {
       where: { id: 'event-1' },
-      data: { status: EventStatus.ENDED },
+      data: {
+        status: EventStatus.ENDED,
+        endedAt: new Date('2026-06-01T12:00:00.000Z'),
+      },
     });
     expect(prisma.eventTicketAttendant.updateMany).toHaveBeenNthCalledWith(1, {
       where: {

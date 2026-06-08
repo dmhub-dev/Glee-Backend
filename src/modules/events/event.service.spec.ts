@@ -409,7 +409,7 @@ describe('EventService location booking conflicts', () => {
 
         expect(prisma.event.update).toHaveBeenCalledWith({
             where: { id: 'event-1' },
-            data: { status: EventStatus.ENDED },
+            data: { status: EventStatus.ENDED, endedAt: expect.any(Date) },
             include: expect.objectContaining({
                 location: true,
                 category: true,
@@ -443,6 +443,7 @@ describe('EventService location booking conflicts', () => {
                 entityId: 'event-1',
                 metadata: expect.objectContaining({
                     status: EventStatus.ENDED,
+                    endedAt: expect.any(Date),
                 }),
             }),
         });

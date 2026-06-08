@@ -73,7 +73,7 @@ export class EventStatusScheduler {
         await this.prisma.$transaction(async (tx) => {
           await tx.event.update({
             where: { id: event.id },
-            data: { status: EventStatus.ENDED },
+            data: { status: EventStatus.ENDED, endedAt: effectiveEndDate },
           });
 
           await tx.eventTicketAttendant.updateMany({
