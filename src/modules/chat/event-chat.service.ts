@@ -220,6 +220,24 @@ export class EventChatService {
     return { success: true, messageId: message.id };
   }
 
+  async updateSettings(eventId: string, dto: { staffOnly: boolean }, actor: any) {
+    const event = await this.findEventOrThrow(eventId);
+    const room = await this.ensureRoom(event);
+    const access = await this.resolveAccess(event, room, actor);
+
+    if (!access.canModerate) {
+      throw new HttpException('You do not have moderation access to this chat', HttpStatus.FORBIDDEN);
+    }
+
+    const updated = await (this.prisma as any).eventChatRoom.update({
+      where: { id: room.id },
+      data: { staffOnly: dto.staffOnly },
+    });
+
+    const unreadCount = await this.getUnreadCount(updated, actor?.id);
+    return this.serializeRoom(updated, event, access, unreadCount);
+  }
+
   private async findEventOrThrow(eventId: string) {
     const event = await (this.prisma as any).event.findUnique({
       where: { id: eventId },
@@ -252,6 +270,7 @@ export class EventChatService {
         status: roomState.status,
         finalUpdatesUntil: roomState.finalUpdatesUntil,
         lockedAt: roomState.lockedAt,
+        staffOnly: false,
       },
       update: {
         status: roomState.status,
@@ -398,7 +417,7 @@ export class EventChatService {
 
     return {
       canRead: true,
-      canWrite: isActive,
+      canWrite: isActive && !room.staffOnly,
       canModerate: false,
       canAnnounce: false,
       canPin: true,
@@ -473,6 +492,7 @@ export class EventChatService {
       status: room.status,
       finalUpdatesUntil: room.finalUpdatesUntil,
       lockedAt: room.lockedAt,
+      staffOnly: room.staffOnly,
       access,
       unreadCount,
     };

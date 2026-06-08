@@ -7,6 +7,7 @@ import {
   CreateEventChatMessageDto,
   DeleteEventChatMessageDto,
   MarkEventChatReadDto,
+  UpdateChatSettingsDto,
   UpdateEventChatMessageDto,
 } from './dto/event-chat.dto';
 import { EventChatGateway } from './event-chat.gateway';
@@ -46,6 +47,18 @@ export class EventChatController {
     const message = await this.eventChatService.createMessage(eventId, dto, user);
     this.eventChatGateway.broadcastMessage(eventId, message);
     return message;
+  }
+
+  @Patch('settings')
+  @ApiResponses(true)
+  async updateSettings(
+    @Param('eventId') eventId: string,
+    @Body() dto: UpdateChatSettingsDto,
+    @CurrentUser() user: any,
+  ) {
+    const room = await this.eventChatService.updateSettings(eventId, dto, user);
+    this.eventChatGateway.broadcastRoomUpdate(eventId, room);
+    return room;
   }
 
   @Post('read')
