@@ -69,7 +69,7 @@ jobs:
           SSH_HOST="$(printf '%s' "$VPS_HOST" | tr -d '[:space:]')"
           SSH_PORT="$(printf '%s' "${VPS_PORT:-22}" | tr -d '[:space:]')"
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new -o ConnectTimeout=30 -p "$SSH_PORT" "$VPS_USER@$SSH_HOST" \
-            "cd '$VPS_APP_PATH' && git pull --ff-only && docker compose --env-file .env up -d --build"
+            "cd '$VPS_APP_PATH' && git fetch origin && git reset --hard origin/main && docker compose --env-file .env up -d --build"
 
       - name: Run post-deploy command
         if: steps.deploy_config.outputs.ready == 'true' && env.VPS_POST_DEPLOY_COMMAND != ''
