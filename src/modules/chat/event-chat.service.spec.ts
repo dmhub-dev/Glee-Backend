@@ -55,6 +55,7 @@ describe('EventChatService access rules', () => {
               findFirst: jest.fn(),
               findMany: jest.fn().mockResolvedValue([]),
               findUnique: jest.fn(),
+              update: jest.fn(),
             },
             eventChatReadState: {
               findUnique: jest.fn().mockResolvedValue(null),
@@ -173,7 +174,7 @@ describe('EventChatService access rules', () => {
     ).rejects.toMatchObject({ status: 403 });
   });
 
-  it('allows vendor owner for own event with read permissions', async () => {
+  it('allows vendor owner for own event with read permissions but no moderation access', async () => {
     const result = await service.getRoom('event-1', {
       id: 'vendor-1',
       role: 'VENDOR',
@@ -182,7 +183,7 @@ describe('EventChatService access rules', () => {
 
     expect(result.access.canRead).toBe(true);
     expect(result.access.canWrite).toBe(false);
-    expect(result.access.canModerate).toBe(true);
+    expect(result.access.canModerate).toBe(false);
     expect(result.access.canAnnounce).toBe(false);
   });
 
@@ -451,5 +452,128 @@ describe('EventChatService access rules', () => {
         permissions: ['chat:read'],
       }),
     ).rejects.toThrow(HttpException);
+  });
+
+  it('denies non-moderator attendee from pinning or deleting messages', async () => {
+    prisma.eventTicket.findFirst.mockResolvedValue({
+      id: 'ticket-1',
+      eventId: 'event-1',
+      userId: 'attendee-1',
+      status: 'ACTIVE',
+      guestName: null,
+      guestEmail: null,
+    });
+    const actor = { id: 'attendee-1', role: 'USER', permissions: [] };
+
+    await expect(
+      service.updateMessagePin('event-1', 'message-1', { isPinned: true }, actor),
+    ).rejects.toMatchObject({ status: 403 });
+    await expect(
+      service.deleteMessage('event-1', 'message-1', { reason: 'Spam' }, actor),
+    ).rejects.toMatchObject({ status: 403 });
+    expect(prisma.eventChatMessage.update).not.toHaveBeenCalled();
+  });
+
+  it('denies vendor owner with only chat read permission from pinning or deleting messages', async () => {
+    const actor = { id: 'vendor-1', role: 'VENDOR', permissions: ['chat:read'] };
+
+    await expect(
+      service.updateMessagePin('event-1', 'message-1', { isPinned: true }, actor),
+    ).rejects.toMatchObject({ status: 403 });
+    await expect(
+      service.deleteMessage('event-1', 'message-1', { reason: 'Duplicate' }, actor),
+    ).rejects.toMatchObject({ status: 403 });
+    expect(prisma.eventChatMessage.update).not.toHaveBeenCalled();
+  });
+
+  it('allows vendor moderator with chat read and create permissions to pin own event message', async () => {
+    prisma.eventChatMessage.findFirst.mockResolvedValue({ id: 'message-1' });
+    prisma.eventChatMessage.update.mockResolvedValue({
+      id: 'message-1',
+      roomId: 'room-1',
+      eventId: 'event-1',
+      type: 'MESSAGE',
+      body: 'Important detail',
+      isPinned: true,
+      createdAt: new Date('2026-06-08T10:00:00Z'),
+      updatedAt: new Date('2026-06-08T10:02:00Z'),
+      sender: {
+        id: 'vendor-1',
+        name: 'Vendor Owner',
+        email: 'vendor@example.com',
+        role: 'VENDOR',
+        profileImage: null,
+      },
+    });
+
+    const result = await service.updateMessagePin(
+      'event-1',
+      'message-1',
+      { isPinned: true },
+      { id: 'vendor-1', role: 'VENDOR', permissions: ['chat:read', 'chat:create'] },
+    );
+
+    expect(prisma.eventChatMessage.findFirst).toHaveBeenCalledWith({
+      where: {
+        id: 'message-1',
+        roomId: 'room-1',
+        eventId: 'event-1',
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+    expect(prisma.eventChatMessage.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'message-1' },
+        data: { isPinned: true },
+      }),
+    );
+    expect(result.isPinned).toBe(true);
+  });
+
+  it('soft deletes message with moderator identity and reason', async () => {
+    prisma.eventChatMessage.findFirst.mockResolvedValue({ id: 'message-1' });
+    prisma.eventChatMessage.update.mockResolvedValue({ id: 'message-1' });
+
+    const result = await service.deleteMessage(
+      'event-1',
+      'message-1',
+      { reason: 'Duplicate update' },
+      { id: 'vendor-1', role: 'VENDOR', permissions: ['chat:read', 'chat:create'] },
+    );
+
+    expect(prisma.eventChatMessage.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'message-1' },
+        data: expect.objectContaining({
+          deletedById: 'vendor-1',
+          deleteReason: 'Duplicate update',
+        }),
+      }),
+    );
+    expect(result).toEqual({ success: true, messageId: 'message-1' });
+  });
+
+  it('returns not found when pin target is missing or outside event room', async () => {
+    prisma.eventChatMessage.findFirst.mockResolvedValue(null);
+
+    await expect(
+      service.updateMessagePin(
+        'event-1',
+        'message-from-other-room',
+        { isPinned: true },
+        { id: 'vendor-1', role: 'VENDOR', permissions: ['chat:read', 'chat:create'] },
+      ),
+    ).rejects.toMatchObject({ status: 404 });
+    expect(prisma.eventChatMessage.findFirst).toHaveBeenCalledWith({
+      where: {
+        id: 'message-from-other-room',
+        roomId: 'room-1',
+        eventId: 'event-1',
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+    expect(prisma.eventChatMessage.update).not.toHaveBeenCalled();
   });
 });

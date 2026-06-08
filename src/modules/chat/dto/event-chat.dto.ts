@@ -50,6 +50,14 @@ export class UpdateEventChatMessageDto {
   isPinned: boolean;
 }
 
+export class DeleteEventChatMessageDto {
+  @IsOptional()
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  @IsString()
+  @MaxLength(300)
+  reason?: string;
+}
+
 export class MarkEventChatReadDto {
   @IsOptional()
   @IsString()

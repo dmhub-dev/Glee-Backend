@@ -4,7 +4,9 @@ import { OnesignalService } from '@src/infrastructure/push/onesignal/onesignal.s
 import {
   ChatPaginationQueryDto,
   CreateEventChatMessageDto,
+  DeleteEventChatMessageDto,
   MarkEventChatReadDto,
+  UpdateEventChatMessageDto,
 } from './dto/event-chat.dto';
 
 type ChatMessageType = 'MESSAGE' | 'ANNOUNCEMENT' | 'SYSTEM';
@@ -178,6 +180,45 @@ export class EventChatService {
     return readState;
   }
 
+  async updateMessagePin(
+    eventId: string,
+    messageId: string,
+    dto: UpdateEventChatMessageDto,
+    actor: any,
+  ) {
+    const { room } = await this.getModerationContext(eventId, actor);
+    const message = await this.findActiveMessageOrThrow(room.id, eventId, messageId);
+
+    const updatedMessage = await (this.prisma as any).eventChatMessage.update({
+      where: { id: message.id },
+      data: { isPinned: dto.isPinned },
+      select: this.messageSelect(),
+    });
+
+    return this.serializeMessage(updatedMessage);
+  }
+
+  async deleteMessage(
+    eventId: string,
+    messageId: string,
+    dto: DeleteEventChatMessageDto,
+    actor: any,
+  ) {
+    const { room } = await this.getModerationContext(eventId, actor);
+    const message = await this.findActiveMessageOrThrow(room.id, eventId, messageId);
+
+    await (this.prisma as any).eventChatMessage.update({
+      where: { id: message.id },
+      data: {
+        deletedAt: new Date(),
+        deletedById: actor.id,
+        deleteReason: dto?.reason ?? null,
+      },
+    });
+
+    return { success: true, messageId: message.id };
+  }
+
   private async findEventOrThrow(eventId: string) {
     const event = await (this.prisma as any).event.findUnique({
       where: { id: eventId },
@@ -217,6 +258,40 @@ export class EventChatService {
         lockedAt: roomState.lockedAt,
       },
     });
+  }
+
+  private async getModerationContext(eventId: string, actor: any) {
+    const event = await this.findEventOrThrow(eventId);
+    const room = await this.ensureRoom(event);
+    const access = await this.resolveAccess(event, room, actor);
+
+    if (!access.canRead) {
+      throw new HttpException('You do not have access to this chat', HttpStatus.FORBIDDEN);
+    }
+
+    if (!access.canModerate) {
+      throw new HttpException('You do not have moderation access to this chat', HttpStatus.FORBIDDEN);
+    }
+
+    return { event, room, access };
+  }
+
+  private async findActiveMessageOrThrow(roomId: string, eventId: string, messageId: string) {
+    const message = await (this.prisma as any).eventChatMessage.findFirst({
+      where: {
+        id: messageId,
+        roomId,
+        eventId,
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+
+    if (!message) {
+      throw new HttpException('Chat message not found', HttpStatus.NOT_FOUND);
+    }
+
+    return message;
   }
 
   private resolveRoomStatus(event: any) {
@@ -284,7 +359,7 @@ export class EventChatService {
     const permissionedStaffAccess = {
       canRead: true,
       canWrite: isActive && hasChatCreate,
-      canModerate: true,
+      canModerate: hasChatCreate,
       canAnnounce: !isLocked && canAnnounce && hasChatCreate,
     };
 
@@ -397,6 +472,20 @@ export class EventChatService {
       lockedAt: room.lockedAt,
       access,
       unreadCount,
+    };
+  }
+
+  private messageSelect() {
+    return {
+      id: true,
+      roomId: true,
+      eventId: true,
+      type: true,
+      body: true,
+      isPinned: true,
+      createdAt: true,
+      updatedAt: true,
+      sender: { select: SAFE_SENDER_SELECT },
     };
   }
 
