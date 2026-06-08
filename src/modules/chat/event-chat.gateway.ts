@@ -230,6 +230,18 @@ export class EventChatGateway implements OnGatewayConnection {
     };
   }
 
+  broadcastMessage(eventId: string, message: any) {
+    this.server.to(this.eventRoom(eventId)).emit('chat:message', message);
+  }
+
+  broadcastMessageUpdate(eventId: string, message: any) {
+    this.server.to(this.eventRoom(eventId)).emit('chat:message:updated', message);
+  }
+
+  broadcastMessageDelete(eventId: string, messageId: string) {
+    this.server.to(this.eventRoom(eventId)).emit('chat:message:deleted', { messageId, eventId });
+  }
+
   private eventRoom(eventId: string) {
     return `event:${eventId}`;
   }

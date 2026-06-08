@@ -6,6 +6,7 @@ describe('EventService location booking conflicts', () => {
     let service: EventService;
     let prisma: any;
     let s3: any;
+    let eventSharedService: any;
 
     beforeEach(() => {
         prisma = {
@@ -38,6 +39,13 @@ describe('EventService location booking conflicts', () => {
                 createMany: jest.fn(),
                 deleteMany: jest.fn(),
             },
+            ticketWave: {
+                findMany: jest.fn().mockResolvedValue([]),
+                findUnique: jest.fn(),
+                update: jest.fn(),
+                create: jest.fn(),
+                deleteMany: jest.fn(),
+            },
             eventMenuItem: {
                 createMany: jest.fn(),
                 deleteMany: jest.fn(),
@@ -53,7 +61,16 @@ describe('EventService location booking conflicts', () => {
             },
         };
         s3 = { uploadMany: jest.fn().mockResolvedValue([]) };
-        service = new EventService(prisma, {} as any, {} as any, s3, {} as any);
+        eventSharedService = {
+            getUserPurchasedEventList: jest.fn().mockResolvedValue([]),
+        };
+        service = new EventService(
+            prisma,
+            eventSharedService,
+            {} as any,
+            s3,
+            {} as any,
+        );
     });
 
     it('blocks creating an event when the location is already booked on that day', async () => {
@@ -201,6 +218,31 @@ describe('EventService location booking conflicts', () => {
                 }),
             }),
         );
+    });
+
+    it('allows a user with purchased tickets to view a non-public event', async () => {
+        prisma.event.findFirst.mockResolvedValue({
+            id: 'event-1',
+            name: 'Past Event',
+            status: EventStatus.ENDED,
+            isDeleted: false,
+        });
+        eventSharedService.getUserPurchasedEventList.mockResolvedValue([
+            {
+                id: 'ticket-1',
+                eventId: 'event-1',
+                payment: { noOfItems: 2 },
+            },
+        ]);
+
+        const result = (await service.findOne('event-1', {
+            id: 'user-1',
+            role: UserRole.USER,
+        })) as any;
+
+        expect(result.success).toBe(true);
+        expect(result.data.isPurchased).toBe(true);
+        expect(result.data.noOfTicketPurchased).toBe(2);
     });
 
     it('blocks updating an event into another event location-day booking', async () => {

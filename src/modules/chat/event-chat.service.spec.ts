@@ -121,9 +121,9 @@ describe('EventChatService access rules', () => {
     expect(prisma.eventTicket.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          status: { in: ['ACTIVE', 'USED'] },
-          guestName: null,
-          guestEmail: null,
+          eventId: 'event-1',
+          userId: 'attendee-1',
+          status: { not: 'CANCELLED' },
         }),
       }),
     );
@@ -131,35 +131,70 @@ describe('EventChatService access rules', () => {
     expect(result.access.canWrite).toBe(true);
   });
 
-  it('denies active guest ticket with same user id', async () => {
+  it('allows authenticated owner when ticket has buyer contact fields', async () => {
     prisma.eventTicket.findFirst.mockImplementation(({ where }) =>
-      where.guestName === null && where.guestEmail === null
-        ? Promise.resolve(null)
-        : Promise.resolve({
-            id: 'guest-ticket-1',
-            eventId: 'event-1',
-            userId: 'attendee-1',
-            status: 'ACTIVE',
-            guestName: 'Guest Buyer',
-            guestEmail: 'guest@example.com',
-          }),
+      where.userId === 'attendee-1'
+        ? Promise.resolve({
+          id: 'ticket-1',
+          eventId: 'event-1',
+          userId: 'attendee-1',
+          status: 'ACTIVE',
+          guestName: 'Guest Buyer',
+          guestEmail: 'guest@example.com',
+        })
+        : Promise.resolve(null),
     );
 
-    await expect(
-      service.getRoom('event-1', {
-        id: 'attendee-1',
-        role: 'USER',
-        permissions: [],
-      }),
-    ).rejects.toMatchObject({ status: 403 });
+    const result = await service.getRoom('event-1', {
+      id: 'attendee-1',
+      role: 'USER',
+      permissions: [],
+    });
+
     expect(prisma.eventTicket.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
-          guestName: null,
-          guestEmail: null,
+          userId: 'attendee-1',
         }),
       }),
     );
+    const query = prisma.eventTicket.findFirst.mock.calls[0][0];
+    expect(query.where).not.toHaveProperty('guestName');
+    expect(query.where).not.toHaveProperty('guestEmail');
+    expect(result.access.canRead).toBe(true);
+    expect(result.access.canWrite).toBe(true);
+  });
+
+  it('allows logged-in attendee with expired ticket to read ended chat', async () => {
+    prisma.event.findUnique.mockResolvedValue({
+      ...activeEvent,
+      status: 'ENDED',
+      endDate: new Date('2026-06-08T09:00:00Z'),
+    });
+    prisma.eventTicket.findFirst.mockResolvedValue({
+      id: 'ticket-1',
+      eventId: 'event-1',
+      userId: 'attendee-1',
+      status: 'EXPIRED',
+    });
+
+    const result = await service.getRoom('event-1', {
+      id: 'attendee-1',
+      role: 'USER',
+      permissions: [],
+    });
+
+    expect(prisma.eventTicket.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          eventId: 'event-1',
+          userId: 'attendee-1',
+          status: { not: 'CANCELLED' },
+        }),
+      }),
+    );
+    expect(result.access.canRead).toBe(true);
+    expect(result.access.canWrite).toBe(false);
   });
 
   it('denies attendee without ticket', async () => {

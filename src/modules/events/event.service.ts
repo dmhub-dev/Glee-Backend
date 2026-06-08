@@ -297,14 +297,18 @@ export class EventService {
             };
         }
 
-        if (!this.canViewEvent(event, currentUser)) {
-            throw new HttpException('Event not found', HttpStatus.NOT_FOUND);
-        }
-
         const userId =
             currentUser?.role === UserRole.USER ? currentUser.id : null;
         const purchasedTickets =
             await this.eventSharedService.getUserPurchasedEventList(userId, id);
+        const userPurchasedEvent = purchasedTickets.some(
+            (ticket) => ticket.eventId === event.id,
+        );
+
+        if (!this.canViewEvent(event, currentUser) && !userPurchasedEvent) {
+            throw new HttpException('Event not found', HttpStatus.NOT_FOUND);
+        }
+
         let noOfTicketPurchased = 0;
         purchasedTickets.forEach((t) => {
             noOfTicketPurchased += (t.payment as any)?.noOfItems ?? 0;
@@ -315,9 +319,7 @@ export class EventService {
             message: 'Event Fetched Successfuly',
             data: {
                 ...event,
-                isPurchased: purchasedTickets.some(
-                    (t) => t.eventId === event.id,
-                ),
+                isPurchased: userPurchasedEvent,
                 totalTicketPurchased: await this.countPurchasedTickets(
                     event.id,
                 ),

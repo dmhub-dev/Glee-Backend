@@ -9,12 +9,16 @@ import {
   MarkEventChatReadDto,
   UpdateEventChatMessageDto,
 } from './dto/event-chat.dto';
+import { EventChatGateway } from './event-chat.gateway';
 import { EventChatService } from './event-chat.service';
 
 @ApiTags('Event Chat')
 @Controller('event/:eventId/chat')
 export class EventChatController {
-  constructor(private readonly eventChatService: EventChatService) {}
+  constructor(
+    private readonly eventChatService: EventChatService,
+    private readonly eventChatGateway: EventChatGateway,
+  ) {}
 
   @Get()
   @ApiResponses(true)
@@ -34,12 +38,14 @@ export class EventChatController {
 
   @Post('messages')
   @ApiResponses(true)
-  createMessage(
+  async createMessage(
     @Param('eventId') eventId: string,
     @Body() dto: CreateEventChatMessageDto,
     @CurrentUser() user: any,
   ) {
-    return this.eventChatService.createMessage(eventId, dto, user);
+    const message = await this.eventChatService.createMessage(eventId, dto, user);
+    this.eventChatGateway.broadcastMessage(eventId, message);
+    return message;
   }
 
   @Post('read')
@@ -54,23 +60,27 @@ export class EventChatController {
 
   @Patch('messages/:messageId')
   @ApiResponses(true)
-  updateMessagePin(
+  async updateMessagePin(
     @Param('eventId') eventId: string,
     @Param('messageId') messageId: string,
     @Body() dto: UpdateEventChatMessageDto,
     @CurrentUser() user: any,
   ) {
-    return this.eventChatService.updateMessagePin(eventId, messageId, dto, user);
+    const message = await this.eventChatService.updateMessagePin(eventId, messageId, dto, user);
+    this.eventChatGateway.broadcastMessageUpdate(eventId, message);
+    return message;
   }
 
   @Delete('messages/:messageId')
   @ApiResponses(true)
-  deleteMessage(
+  async deleteMessage(
     @Param('eventId') eventId: string,
     @Param('messageId') messageId: string,
     @Body() dto: DeleteEventChatMessageDto,
     @CurrentUser() user: any,
   ) {
-    return this.eventChatService.deleteMessage(eventId, messageId, dto, user);
+    const result = await this.eventChatService.deleteMessage(eventId, messageId, dto, user);
+    this.eventChatGateway.broadcastMessageDelete(eventId, result.messageId);
+    return result;
   }
 }

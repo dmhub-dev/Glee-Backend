@@ -12,11 +12,12 @@ import {
 type ChatMessageType = 'MESSAGE' | 'ANNOUNCEMENT' | 'SYSTEM';
 type ChatRoomStatus = 'ACTIVE' | 'READ_ONLY' | 'LOCKED';
 
-type ChatAccess = {
+export type ChatAccess = {
   canRead: boolean;
   canWrite: boolean;
   canModerate: boolean;
   canAnnounce: boolean;
+  canPin: boolean;
 };
 
 const SAFE_SENDER_SELECT = {
@@ -340,6 +341,7 @@ export class EventChatService {
       canWrite: false,
       canModerate: false,
       canAnnounce: false,
+      canPin: false,
     };
 
     if (!actor?.id) return noAccess;
@@ -355,12 +357,14 @@ export class EventChatService {
       canWrite: isActive,
       canModerate: true,
       canAnnounce: !isLocked && canAnnounce,
+      canPin: true,
     };
     const permissionedStaffAccess = {
       canRead: true,
       canWrite: isActive && hasChatCreate,
       canModerate: hasChatCreate,
       canAnnounce: !isLocked && canAnnounce && hasChatCreate,
+      canPin: hasChatCreate,
     };
 
     if (actor.role === 'SUPER_ADMIN' || actor.role === 'ADMIN') {
@@ -385,9 +389,7 @@ export class EventChatService {
       where: {
         eventId: event.id,
         userId: actor.id,
-        status: { in: ['ACTIVE', 'USED'] },
-        guestName: null,
-        guestEmail: null,
+        status: { not: 'CANCELLED' },
       },
       select: { id: true },
     });
@@ -399,6 +401,7 @@ export class EventChatService {
       canWrite: isActive,
       canModerate: false,
       canAnnounce: false,
+      canPin: true,
     };
   }
 
@@ -509,11 +512,13 @@ export class EventChatService {
     const parts = String(sender.name ?? '').trim().split(/\s+/).filter(Boolean);
     const firstName = parts[0] ?? 'User';
     const lastInitial = parts.length > 1 ? `${parts[parts.length - 1][0]}.` : '';
+    const role = typeof sender.role === 'object' ? (sender.role?.name ?? null) : (sender.role ?? null);
 
     return {
       id: sender.id,
       displayName: [firstName, lastInitial].filter(Boolean).join(' '),
       profileImage: sender.profileImage ?? null,
+      role,
     };
   }
 
