@@ -164,6 +164,7 @@ describe('EmailService sender routing', () => {
         date: 2026,
       },
       'Glee <no-reply@dmhub.cloud>',
+      'no-reply@dmhub.cloud',
     ],
     [
       'emails/auth/forgot-password',
@@ -174,6 +175,7 @@ describe('EmailService sender routing', () => {
         date: 2026,
       },
       'Glee <no-reply@dmhub.cloud>',
+      'no-reply@dmhub.cloud',
     ],
     [
       'emails/auth/reset-password',
@@ -183,6 +185,7 @@ describe('EmailService sender routing', () => {
         date: 2026,
       },
       'Glee <no-reply@dmhub.cloud>',
+      'no-reply@dmhub.cloud',
     ],
     [
       'emails/auth/invite-user',
@@ -193,8 +196,9 @@ describe('EmailService sender routing', () => {
         date: 2026,
       },
       'Glee Support <support@dmhub.cloud>',
+      'no-reply@dmhub.cloud',
     ],
-  ])('renders %s with expected sender', async (template, locals, expectedFrom) => {
+  ])('renders %s with expected sender', async (template, locals, expectedFrom, expectedEmail) => {
     await service.sendMail({
       template,
       message: { to: 'user@example.com', subject: 'Auth email' },
@@ -204,7 +208,7 @@ describe('EmailService sender routing', () => {
     expect(mockSend).toHaveBeenCalledWith(
       expect.objectContaining({
         from: expectedFrom,
-        html: expect.stringContaining('support@dmhub.cloud'),
+        html: expect.stringContaining(expectedEmail),
       }),
     );
   });
