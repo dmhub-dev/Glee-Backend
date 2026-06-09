@@ -69,6 +69,7 @@ export class WalletService {
         amount: dto.amount,
         points: dto.amount,
       },
+      callbackUrl: dto.callbackUrl,
     });
 
     return {
