@@ -156,7 +156,7 @@ export async function generateTicketPdf(opts: TicketPdfOptions): Promise<Buffer>
       .fillColor('#9ca3af')
       .font('Helvetica')
       .fontSize(9)
-      .text('© 2026 Glee  ·  Non-transferable  ·  One-time entry  ·  support@gleeapp.co', 0, 640 + 214, {
+      .text('© 2026 Glee Events  ·  Non-transferable  ·  One-time entry  ·  support@dmhub.cloud', 0, 640 + 214, {
         width: W,
         align: 'center',
       });

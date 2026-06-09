@@ -93,208 +93,44 @@
                 </div>
 
                 <div class='section'>
-                    <p class='eyebrow'>Event Ticket · {{orderType}}</p>
-                    <h1 class='title'>You're all set, {{userName}}</h1>
-                    <p class='copy'>Your ticket{{#if
-                            (gt noOfItems 1)
-                        }}s are{{else}} is{{/if}}
-                        attached as PDF{{#if (gt noOfItems 1)}}s{{/if}}. Open
-                        the attachment and present the QR code at the venue gate.</p>
+                    <p class='eyebrow'>Ticket Confirmation</p>
+                    <h1 class='title'>You're all set</h1>
+                    <p class='copy'>Your ticket{{#if (gt noOfItems 1)}}s{{/if}} {{#if (gt noOfItems 1)}}are{{else}}is{{/if}} attached as PDF{{#if (gt noOfItems 1)}}s{{/if}}. Open and show the QR code at the gate.</p>
 
                     <div class='event-box'>
                         <p class='event-name'>{{productTitle}}</p>
                         <p class='meta'>
-                            {{#if eventDate}}{{eventDate}}{{/if}}{{#if eventTime}}
-                                ·
-                                {{eventTime}}{{/if}}{{#if eventVenue}}
-                                ·
-                                {{eventVenue}}{{/if}}
+                            {{#if eventDate}}{{eventDate}}{{/if}}{{#if eventTime}} at {{eventTime}}{{/if}}{{#if eventVenue}} · {{eventVenue}}{{/if}}
                         </p>
                     </div>
 
                     {{#if ticketLinks.length}}
-                        <div class='link-panel'>
-                            <p class='link-title'>Fast entry ticket link</p>
-                            <p class='link-copy'>Each ticket has its own public
-                                link with the QR code, attendee details, event
-                                details, and menu add-ons for quick gate access.</p>
+                        <div style='margin: 18px 0; text-align: center;'>
                             {{#each ticketLinks}}
-                                <div class='ticket-link-row'>
-                                    <a
-                                        class='ticket-link-button'
-                                        href='{{this.url}}'
-                                    >Open ticket #{{this.ticketNumber}}</a>
-                                </div>
+                                <a href='{{this.url}}' style='display: inline-block; padding: 11px 20px; background: #7c3aed; color: #ffffff; border-radius: 10px; font-size: 13px; font-weight: 800; text-decoration: none; margin: 6px 6px 0 0;'>View Ticket {{this.ticketNumber}}</a>
                             {{/each}}
                         </div>
                     {{/if}}
 
-                    <div class='ticket-box'>
-                        <div class='ticket-head'>
-                            <p class='ticket-label'>Ticket package</p>
-                            <p class='ticket-title'>{{noOfItems}}
-                                Ticket{{#if (gt noOfItems 1)}}s{{/if}}
-                                ·
-                                {{productTitle}}</p>
-                        </div>
-                        <div class='ticket-body'>
-                            <table width='100%' cellpadding='0' cellspacing='0'>
-                                <tr>
-                                    <td
-                                        valign='top'
-                                        style='width: 52%; padding-right: 20px;'
-                                    >
-                                        <p class='detail-label'>Attendee</p>
-                                        <p class='detail-value'>{{userName}}</p>
-
-                                        <p class='detail-label'>Email</p>
-                                        <p
-                                            class='detail-value small'
-                                        >{{userEmail}}</p>
-
-                                        <p class='detail-label'>Purchased</p>
-                                        <p
-                                            class='detail-value'
-                                        >{{purchasedOn}}</p>
-
-                                        <p class='detail-label'>Order ID</p>
-                                        <p
-                                            class='detail-value small'
-                                            style='margin-bottom:0;'
-                                        >{{ticketId}}</p>
-                                    </td>
-                                    <td valign='top' style='width: 48%;'>
-                                        <div class='pdf-panel'>
-                                            <p class='pdf-title'>PDF ticket{{#if
-                                                    (gt noOfItems 1)
-                                                }}s{{/if}}
-                                                attached</p>
-                                            <p class='pdf-copy'>Each PDF includes a
-                                                unique QR code for one-time entry.</p>
-                                        </div>
-                                    </td>
-                                </tr>
-                            </table>
-                        </div>
-                    </div>
-
                     <div class='summary'>
-                        <div class='summary-head'>Order summary</div>
+                        <div class='summary-head'>Order Total</div>
                         <table width='100%' cellpadding='0' cellspacing='0'>
-                            <tr>
-                                <td class='row'>
-                                    <table
-                                        width='100%'
-                                        cellpadding='0'
-                                        cellspacing='0'
-                                    >
-                                        <tr>
-                                            <td class='row-label'>Tickets</td>
-                                            <td class='row-value'>{{noOfItems}}
-                                                ticket{{#if
-                                                    (gt noOfItems 1)
-                                                }}s{{/if}}</td>
-                                        </tr>
-                                    </table>
-                                </td>
-                            </tr>
-                            <tr>
-                                <td class='row'>
-                                    <table
-                                        width='100%'
-                                        cellpadding='0'
-                                        cellspacing='0'
-                                    >
-                                        <tr>
-                                            <td class='row-label'>Tickets subtotal</td>
-                                            <td class='row-value'>KES
-                                                {{subTotal}}</td>
-                                        </tr>
-                                    </table>
-                                </td>
-                            </tr>
                             {{#if menuItems.length}}
                                 {{#each menuItems}}
                                     <tr>
-                                        <td class='row'>
-                                            <table
-                                                width='100%'
-                                                cellpadding='0'
-                                                cellspacing='0'
-                                            >
-                                                <tr>
-                                                    <td class='row-label'>{{this.name}}
-                                                        x{{this.quantity}}</td>
-                                                    <td class='row-value'>KES
-                                                        {{this.price}}</td>
-                                                </tr>
-                                            </table>
-                                        </td>
+                                        <td class='row-label'>{{this.name}} x{{this.quantity}}</td>
+                                        <td class='row-value'>KES {{this.price}}</td>
                                     </tr>
                                 {{/each}}
                             {{/if}}
-                            {{#if menuTotal}}
-                                <tr>
-                                    <td class='row'>
-                                        <table
-                                            width='100%'
-                                            cellpadding='0'
-                                            cellspacing='0'
-                                        >
-                                            <tr>
-                                                <td class='row-label'>Pre-order subtotal</td>
-                                                <td class='row-value'>KES
-                                                    {{menuTotal}}</td>
-                                            </tr>
-                                        </table>
-                                    </td>
-                                </tr>
-                            {{/if}}
                             <tr>
-                                <td class='total-row'>
-                                    <table
-                                        width='100%'
-                                        cellpadding='0'
-                                        cellspacing='0'
-                                    >
-                                        <tr>
-                                            <td class='total-label'>Total paid</td>
-                                            <td class='total-value'>KES
-                                                {{total}}</td>
-                                        </tr>
-                                    </table>
-                                </td>
+                                <td class='total-label'>Amount paid</td>
+                                <td class='total-value'>KES {{total}}</td>
                             </tr>
                             {{#if paymentPlan}}
-                                <tr>
-                                    <td class='row'>
-                                        <table
-                                            width='100%'
-                                            cellpadding='0'
-                                            cellspacing='0'
-                                        >
-                                            <tr>
-                                                <td class='row-label'>Order total</td>
-                                                <td class='row-value'>KES
-                                                    {{orderTotal}}</td>
-                                            </tr>
-                                        </table>
-                                    </td>
-                                </tr>
-                                <tr>
-                                    <td class='row'>
-                                        <table
-                                            width='100%'
-                                            cellpadding='0'
-                                            cellspacing='0'
-                                        >
-                                            <tr>
-                                                <td class='row-label'>Remaining balance</td>
-                                                <td class='row-value'>KES
-                                                    {{paymentPlan.remainingAmount}}</td>
-                                            </tr>
-                                        </table>
-                                    </td>
+                                <tr style='border-top: 1px solid #e5e7eb; padding-top: 8px;'>
+                                    <td class='row-label' style='padding-top: 8px;'>Remaining balance</td>
+                                    <td class='row-value' style='padding-top: 8px;'>KES {{paymentPlan.remainingAmount}}</td>
                                 </tr>
                             {{/if}}
                         </table>
@@ -302,108 +138,15 @@
 
                     {{#if paymentPlan}}
                         <div class='summary'>
-                            <div class='summary-head'>Wallet installment plan</div>
+                            <div class='summary-head'>Payment Schedule</div>
                             <table width='100%' cellpadding='0' cellspacing='0'>
                                 <tr>
-                                    <td class='row'>
-                                        <table
-                                            width='100%'
-                                            cellpadding='0'
-                                            cellspacing='0'
-                                        >
-                                            <tr>
-                                                <td class='row-label'>Reservation deposit
-                                                    ({{paymentPlan.depositPercent}}%)</td>
-                                                <td class='row-value'>KES
-                                                    {{paymentPlan.depositAmount}}</td>
-                                            </tr>
-                                        </table>
-                                    </td>
+                                    <td class='row-label'>Due now</td>
+                                    <td class='row-value'>KES {{paymentPlan.dueNow}}</td>
                                 </tr>
-                                {{#if paymentPlan.menuAmount}}
-                                    <tr>
-                                        <td class='row'>
-                                            <table
-                                                width='100%'
-                                                cellpadding='0'
-                                                cellspacing='0'
-                                            >
-                                                <tr>
-                                                    <td class='row-label'>Menu add-ons paid now</td>
-                                                    <td class='row-value'>KES
-                                                        {{paymentPlan.menuAmount}}</td>
-                                                </tr>
-                                            </table>
-                                        </td>
-                                    </tr>
-                                {{/if}}
-                                {{#if paymentPlan.securityFeeAmount}}
-                                    <tr>
-                                        <td class='row'>
-                                            <table
-                                                width='100%'
-                                                cellpadding='0'
-                                                cellspacing='0'
-                                            >
-                                                <tr>
-                                                    <td class='row-label'>Security fee
-                                                        ({{paymentPlan.securityFeePercent}}%)</td>
-                                                    <td class='row-value'>KES
-                                                        {{paymentPlan.securityFeeAmount}}</td>
-                                                </tr>
-                                            </table>
-                                        </td>
-                                    </tr>
-                                {{/if}}
                                 <tr>
-                                    <td class='row'>
-                                        <table
-                                            width='100%'
-                                            cellpadding='0'
-                                            cellspacing='0'
-                                        >
-                                            <tr>
-                                                <td class='row-label'>Total deducted now</td>
-                                                <td class='row-value'>KES
-                                                    {{paymentPlan.dueNow}}</td>
-                                            </tr>
-                                        </table>
-                                    </td>
-                                </tr>
-                                {{#each paymentPlan.installments}}
-                                    <tr>
-                                        <td class='row'>
-                                            <table
-                                                width='100%'
-                                                cellpadding='0'
-                                                cellspacing='0'
-                                            >
-                                                <tr>
-                                                    <td class='row-label'>{{this.label}}
-                                                        due
-                                                        {{this.dueDate}}</td>
-                                                    <td class='row-value'>KES
-                                                        {{this.amount}}</td>
-                                                </tr>
-                                            </table>
-                                        </td>
-                                    </tr>
-                                {{/each}}
-                                <tr>
-                                    <td class='total-row'>
-                                        <table
-                                            width='100%'
-                                            cellpadding='0'
-                                            cellspacing='0'
-                                        >
-                                            <tr>
-                                                <td class='total-label'>Final payment deadline</td>
-                                                <td
-                                                    class='total-value'
-                                                >{{paymentPlan.finalDueDate}}</td>
-                                            </tr>
-                                        </table>
-                                    </td>
+                                    <td class='total-label'>Final payment by</td>
+                                    <td class='total-value'>{{paymentPlan.finalDueDate}}</td>
                                 </tr>
                             </table>
                         </div>
