@@ -17,6 +17,7 @@ import { PurchasingType } from '@src/infrastructure/payments/paystack/paystack.t
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const moment = require('moment') as typeof import('moment');
 import * as crypto from 'crypto';
+import * as QRCode from 'qrcode';
 import { UsersService } from '@src/modules/identity/users/users.service';
 import { EventSharedService } from '@src/modules/events/shared/shared.event.service';
 import { CreateEventTicketDto } from './dto/create-event-ticket.dto';
@@ -890,6 +891,11 @@ export class EventTicketsService {
 
         const status = this.resolveTicketStatus(ticket);
         const menuItems = this.normalizeTicketMenuItems(ticket.preOrderMenu);
+        const qrDataUrl = await QRCode.toDataURL(ticket.ticketRef, {
+            width: 320,
+            margin: 2,
+            color: { dark: '#000000', light: '#FFFFFF' },
+        });
         const attendee = {
             name: ticket.guestName ?? ticket.user?.name ?? 'Guest',
             email: ticket.guestEmail ?? ticket.user?.email ?? null,
@@ -912,6 +918,7 @@ export class EventTicketsService {
                     publicUrl: this.buildPublicTicketUrl(
                         ticket.publicAccessToken,
                     ),
+                    qrDataUrl,
                     ticketType:
                         ticket.ticketCategory?.name ?? 'Event ticket',
                     ticketCategory: ticket.ticketCategory
@@ -1915,9 +1922,14 @@ export class EventTicketsService {
         const baseUrl = (
             process.env.CLIENT_APP_URL ??
             process.env.FRONTEND_URL ??
-            process.env.APP_URL ??
             ''
         ).replace(/\/+$/g, '');
+        if (!baseUrl) {
+            console.warn(
+                '[EventTickets] CLIENT_APP_URL is not set — ticket public links will be relative paths. ' +
+                'Set CLIENT_APP_URL in your environment to the frontend origin (e.g. https://app.glee.co.ke).',
+            );
+        }
         return baseUrl ? `${baseUrl}/t/${token}` : `/t/${token}`;
     }
 
