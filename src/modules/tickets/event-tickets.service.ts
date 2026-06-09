@@ -1926,11 +1926,12 @@ export class EventTicketsService {
         ).replace(/\/+$/g, '');
         if (!baseUrl) {
             console.warn(
-                '[EventTickets] CLIENT_APP_URL is not set — ticket public links will be relative paths. ' +
+                '[EventTickets] CLIENT_APP_URL is not set — ticket links disabled in emails. ' +
                 'Set CLIENT_APP_URL in your environment to the frontend origin (e.g. https://app.glee.co.ke).',
             );
+            return null;
         }
-        return baseUrl ? `${baseUrl}/t/${token}` : `/t/${token}`;
+        return `${baseUrl}/t/${token}`;
     }
 
     private normalizeTicketMenuItems(preOrderMenu: any) {
