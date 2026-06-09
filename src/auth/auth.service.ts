@@ -98,7 +98,7 @@ export class AuthService {
                             config,
                             message: `${userDto.name} has registered in Glee App.`,
                             linkText: 'Please visit the dashboard',
-                            link: 'https://glee-admin.appnofy.com/user-management',
+                            link: `${(this.configService.get<string>('ADMIN_APP_URL') ?? this.configService.get<string>('APP_URL') ?? '').replace(/\/$/, '')}/dashboard`,
                             name: 'Admin',
                             date: new Date().getFullYear(),
                         },
