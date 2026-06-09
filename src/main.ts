@@ -36,6 +36,9 @@ async function bootstrap() {
   app.use('/upload', express.static('./src/public/upload'));
   app.use('/static', express.static('./src/public/static'));
 
+  // Preserve raw body for Paystack webhook signature verification
+  app.use(express.json({ verify: (req: any, res, buf) => { req.rawBody = buf; } }));
+
   app.useGlobalPipes(
     new ValidationPipe({
       /**
