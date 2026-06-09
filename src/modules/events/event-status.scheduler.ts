@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { EventStatus, TicketAttendantStatus } from '@prisma/client';
+import { EventStatus, TicketAttendantStatus, TicketWaveStatus } from '@prisma/client';
 import { PrismaService } from '@src/infrastructure/database/prisma.service';
 
 @Injectable()
@@ -100,6 +100,43 @@ export class EventStatusScheduler {
       }
     } catch (error) {
       this.logger.error('Failed to sync event statuses', error);
+    }
+  }
+
+  @Cron(CronExpression.EVERY_MINUTE)
+  async syncTicketWaveStatuses() {
+    const now = new Date();
+
+    try {
+      // Find upcoming waves with startsAt <= now
+      const wavesToActivate = await this.prisma.ticketWave.findMany({
+        where: {
+          status: TicketWaveStatus.UPCOMING,
+          startsAt: { lte: now },
+        },
+        include: { event: { select: { id: true } } },
+      });
+
+      for (const wave of wavesToActivate) {
+        await this.prisma.$transaction(async (tx) => {
+          // Mark current active wave as completed (if exists)
+          await tx.ticketWave.updateMany({
+            where: {
+              eventId: wave.eventId,
+              status: TicketWaveStatus.ACTIVE,
+            },
+            data: { status: TicketWaveStatus.COMPLETED },
+          });
+
+          // Activate the new wave
+          await tx.ticketWave.update({
+            where: { id: wave.id },
+            data: { status: TicketWaveStatus.ACTIVE },
+          });
+        });
+      }
+    } catch (error) {
+      this.logger.error('Failed to sync ticket wave statuses', error);
     }
   }
 }
