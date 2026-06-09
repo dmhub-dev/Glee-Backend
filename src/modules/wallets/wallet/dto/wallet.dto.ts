@@ -12,6 +12,11 @@ export class WalletTopUpDto {
   @IsOptional()
   @IsString()
   currency?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  callbackUrl?: string;
 }
 
 export class WalletTransactionsQueryDto {
