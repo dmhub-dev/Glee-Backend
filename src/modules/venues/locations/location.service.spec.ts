@@ -62,12 +62,52 @@ describe('LocationService', () => {
           floorPlanImageUrl: undefined,
           isParkingAvailable: false,
           pictures: [],
+          venueType: undefined,
+          bookingEnabled: false,
+          bookingRules: undefined,
+          cancellationCutoffHours: 24,
+          timezone: 'Africa/Nairobi',
           description: undefined,
           vendorId: null,
         },
       });
       expect(result.success).toBe(true);
       expect(result.data).toEqual(created);
+    });
+
+    it('persists reservation fields when creating a location', async () => {
+      mockPrisma.location.create.mockResolvedValue({
+        id: 'loc-1',
+        bookingEnabled: true,
+      });
+
+      await service.create(
+        {
+          name: 'Rooftop Lounge',
+          address: 'Westlands',
+          capacity: 120,
+          latitude: -1.2,
+          longitude: 36.8,
+          venueType: 'LOUNGE',
+          bookingEnabled: true,
+          bookingRules: 'Arrive within 15 minutes.',
+          cancellationCutoffHours: 12,
+          timezone: 'Africa/Nairobi',
+        } as any,
+        { id: 'admin-1', role: 'ADMIN' },
+      );
+
+      expect(mockPrisma.location.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            venueType: 'LOUNGE',
+            bookingEnabled: true,
+            bookingRules: 'Arrive within 15 minutes.',
+            cancellationCutoffHours: 12,
+            timezone: 'Africa/Nairobi',
+          }),
+        }),
+      );
     });
   });
 
@@ -151,6 +191,40 @@ describe('LocationService', () => {
       await expect(
         service.update('loc1', { name: 'Updated Hall' }, { id: 'vendor1', role: UserRole.VENDOR }),
       ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('updates reservation settings on a location', async () => {
+      mockPrisma.location.findUnique.mockResolvedValue({
+        id: 'loc-1',
+        vendorId: null,
+      });
+      mockPrisma.location.update.mockResolvedValue({
+        id: 'loc-1',
+        bookingEnabled: true,
+      });
+
+      await service.update(
+        'loc-1',
+        {
+          bookingEnabled: true,
+          venueType: 'CLUB',
+          bookingRules: 'Smart casual.',
+          cancellationCutoffHours: 24,
+        } as any,
+        { id: 'admin-1', role: 'ADMIN' },
+      );
+
+      expect(mockPrisma.location.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'loc-1' },
+          data: expect.objectContaining({
+            bookingEnabled: true,
+            venueType: 'CLUB',
+            bookingRules: 'Smart casual.',
+            cancellationCutoffHours: 24,
+          }),
+        }),
+      );
     });
   });
 

@@ -1,7 +1,9 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { VenueType } from '@prisma/client';
 import {
   IsArray,
   IsBoolean,
+  IsEnum,
   IsNotEmpty,
   IsNumber,
   IsOptional,
@@ -66,4 +68,30 @@ export class CreateLocationDto {
   @IsArray()
   @IsString({ each: true })
   pictures?: string[];
+
+  @ApiPropertyOptional({ enum: VenueType, default: VenueType.OTHER })
+  @IsOptional()
+  @IsEnum(VenueType)
+  venueType?: VenueType;
+
+  @ApiPropertyOptional({ default: false })
+  @IsOptional()
+  @IsBoolean()
+  bookingEnabled?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  bookingRules?: string;
+
+  @ApiPropertyOptional({ minimum: 0, default: 24 })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  cancellationCutoffHours?: number;
+
+  @ApiPropertyOptional({ default: 'Africa/Nairobi' })
+  @IsOptional()
+  @IsString()
+  timezone?: string;
 }

@@ -28,6 +28,11 @@ export class LocationService {
         floorPlanImageUrl: dto.floorPlanImageUrl,
         isParkingAvailable: dto.isParkingAvailable ?? false,
         pictures: dto.pictures ?? [],
+        venueType: dto.venueType,
+        bookingEnabled: dto.bookingEnabled ?? false,
+        bookingRules: dto.bookingRules,
+        cancellationCutoffHours: dto.cancellationCutoffHours ?? 24,
+        timezone: dto.timezone ?? 'Africa/Nairobi',
         vendorId,
       },
     });
