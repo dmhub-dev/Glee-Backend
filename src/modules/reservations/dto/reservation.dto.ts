@@ -232,6 +232,22 @@ export class ReservationListQueryDto {
   @IsOptional()
   @IsEnum(ReservationStatus)
   status?: ReservationStatus;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsDateString()
+  date?: string;
+}
+
+export class UpdateReservationStatusDto {
+  @ApiProperty({ enum: ReservationStatus })
+  @IsEnum(ReservationStatus)
+  status: ReservationStatus;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  reason?: string;
 }
 
 export class CreateReservationDto {

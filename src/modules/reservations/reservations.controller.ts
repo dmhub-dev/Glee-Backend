@@ -5,6 +5,7 @@ import { ApiResponses } from '@src/common/responses/response';
 import {
   CreateReservationDto,
   ReservationAvailabilityQueryDto,
+  ReservationListQueryDto,
   VenueReservationQueryDto,
 } from './dto/reservation.dto';
 import { ReservationsService } from './reservations.service';
@@ -13,6 +14,15 @@ import { ReservationsService } from './reservations.service';
 @Controller('reservations')
 export class ReservationsController {
   constructor(private readonly reservationsService: ReservationsService) {}
+
+  @ApiResponses(true)
+  @Get('my')
+  listMy(
+    @Query() query: ReservationListQueryDto,
+    @CurrentUser() user: any,
+  ) {
+    return this.reservationsService.listMyReservations(user, query);
+  }
 
   @ApiResponses(false)
   @Get('venues')
@@ -42,5 +52,21 @@ export class ReservationsController {
     @CurrentUser() user: any,
   ) {
     return this.reservationsService.createReservation(dto, user);
+  }
+
+  @ApiResponses(true)
+  @Get(':id')
+  getMy(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.reservationsService.getMyReservation(id, user);
+  }
+
+  @ApiResponses(true)
+  @Post(':id/cancel')
+  cancel(
+    @Param('id') id: string,
+    @Body() dto: { reason?: string },
+    @CurrentUser() user: any,
+  ) {
+    return this.reservationsService.cancelMyReservation(id, dto, user);
   }
 }

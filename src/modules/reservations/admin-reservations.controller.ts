@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
 import { CurrentUser } from '@src/auth/jwt/current-user.decorator';
@@ -8,7 +8,9 @@ import { ApiResponses } from '@src/common/responses/response';
 import {
   CreateLocationTableDto,
   CreateReservationSlotDto,
+  ReservationListQueryDto,
   UpdateLocationTableDto,
+  UpdateReservationStatusDto,
   UpdateReservationSlotDto,
 } from './dto/reservation.dto';
 import { ReservationsService } from './reservations.service';
@@ -17,6 +19,27 @@ import { ReservationsService } from './reservations.service';
 @Controller('admin')
 export class AdminReservationsController {
   constructor(private readonly reservationsService: ReservationsService) {}
+
+  @Permissions(Permission.BOOKINGS_READ)
+  @ApiResponses(true)
+  @Get('reservations')
+  listReservations(
+    @Query() query: ReservationListQueryDto,
+    @CurrentUser() user: any,
+  ) {
+    return this.reservationsService.listAdminReservations(user, query);
+  }
+
+  @Permissions(Permission.BOOKINGS_UPDATE)
+  @ApiResponses(true)
+  @Patch('reservations/:id/status')
+  updateStatus(
+    @Param('id') id: string,
+    @Body() dto: UpdateReservationStatusDto,
+    @CurrentUser() user: any,
+  ) {
+    return this.reservationsService.updateReservationStatus(id, dto, user);
+  }
 
   @Permissions(Permission.BOOKINGS_UPDATE)
   @ApiResponses(true, [UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.VENDOR])

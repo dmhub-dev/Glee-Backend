@@ -23,7 +23,9 @@ import {
   CreateReservationDto,
   CreateReservationSlotDto,
   ReservationAvailabilityQueryDto,
+  ReservationListQueryDto,
   UpdateLocationTableDto,
+  UpdateReservationStatusDto,
   UpdateReservationSlotDto,
   VenueReservationQueryDto,
 } from './dto/reservation.dto';
@@ -33,6 +35,27 @@ const ACTIVE_RESERVATION_STATUSES = [
   ReservationStatus.CONFIRMED,
   ReservationStatus.SEATED,
 ];
+
+const ADMIN_UPDATABLE_RESERVATION_STATUSES: ReservationStatus[] = [
+  ReservationStatus.SEATED,
+  ReservationStatus.COMPLETED,
+  ReservationStatus.NO_SHOW,
+  ReservationStatus.CANCELLED,
+];
+
+const RESERVATION_STATUS_TRANSITIONS: Partial<
+  Record<ReservationStatus, ReservationStatus[]>
+> = {
+  [ReservationStatus.CONFIRMED]: [
+    ReservationStatus.SEATED,
+    ReservationStatus.NO_SHOW,
+    ReservationStatus.CANCELLED,
+  ],
+  [ReservationStatus.SEATED]: [
+    ReservationStatus.COMPLETED,
+    ReservationStatus.CANCELLED,
+  ],
+};
 
 @Injectable()
 export class ReservationsService {
@@ -320,6 +343,181 @@ export class ReservationsService {
     }
   }
 
+  async listMyReservations(
+    actor: any,
+    query: ReservationListQueryDto = {},
+  ) {
+    if (!actor?.id) {
+      throw new UnauthorizedException('Authentication is required');
+    }
+
+    const page = this.normalizePage(query.page);
+    const limit = this.normalizeLimit(query.limit);
+    const where: Prisma.ReservationWhereInput = {
+      userId: actor.id,
+      ...(query.status && { status: query.status }),
+    };
+
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.reservation.findMany({
+        where,
+        include: this.customerReservationInclude(),
+        skip: (page - 1) * limit,
+        take: limit,
+        orderBy: { startDateTime: 'desc' },
+      }),
+      this.prisma.reservation.count({ where }),
+    ]);
+
+    return {
+      success: true,
+      message: 'Reservations retrieved successfully',
+      data: { items, total, page, limit },
+    };
+  }
+
+  async getMyReservation(id: string, actor: any) {
+    if (!actor?.id) {
+      throw new UnauthorizedException('Authentication is required');
+    }
+
+    const reservation = await this.prisma.reservation.findFirst({
+      where: { id, userId: actor.id },
+      include: this.customerReservationInclude(),
+    });
+
+    if (!reservation) {
+      throw new NotFoundException('Reservation not found');
+    }
+
+    return {
+      success: true,
+      message: 'Reservation retrieved successfully',
+      data: reservation,
+    };
+  }
+
+  async cancelMyReservation(
+    id: string,
+    dto: { reason?: string } = {},
+    actor: any,
+  ) {
+    if (!actor?.id) {
+      throw new UnauthorizedException('Authentication is required');
+    }
+
+    const reservation = await this.prisma.reservation.findFirst({
+      where: { id, userId: actor.id },
+    });
+
+    if (!reservation) {
+      throw new NotFoundException('Reservation not found');
+    }
+    if (reservation.status !== ReservationStatus.CONFIRMED) {
+      throw new BadRequestException('Only confirmed reservations can be cancelled');
+    }
+    if (new Date() > new Date(reservation.cancelBefore)) {
+      throw new BadRequestException('Reservation can no longer be cancelled');
+    }
+
+    const updated = await this.prisma.reservation.update({
+      where: { id },
+      data: {
+        status: ReservationStatus.CANCELLED,
+        cancelledAt: new Date(),
+        cancelledById: actor.id,
+        cancellationReason: dto?.reason ?? null,
+      },
+    });
+
+    return {
+      success: true,
+      message: 'Reservation cancelled successfully',
+      data: updated,
+    };
+  }
+
+  async listAdminReservations(
+    actor: any,
+    query: ReservationListQueryDto = {},
+  ) {
+    const page = this.normalizePage(query.page);
+    const limit = this.normalizeLimit(query.limit);
+    const where: Prisma.ReservationWhereInput = {
+      ...(query.status && { status: query.status }),
+      ...(query.locationId && { locationId: query.locationId }),
+      ...(query.date && { reservationDate: this.buildDateRange(query.date) }),
+    };
+
+    if ([UserRole.VENDOR, UserRole.VENDOR_STAFF].includes(actor?.role)) {
+      where.location = { vendorId: this.resolveVendorAccountId(actor, true) };
+    } else if (!this.canManageReservations(actor)) {
+      throw new ForbiddenException('You do not have access to manage reservations');
+    }
+
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.reservation.findMany({
+        where,
+        include: this.adminReservationInclude(),
+        skip: (page - 1) * limit,
+        take: limit,
+        orderBy: { startDateTime: 'asc' },
+      }),
+      this.prisma.reservation.count({ where }),
+    ]);
+
+    return {
+      success: true,
+      message: 'Admin reservations retrieved successfully',
+      data: { items, total, page, limit },
+    };
+  }
+
+  async updateReservationStatus(
+    id: string,
+    dto: UpdateReservationStatusDto,
+    actor: any,
+  ) {
+    const reservation = await this.prisma.reservation.findFirst({
+      where: { id },
+      include: { location: true },
+    });
+
+    if (!reservation) {
+      throw new NotFoundException('Reservation not found');
+    }
+
+    this.assertCanManageReservationRecord(reservation, actor);
+    this.assertAdminReservationStatusAllowed(dto.status);
+    this.assertReservationStatusTransition(reservation.status, dto.status);
+
+    if (reservation.status === dto.status) {
+      return {
+        success: true,
+        message: 'Reservation status updated successfully',
+        data: reservation,
+      };
+    }
+
+    const updated = await this.prisma.reservation.update({
+      where: { id },
+      data: {
+        status: dto.status,
+        ...(dto.status === ReservationStatus.CANCELLED && {
+          cancelledAt: new Date(),
+          cancelledById: actor?.id,
+          cancellationReason: dto.reason ?? null,
+        }),
+      },
+    });
+
+    return {
+      success: true,
+      message: 'Reservation status updated successfully',
+      data: updated,
+    };
+  }
+
   async createTable(locationId: string, dto: CreateLocationTableDto, actor: any) {
     const location = await this.getLocationForMutation(locationId, actor);
     this.assertValidGuestRange(dto.minGuests, dto.maxGuests);
@@ -465,6 +663,71 @@ export class ReservationsService {
     };
   }
 
+  private customerReservationInclude() {
+    return {
+      location: true,
+      table: true,
+      payments: true,
+    };
+  }
+
+  private adminReservationInclude() {
+    return {
+      user: true,
+      location: true,
+      table: true,
+      payments: true,
+    };
+  }
+
+  private assertCanManageReservationRecord(reservation: any, actor: any) {
+    if ([UserRole.VENDOR, UserRole.VENDOR_STAFF].includes(actor?.role)) {
+      const vendorId = this.resolveVendorAccountId(actor, true);
+      if (!reservation.location?.vendorId || reservation.location.vendorId !== vendorId) {
+        throw new ForbiddenException(
+          'Vendors can only update reservations for their own locations',
+        );
+      }
+      return;
+    }
+
+    if (this.canManageReservations(actor)) {
+      return;
+    }
+
+    throw new ForbiddenException('You do not have access to manage reservations');
+  }
+
+  private assertAdminReservationStatusAllowed(status: ReservationStatus) {
+    if (!ADMIN_UPDATABLE_RESERVATION_STATUSES.includes(status)) {
+      throw new BadRequestException('Reservation status cannot be set by this endpoint');
+    }
+  }
+
+  private assertReservationStatusTransition(
+    current: ReservationStatus,
+    target: ReservationStatus,
+  ) {
+    if (current === target) {
+      return;
+    }
+
+    const allowedTargets = RESERVATION_STATUS_TRANSITIONS[current] ?? [];
+    if (!allowedTargets.includes(target)) {
+      throw new BadRequestException(
+        `Cannot transition reservation from ${current} to ${target}`,
+      );
+    }
+  }
+
+  private buildDateRange(date: string) {
+    const [year, month, day] = this.dateOnly(date).split('-').map(Number);
+    const start = new Date(Date.UTC(year, month - 1, day, 0, 0, 0, 0));
+    const end = new Date(start);
+    end.setUTCDate(end.getUTCDate() + 1);
+    return { gte: start, lt: end };
+  }
+
   private async getLocationForRead(locationId: string, actor: any) {
     const location = await this.prisma.location.findUnique({
       where: { id: locationId },
@@ -514,7 +777,7 @@ export class ReservationsService {
   }
 
   private resolveVendorAccountId(actor: any, required = false) {
-    if (actor?.role === UserRole.VENDOR) return actor.id;
+    if (actor?.role === UserRole.VENDOR && actor.id) return actor.id;
     if (actor?.role === UserRole.VENDOR_STAFF && actor.vendorAccountId) {
       return actor.vendorAccountId;
     }

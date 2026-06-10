@@ -484,4 +484,137 @@ describe('ReservationsService setup', () => {
       );
     });
   });
+
+  describe('ReservationsService reservation reads and statuses', () => {
+    it('lists current customer reservations', async () => {
+      prisma.reservation.findMany.mockResolvedValue([
+        { id: 'reservation-1', userId: 'user-1', status: 'CONFIRMED' },
+      ]);
+      prisma.reservation.count.mockResolvedValue(1);
+
+      const result = await service.listMyReservations(
+        { id: 'user-1' },
+        { page: 1, limit: 10, status: 'CONFIRMED' } as any,
+      );
+
+      expect(result.data.items).toHaveLength(1);
+      expect(result.data.total).toBe(1);
+      expect(prisma.reservation.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { userId: 'user-1', status: 'CONFIRMED' },
+          skip: 0,
+          take: 10,
+          orderBy: { startDateTime: 'desc' },
+        }),
+      );
+    });
+
+    it('gets a current customer reservation', async () => {
+      prisma.reservation.findFirst.mockResolvedValue({
+        id: 'reservation-1',
+        userId: 'user-1',
+        status: 'CONFIRMED',
+      });
+
+      const result = await service.getMyReservation('reservation-1', { id: 'user-1' });
+
+      expect(result.data.id).toBe('reservation-1');
+      expect(prisma.reservation.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'reservation-1', userId: 'user-1' },
+        }),
+      );
+    });
+
+    it('allows customer cancellation before cutoff', async () => {
+      prisma.reservation.findFirst.mockResolvedValue({
+        id: 'reservation-1',
+        userId: 'user-1',
+        status: 'CONFIRMED',
+        cancelBefore: new Date(Date.now() + 60 * 60 * 1000),
+      });
+      prisma.reservation.update.mockResolvedValue({ id: 'reservation-1', status: 'CANCELLED' });
+
+      const result = await service.cancelMyReservation(
+        'reservation-1',
+        { reason: 'Plans changed' } as any,
+        { id: 'user-1' },
+      );
+
+      expect(result.data.status).toBe('CANCELLED');
+    });
+
+    it('blocks customer cancellation after cutoff', async () => {
+      prisma.reservation.findFirst.mockResolvedValue({
+        id: 'reservation-1',
+        userId: 'user-1',
+        status: 'CONFIRMED',
+        cancelBefore: new Date(Date.now() - 60 * 60 * 1000),
+      });
+
+      await expect(
+        service.cancelMyReservation('reservation-1', {}, { id: 'user-1' }),
+      ).rejects.toMatchObject({ status: 400 });
+    });
+
+    it('lets admin mark reservation no-show', async () => {
+      prisma.reservation.findFirst.mockResolvedValue({
+        id: 'reservation-1',
+        status: 'CONFIRMED',
+        location: { vendorId: null },
+      });
+      prisma.reservation.update.mockResolvedValue({ id: 'reservation-1', status: 'NO_SHOW' });
+
+      const result = await service.updateReservationStatus(
+        'reservation-1',
+        { status: 'NO_SHOW' } as any,
+        { id: 'admin-1', role: 'ADMIN' },
+      );
+
+      expect(result.data.status).toBe('NO_SHOW');
+    });
+
+    it('blocks vendor from updating another vendor location reservation', async () => {
+      prisma.reservation.findFirst.mockResolvedValue({
+        id: 'reservation-1',
+        status: 'CONFIRMED',
+        location: { vendorId: 'vendor-2' },
+      });
+
+      await expect(
+        service.updateReservationStatus(
+          'reservation-1',
+          { status: 'NO_SHOW' } as any,
+          { id: 'vendor-1', role: 'VENDOR' },
+        ),
+      ).rejects.toMatchObject({ status: 403 });
+      expect(prisma.reservation.update).not.toHaveBeenCalled();
+    });
+
+    it('scopes vendor reservation listing to own locations', async () => {
+      prisma.reservation.findMany.mockResolvedValue([
+        {
+          id: 'reservation-1',
+          status: 'CONFIRMED',
+          location: { vendorId: 'vendor-1' },
+        },
+      ]);
+      prisma.reservation.count.mockResolvedValue(1);
+
+      const result = await service.listAdminReservations(
+        { id: 'vendor-1', role: 'VENDOR' },
+        { page: 1, limit: 10 } as any,
+      );
+
+      expect(result.data.items).toHaveLength(1);
+      expect(prisma.reservation.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { location: { vendorId: 'vendor-1' } },
+          skip: 0,
+          take: 10,
+          orderBy: { startDateTime: 'asc' },
+        }),
+      );
+    });
+  });
 });
