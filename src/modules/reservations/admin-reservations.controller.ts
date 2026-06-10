@@ -6,9 +6,11 @@ import { Permissions } from '@src/auth/rbac/permissions.decorator';
 import { Permission } from '@src/auth/rbac/permissions.enum';
 import { ApiResponses } from '@src/common/responses/response';
 import {
+  CreateEventReservationSlotDto,
   CreateLocationTableDto,
   CreateReservationSlotDto,
   ReservationListQueryDto,
+  UpdateEventReservationSlotDto,
   UpdateLocationTableDto,
   UpdateReservationStatusDto,
   UpdateReservationSlotDto,
@@ -46,6 +48,36 @@ export class AdminReservationsController {
   @Get('reservations/:id')
   getReservation(@Param('id') id: string, @CurrentUser() user: any) {
     return this.reservationsService.getAdminReservation(id, user);
+  }
+
+  @Permissions(Permission.BOOKINGS_READ)
+  @ApiResponses(true, [UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.VENDOR])
+  @Get('events/:eventId/reservation-slots')
+  listEventSlots(@Param('eventId') eventId: string, @CurrentUser() user: any) {
+    return this.reservationsService.listAdminEventSlots(eventId, user);
+  }
+
+  @Permissions(Permission.BOOKINGS_UPDATE)
+  @ApiResponses(true, [UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.VENDOR])
+  @Post('events/:eventId/reservation-slots')
+  createEventSlot(
+    @Param('eventId') eventId: string,
+    @Body() dto: CreateEventReservationSlotDto,
+    @CurrentUser() user: any,
+  ) {
+    return this.reservationsService.createEventSlot(eventId, dto, user);
+  }
+
+  @Permissions(Permission.BOOKINGS_UPDATE)
+  @ApiResponses(true, [UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.VENDOR])
+  @Patch('events/:eventId/reservation-slots/:slotId')
+  updateEventSlot(
+    @Param('eventId') eventId: string,
+    @Param('slotId') slotId: string,
+    @Body() dto: UpdateEventReservationSlotDto,
+    @CurrentUser() user: any,
+  ) {
+    return this.reservationsService.updateEventSlot(eventId, slotId, dto, user);
   }
 
   @Permissions(Permission.BOOKINGS_UPDATE)

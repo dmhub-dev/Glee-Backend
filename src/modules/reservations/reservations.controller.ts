@@ -4,7 +4,9 @@ import { CurrentUser } from '@src/auth/jwt/current-user.decorator';
 import { ApiResponses } from '@src/common/responses/response';
 import {
   CancelReservationDto,
+  CreateEventReservationDto,
   CreateReservationDto,
+  EventReservationAvailabilityQueryDto,
   ReservationAvailabilityQueryDto,
   ReservationListQueryDto,
   VenueReservationQueryDto,
@@ -44,6 +46,31 @@ export class ReservationsController {
     @Query() query: ReservationAvailabilityQueryDto,
   ) {
     return this.reservationsService.getVenueAvailability(locationId, query);
+  }
+
+  @ApiResponses(false)
+  @Get('events/:eventId/reservation-slots')
+  listEventSlots(@Param('eventId') eventId: string) {
+    return this.reservationsService.listEventSlots(eventId);
+  }
+
+  @ApiResponses(false)
+  @Get('events/:eventId/availability')
+  getEventAvailability(
+    @Param('eventId') eventId: string,
+    @Query() query: EventReservationAvailabilityQueryDto,
+  ) {
+    return this.reservationsService.getEventAvailability(eventId, query);
+  }
+
+  @ApiResponses(true)
+  @Post('events/:eventId')
+  createEventReservation(
+    @Param('eventId') eventId: string,
+    @Body() dto: CreateEventReservationDto,
+    @CurrentUser() user: any,
+  ) {
+    return this.reservationsService.createEventReservation(eventId, dto, user);
   }
 
   @ApiResponses(true)

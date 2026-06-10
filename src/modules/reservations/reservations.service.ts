@@ -13,6 +13,7 @@ import {
   ReservationPaymentStatus,
   ReservationSource,
   ReservationStatus,
+  EventStatus,
   UserRole,
 } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
@@ -20,11 +21,15 @@ import { PrismaService } from '@src/infrastructure/database/prisma.service';
 import { WalletService } from '@src/modules/wallets/wallet/wallet.service';
 import {
   CancelReservationDto,
+  CreateEventReservationSlotDto,
+  CreateEventReservationDto,
   CreateLocationTableDto,
   CreateReservationDto,
   CreateReservationSlotDto,
+  EventReservationAvailabilityQueryDto,
   ReservationAvailabilityQueryDto,
   ReservationListQueryDto,
+  UpdateEventReservationSlotDto,
   UpdateLocationTableDto,
   UpdateReservationStatusDto,
   UpdateReservationSlotDto,
@@ -57,6 +62,12 @@ const RESERVATION_STATUS_TRANSITIONS: Partial<
     ReservationStatus.CANCELLED,
   ],
 };
+
+const PUBLIC_EVENT_RESERVATION_STATUSES: EventStatus[] = [
+  EventStatus.ACTIVE,
+  EventStatus.LIVE,
+  EventStatus.SOLD_OUT,
+];
 
 @Injectable()
 export class ReservationsService {
@@ -188,6 +199,82 @@ export class ReservationsService {
         slotId: slot.id,
         startDateTime,
         endDateTime,
+        categories: this.groupAvailableTables(tables, reservations),
+      },
+    };
+  }
+
+  async listEventSlots(eventId: string) {
+    await this.getPublicEventForRead(eventId);
+
+    const slots = await this.prisma.eventReservationSlot.findMany({
+      where: { eventId, isActive: true },
+      orderBy: { startDateTime: 'asc' },
+    });
+
+    return {
+      success: true,
+      message: 'Event reservation slots retrieved successfully',
+      data: slots,
+    };
+  }
+
+  async getEventAvailability(
+    eventId: string,
+    query: EventReservationAvailabilityQueryDto,
+  ) {
+    const event = await this.getPublicEventForRead(eventId);
+    const location = event.location;
+    if (
+      !event.locationId ||
+      !location ||
+      location.status !== EntityStatus.ACTIVE ||
+      !location.bookingEnabled
+    ) {
+      throw new NotFoundException('Event reservation venue not found');
+    }
+
+    const slot = await this.prisma.eventReservationSlot.findFirst({
+      where: {
+        id: query.eventSlotId,
+        eventId,
+        isActive: true,
+      },
+    });
+
+    if (!slot) {
+      throw new NotFoundException('Event reservation slot not found');
+    }
+
+    const tables = await this.prisma.locationTable.findMany({
+      where: {
+        locationId: event.locationId,
+        isActive: true,
+        minGuests: { lte: query.guestCount },
+        maxGuests: { gte: query.guestCount },
+      },
+      orderBy: [{ category: 'asc' }, { name: 'asc' }],
+    });
+
+    const reservations = await this.prisma.reservation.findMany({
+      where: {
+        locationId: event.locationId,
+        status: { in: ACTIVE_RESERVATION_STATUSES },
+        startDateTime: { lt: slot.endDateTime },
+        endDateTime: { gt: slot.startDateTime },
+      },
+      select: { tableId: true },
+    });
+
+    return {
+      success: true,
+      message: 'Event reservation availability retrieved successfully',
+      data: {
+        eventId,
+        locationId: event.locationId,
+        eventSlotId: slot.id,
+        startDateTime: slot.startDateTime,
+        endDateTime: slot.endDateTime,
         categories: this.groupAvailableTables(tables, reservations),
       },
     };
@@ -334,6 +421,172 @@ export class ReservationsService {
       return {
         success: true,
         message: 'Reservation confirmed successfully',
+        data: reservation,
+      };
+    } catch (error) {
+      if (this.isReservationOverlapError(error)) {
+        throw new BadRequestException('This table category is no longer available');
+      }
+      throw error;
+    }
+  }
+
+  async createEventReservation(
+    eventId: string,
+    dto: CreateEventReservationDto,
+    actor: any,
+  ) {
+    if (!actor?.id) {
+      throw new UnauthorizedException('Authentication is required');
+    }
+    if (dto.paymentMethod && dto.paymentMethod !== ReservationPaymentMethod.WALLET) {
+      throw new BadRequestException('Only wallet payments are supported for reservations');
+    }
+
+    const event = await this.getPublicEventForRead(eventId);
+    const location = event.location;
+    if (
+      !event.locationId ||
+      !location ||
+      location.status !== EntityStatus.ACTIVE ||
+      !location.bookingEnabled
+    ) {
+      throw new NotFoundException('Event reservation venue not found');
+    }
+
+    const eventSlot = await this.prisma.eventReservationSlot.findFirst({
+      where: {
+        id: dto.eventSlotId,
+        eventId,
+        isActive: true,
+      },
+    });
+    if (!eventSlot) {
+      throw new NotFoundException('Event reservation slot not found');
+    }
+
+    const reference = this.generateReservationReference();
+
+    try {
+      const reservation = await this.prisma.$transaction(async (tx) => {
+        const activeEventSlot = await tx.eventReservationSlot.findFirst({
+          where: {
+            id: eventSlot.id,
+            eventId,
+            isActive: true,
+          },
+        });
+        if (!activeEventSlot) {
+          throw new BadRequestException('Event reservation slot is no longer available');
+        }
+
+        const startDateTime = activeEventSlot.startDateTime;
+        const endDateTime = activeEventSlot.endDateTime;
+        const reservationDate = this.startOfUtcDay(startDateTime);
+        const cancelBefore = new Date(
+          startDateTime.getTime() -
+            (location.cancellationCutoffHours ?? 24) * 60 * 60 * 1000,
+        );
+
+        const tables = await tx.locationTable.findMany({
+          where: {
+            locationId: event.locationId,
+            category: dto.tableCategory,
+            isActive: true,
+            minGuests: { lte: dto.guestCount },
+            maxGuests: { gte: dto.guestCount },
+          },
+          orderBy: { name: 'asc' },
+        });
+        const existingReservations = await tx.reservation.findMany({
+          where: {
+            locationId: event.locationId,
+            status: { in: ACTIVE_RESERVATION_STATUSES },
+            startDateTime: { lt: endDateTime },
+            endDateTime: { gt: startDateTime },
+          },
+          select: { tableId: true },
+        });
+        const reservedTableIds = new Set(
+          existingReservations.map((reservation) => reservation.tableId),
+        );
+        const table = this.sortTablesByQuote(
+          tables.filter((candidate) => !reservedTableIds.has(candidate.id)),
+        )[0];
+
+        if (!table) {
+          throw new BadRequestException('This table category is no longer available');
+        }
+
+        const minimumSpend = Math.round(Number(table.minimumSpend));
+        const depositAmount = this.calculateDeposit(
+          minimumSpend,
+          table.depositType,
+          Number(table.depositValue),
+        );
+        const metadata = {
+          reservationReference: reference,
+          eventId,
+          eventSlotId: activeEventSlot.id,
+          locationId: event.locationId,
+          tableId: table.id,
+          tableCategory: dto.tableCategory,
+          guestCount: dto.guestCount,
+          startDateTime: startDateTime.toISOString(),
+          endDateTime: endDateTime.toISOString(),
+        };
+
+        const walletDebit = await this.walletService.debitInTransaction(
+          tx,
+          actor.id,
+          depositAmount,
+          `Event reservation deposit for ${dto.tableCategory}`,
+          reference,
+          metadata,
+        );
+
+        const createdReservation = await tx.reservation.create({
+          data: {
+            reference,
+            userId: actor.id,
+            locationId: event.locationId,
+            eventId,
+            tableId: table.id,
+            eventSlotId: activeEventSlot.id,
+            reservationDate,
+            startDateTime,
+            endDateTime,
+            guestCount: dto.guestCount,
+            tableCategory: dto.tableCategory,
+            minimumSpend: new Decimal(minimumSpend),
+            depositAmount: new Decimal(depositAmount),
+            status: ReservationStatus.CONFIRMED,
+            source: ReservationSource.EVENT,
+            cancelBefore,
+          },
+        });
+
+        await tx.reservationPayment.create({
+          data: {
+            reservationId: createdReservation.id,
+            userId: actor.id,
+            amount: new Decimal(depositAmount),
+            method: ReservationPaymentMethod.WALLET,
+            status: ReservationPaymentStatus.SUCCESS,
+            reference,
+            metadata: {
+              ...metadata,
+              walletTransactionId: walletDebit.transaction?.id,
+            } as any,
+          },
+        });
+
+        return createdReservation;
+      });
+
+      return {
+        success: true,
+        message: 'Event reservation confirmed successfully',
         data: reservation,
       };
     } catch (error) {
@@ -720,6 +973,87 @@ export class ReservationsService {
     };
   }
 
+  async createEventSlot(
+    eventId: string,
+    dto: CreateEventReservationSlotDto,
+    actor: any,
+  ) {
+    const event = await this.getEventForMutation(eventId, actor);
+    if (!event.locationId) {
+      throw new BadRequestException('Event must have a location for table reservations');
+    }
+
+    const startDateTime = new Date(dto.startDateTime);
+    const endDateTime = new Date(dto.endDateTime);
+    this.assertValidDateRange(startDateTime, endDateTime);
+
+    const slot = await this.prisma.eventReservationSlot.create({
+      data: {
+        eventId: event.id,
+        label: dto.label,
+        startDateTime,
+        endDateTime,
+        isActive: dto.isActive ?? true,
+      },
+    });
+
+    return {
+      success: true,
+      message: 'Event reservation slot created successfully',
+      data: slot,
+    };
+  }
+
+  async listAdminEventSlots(eventId: string, actor: any) {
+    await this.getEventForMutation(eventId, actor);
+
+    const slots = await this.prisma.eventReservationSlot.findMany({
+      where: { eventId },
+      orderBy: { startDateTime: 'asc' },
+    });
+
+    return {
+      success: true,
+      message: 'Event reservation slots fetched successfully',
+      data: slots,
+    };
+  }
+
+  async updateEventSlot(
+    eventId: string,
+    slotId: string,
+    dto: UpdateEventReservationSlotDto,
+    actor: any,
+  ) {
+    await this.getEventForMutation(eventId, actor);
+
+    const existing = await this.prisma.eventReservationSlot.findFirst({
+      where: { id: slotId, eventId },
+    });
+    if (!existing) {
+      throw new NotFoundException('Event reservation slot not found');
+    }
+
+    const startDateTime = dto.startDateTime
+      ? new Date(dto.startDateTime)
+      : existing.startDateTime;
+    const endDateTime = dto.endDateTime
+      ? new Date(dto.endDateTime)
+      : existing.endDateTime;
+    this.assertValidDateRange(startDateTime, endDateTime);
+
+    const updated = await this.prisma.eventReservationSlot.update({
+      where: { id: slotId },
+      data: this.buildEventSlotUpdateData(dto),
+    });
+
+    return {
+      success: true,
+      message: 'Event reservation slot updated successfully',
+      data: updated,
+    };
+  }
+
   private customerReservationInclude() {
     return {
       location: true,
@@ -791,6 +1125,57 @@ export class ReservationsService {
     const end = new Date(start);
     end.setUTCDate(end.getUTCDate() + 1);
     return { gte: start, lt: end };
+  }
+
+  private startOfUtcDay(date: Date) {
+    return new Date(
+      Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()),
+    );
+  }
+
+  private async getEventForRead(eventId: string) {
+    const event = await this.prisma.event.findUnique({
+      where: { id: eventId },
+      include: { location: true },
+    });
+
+    if (!event) {
+      throw new NotFoundException('Event not found');
+    }
+
+    return event;
+  }
+
+  private async getPublicEventForRead(eventId: string) {
+    const event = await this.getEventForRead(eventId);
+    if (
+      event.isDeleted ||
+      !PUBLIC_EVENT_RESERVATION_STATUSES.includes(event.status)
+    ) {
+      throw new NotFoundException('Event not found');
+    }
+    return event;
+  }
+
+  private async getEventForMutation(eventId: string, actor: any) {
+    const event = await this.getEventForRead(eventId);
+    if (event.isDeleted) {
+      throw new NotFoundException('Event not found');
+    }
+
+    if ([UserRole.VENDOR, UserRole.VENDOR_STAFF].includes(actor?.role)) {
+      const vendorId = this.resolveVendorAccountId(actor, true);
+      if (event.vendorId !== vendorId && event.location?.vendorId !== vendorId) {
+        throw new ForbiddenException('You do not have access to this event');
+      }
+      return event;
+    }
+
+    if (this.canManageReservations(actor)) {
+      return event;
+    }
+
+    throw new ForbiddenException('You do not have access to manage event reservations');
   }
 
   private async getLocationForRead(locationId: string, actor: any) {
@@ -873,6 +1258,16 @@ export class ReservationsService {
   private assertDistinctSlotTimes(startTime: string, endTime: string) {
     if (startTime === endTime) {
       throw new BadRequestException('Reservation slot startTime and endTime cannot be equal');
+    }
+  }
+
+  private assertValidDateRange(startDateTime: Date, endDateTime: Date) {
+    if (
+      Number.isNaN(startDateTime.getTime()) ||
+      Number.isNaN(endDateTime.getTime()) ||
+      endDateTime <= startDateTime
+    ) {
+      throw new BadRequestException('endDateTime must be after startDateTime');
     }
   }
 
@@ -1087,6 +1482,23 @@ export class ReservationsService {
     if (dto.startTime !== undefined) data.startTime = dto.startTime;
     if (dto.endTime !== undefined) data.endTime = dto.endTime;
     if (dto.daysOfWeek !== undefined) data.daysOfWeek = dto.daysOfWeek;
+    if (dto.isActive !== undefined) data.isActive = dto.isActive;
+
+    return data;
+  }
+
+  private buildEventSlotUpdateData(
+    dto: UpdateEventReservationSlotDto,
+  ): Prisma.EventReservationSlotUpdateInput {
+    const data: Prisma.EventReservationSlotUpdateInput = {};
+
+    if (dto.label !== undefined) data.label = dto.label;
+    if (dto.startDateTime !== undefined) {
+      data.startDateTime = new Date(dto.startDateTime);
+    }
+    if (dto.endDateTime !== undefined) {
+      data.endDateTime = new Date(dto.endDateTime);
+    }
     if (dto.isActive !== undefined) data.isActive = dto.isActive;
 
     return data;

@@ -289,6 +289,29 @@ export class CreateReservationDto {
   paymentMethod?: 'WALLET';
 }
 
+export class CreateEventReservationDto {
+  @ApiProperty()
+  @IsNotEmpty()
+  @IsString()
+  eventSlotId: string;
+
+  @ApiProperty()
+  @IsNotEmpty()
+  @IsString()
+  tableCategory: string;
+
+  @ApiProperty({ minimum: 1 })
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  guestCount: number;
+
+  @ApiPropertyOptional({ default: 'WALLET' })
+  @IsOptional()
+  @IsIn(['WALLET'])
+  paymentMethod?: 'WALLET';
+}
+
 export class ReservationAvailabilityQueryDto {
   @ApiProperty()
   @IsDateString()
@@ -297,6 +320,63 @@ export class ReservationAvailabilityQueryDto {
   @ApiProperty()
   @IsString()
   slotId: string;
+
+  @ApiProperty({ minimum: 1 })
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  guestCount: number;
+}
+
+export class CreateEventReservationSlotDto {
+  @ApiProperty()
+  @IsNotEmpty()
+  @IsString()
+  label: string;
+
+  @ApiProperty()
+  @IsDateString()
+  startDateTime: string;
+
+  @ApiProperty()
+  @IsDateString()
+  endDateTime: string;
+
+  @ApiPropertyOptional({ default: true })
+  @IsOptional()
+  @Type(() => Boolean)
+  @IsBoolean()
+  isActive?: boolean;
+}
+
+export class UpdateEventReservationSlotDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  label?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsDateString()
+  startDateTime?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsDateString()
+  endDateTime?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Type(() => Boolean)
+  @IsBoolean()
+  isActive?: boolean;
+}
+
+export class EventReservationAvailabilityQueryDto {
+  @ApiProperty()
+  @IsNotEmpty()
+  @IsString()
+  eventSlotId: string;
 
   @ApiProperty({ minimum: 1 })
   @Type(() => Number)

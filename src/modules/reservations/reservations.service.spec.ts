@@ -28,6 +28,15 @@ describe('ReservationsService setup', () => {
               update: jest.fn(),
               findFirst: jest.fn(),
             },
+            event: {
+              findUnique: jest.fn(),
+            },
+            eventReservationSlot: {
+              create: jest.fn(),
+              findMany: jest.fn(),
+              update: jest.fn(),
+              findFirst: jest.fn(),
+            },
             reservation: {
               findMany: jest.fn(),
               count: jest.fn(),
@@ -728,6 +737,255 @@ describe('ReservationsService setup', () => {
           { id: 'admin-1', role: 'ADMIN' },
         ),
       ).rejects.toMatchObject({ status: 400 });
+    });
+  });
+
+  describe('ReservationsService event-linked reservations', () => {
+    it('creates an event-specific reservation slot for the event owner', async () => {
+      prisma.event.findUnique.mockResolvedValue({
+        id: 'event-1',
+        locationId: 'loc-1',
+        vendorId: 'vendor-1',
+        location: { id: 'loc-1', vendorId: 'vendor-1' },
+      });
+      prisma.eventReservationSlot.create.mockResolvedValue({
+        id: 'event-slot-1',
+        eventId: 'event-1',
+        label: 'Event VIP Window',
+      });
+
+      const result = await service.createEventSlot(
+        'event-1',
+        {
+          label: 'Event VIP Window',
+          startDateTime: '2026-06-12T20:00:00.000Z',
+          endDateTime: '2026-06-12T23:00:00.000Z',
+        } as any,
+        { id: 'vendor-1', role: 'VENDOR' },
+      );
+
+      expect(result.data.id).toBe('event-slot-1');
+      expect(prisma.eventReservationSlot.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            eventId: 'event-1',
+            label: 'Event VIP Window',
+            startDateTime: new Date('2026-06-12T20:00:00.000Z'),
+            endDateTime: new Date('2026-06-12T23:00:00.000Z'),
+            isActive: true,
+          }),
+        }),
+      );
+    });
+
+    it('uses event slot date range for event reservation availability', async () => {
+      prisma.event.findUnique.mockResolvedValue({
+        id: 'event-1',
+        locationId: 'loc-1',
+        status: 'ACTIVE',
+        isDeleted: false,
+        location: {
+          id: 'loc-1',
+          bookingEnabled: true,
+          status: 'ACTIVE',
+        },
+      });
+      prisma.eventReservationSlot.findFirst.mockResolvedValue({
+        id: 'event-slot-1',
+        eventId: 'event-1',
+        startDateTime: new Date('2026-06-12T20:00:00.000Z'),
+        endDateTime: new Date('2026-06-12T23:00:00.000Z'),
+      });
+      prisma.locationTable.findMany.mockResolvedValue([
+        {
+          id: 'table-1',
+          category: 'VIP Booth',
+          minGuests: 2,
+          maxGuests: 8,
+          minimumSpend: 50000,
+          depositType: 'FLAT',
+          depositValue: 5000,
+          isActive: true,
+        },
+      ]);
+      prisma.reservation.findMany.mockResolvedValue([]);
+
+      const result = await service.getEventAvailability(
+        'event-1',
+        { eventSlotId: 'event-slot-1', guestCount: 4 } as any,
+      );
+
+      expect(result.data.categories[0]).toEqual(
+        expect.objectContaining({ category: 'VIP Booth', availableCount: 1 }),
+      );
+      expect(result.data.startDateTime).toEqual(
+        new Date('2026-06-12T20:00:00.000Z'),
+      );
+      expect(prisma.reservation.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            locationId: 'loc-1',
+            startDateTime: { lt: new Date('2026-06-12T23:00:00.000Z') },
+            endDateTime: { gt: new Date('2026-06-12T20:00:00.000Z') },
+          }),
+        }),
+      );
+      expect(prisma.reservation.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.not.objectContaining({
+            eventId: expect.anything(),
+          }),
+        }),
+      );
+    });
+
+    it('excludes location table conflicts from other reservation sources', async () => {
+      prisma.event.findUnique.mockResolvedValue({
+        id: 'event-1',
+        locationId: 'loc-1',
+        status: 'ACTIVE',
+        isDeleted: false,
+        location: {
+          id: 'loc-1',
+          bookingEnabled: true,
+          status: 'ACTIVE',
+        },
+      });
+      prisma.eventReservationSlot.findFirst.mockResolvedValue({
+        id: 'event-slot-1',
+        eventId: 'event-1',
+        startDateTime: new Date('2026-06-12T20:00:00.000Z'),
+        endDateTime: new Date('2026-06-12T23:00:00.000Z'),
+      });
+      prisma.locationTable.findMany.mockResolvedValue([
+        {
+          id: 'table-1',
+          category: 'VIP Booth',
+          minGuests: 2,
+          maxGuests: 8,
+          minimumSpend: 50000,
+          depositType: 'FLAT',
+          depositValue: 5000,
+          isActive: true,
+        },
+      ]);
+      prisma.reservation.findMany.mockResolvedValue([{ tableId: 'table-1' }]);
+
+      const result = await service.getEventAvailability(
+        'event-1',
+        { eventSlotId: 'event-slot-1', guestCount: 4 } as any,
+      );
+
+      expect(result.data.categories).toEqual([]);
+    });
+
+    it('blocks public event availability for deleted or non-public events', async () => {
+      prisma.event.findUnique.mockResolvedValue({
+        id: 'event-1',
+        locationId: 'loc-1',
+        status: 'DRAFT',
+        isDeleted: false,
+        location: {
+          id: 'loc-1',
+          bookingEnabled: true,
+          status: 'ACTIVE',
+        },
+      });
+
+      await expect(
+        service.getEventAvailability(
+          'event-1',
+          { eventSlotId: 'event-slot-1', guestCount: 4 } as any,
+        ),
+      ).rejects.toMatchObject({ status: 404 });
+    });
+
+    it('creates a confirmed wallet reservation for an event slot', async () => {
+      prisma.event.findUnique.mockResolvedValue({
+        id: 'event-1',
+        locationId: 'loc-1',
+        status: 'ACTIVE',
+        isDeleted: false,
+        location: {
+          id: 'loc-1',
+          name: 'Glee Lounge',
+          bookingEnabled: true,
+          status: 'ACTIVE',
+          cancellationCutoffHours: 24,
+        },
+      });
+      prisma.eventReservationSlot.findFirst.mockResolvedValue({
+        id: 'event-slot-1',
+        eventId: 'event-1',
+        startDateTime: new Date('2026-06-12T20:00:00.000Z'),
+        endDateTime: new Date('2026-06-12T23:00:00.000Z'),
+      });
+      prisma.locationTable.findMany.mockResolvedValue([
+        {
+          id: 'table-1',
+          name: 'VIP 1',
+          category: 'VIP Booth',
+          minGuests: 2,
+          maxGuests: 8,
+          minimumSpend: 50000,
+          depositType: 'FLAT',
+          depositValue: 5000,
+          isActive: true,
+        },
+      ]);
+      prisma.reservation.findMany.mockResolvedValue([]);
+      walletService.debitInTransaction.mockResolvedValue({
+        wallet: { id: 'wallet-1' },
+        transaction: { id: 'wallet-tx-1' },
+      });
+      prisma.reservation.create.mockResolvedValue({
+        id: 'reservation-1',
+        reference: 'RSV-test',
+        eventId: 'event-1',
+        eventSlotId: 'event-slot-1',
+        status: 'CONFIRMED',
+        source: 'EVENT',
+      });
+      prisma.reservationPayment.create.mockResolvedValue({ id: 'payment-1' });
+
+      const result = await service.createEventReservation(
+        'event-1',
+        {
+          eventSlotId: 'event-slot-1',
+          tableCategory: 'VIP Booth',
+          guestCount: 4,
+          paymentMethod: 'WALLET',
+        } as any,
+        { id: 'user-1' },
+      );
+
+      expect(result.data.source).toBe('EVENT');
+      expect(walletService.debitInTransaction).toHaveBeenCalledWith(
+        prisma,
+        'user-1',
+        5000,
+        expect.stringContaining('Event reservation deposit'),
+        expect.stringMatching(/^RSV-/),
+        expect.objectContaining({
+          eventId: 'event-1',
+          eventSlotId: 'event-slot-1',
+          locationId: 'loc-1',
+          tableId: 'table-1',
+          tableCategory: 'VIP Booth',
+        }),
+      );
+      expect(prisma.reservation.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            eventId: 'event-1',
+            eventSlotId: 'event-slot-1',
+            locationId: 'loc-1',
+            tableId: 'table-1',
+            source: 'EVENT',
+            status: 'CONFIRMED',
+          }),
+        }),
+      );
     });
   });
 });
