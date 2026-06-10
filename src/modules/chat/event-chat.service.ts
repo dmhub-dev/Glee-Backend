@@ -420,7 +420,7 @@ export class EventChatService {
       canWrite: isActive && !room.staffOnly,
       canModerate: false,
       canAnnounce: false,
-      canPin: true,
+      canPin: false,
     };
   }
 

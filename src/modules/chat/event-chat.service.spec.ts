@@ -100,6 +100,7 @@ describe('EventChatService access rules', () => {
 
     expect(result.access.canRead).toBe(true);
     expect(result.access.canWrite).toBe(true);
+    expect(result.access.canPin).toBe(false);
   });
 
   it('allows logged-in attendee with used ticket', async () => {
