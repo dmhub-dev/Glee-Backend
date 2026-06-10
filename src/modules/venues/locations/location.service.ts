@@ -103,10 +103,11 @@ export class LocationService {
       };
     }
     this.assertLocationMutationAccess(existing, actor);
+    const data = this.buildLocationUpdateData(dto);
     const updated = await this.prisma.location
       .update({
         where: { id },
-        data: dto,
+        data,
       })
       .catch(() => null);
 
@@ -175,5 +176,33 @@ export class LocationService {
     if (!location.vendorId || location.vendorId !== vendorId) {
       throw new ForbiddenException('Vendors can only update their own locations');
     }
+  }
+
+  private buildLocationUpdateData(dto: UpdateLocationDto): Prisma.LocationUpdateInput {
+    const data: Prisma.LocationUpdateInput = {};
+    const assign = <K extends keyof UpdateLocationDto>(key: K) => {
+      if (dto[key] !== undefined) {
+        (data as any)[key] = dto[key];
+      }
+    };
+
+    assign('name');
+    assign('address');
+    assign('capacity');
+    assign('description');
+    assign('isIndoors');
+    assign('isOutdoors');
+    assign('latitude');
+    assign('longitude');
+    assign('floorPlanImageUrl');
+    assign('isParkingAvailable');
+    assign('pictures');
+    assign('venueType');
+    assign('bookingEnabled');
+    assign('bookingRules');
+    assign('cancellationCutoffHours');
+    assign('timezone');
+
+    return data;
   }
 }

@@ -177,6 +177,32 @@ describe('LocationService', () => {
       expect(result.data).toEqual(updated);
     });
 
+    it('does not pass unsafe extra fields to location update', async () => {
+      mockPrisma.location.findUnique.mockResolvedValue({ id: 'loc-1', vendorId: null });
+      mockPrisma.location.update.mockResolvedValue({ id: 'loc-1', name: 'Updated Hall' });
+
+      await service.update(
+        'loc-1',
+        {
+          name: 'Updated Hall',
+          vendorId: 'vendor-2',
+          status: EntityStatus.INACTIVE,
+          reservations: { deleteMany: {} },
+        } as any,
+        { id: 'admin-1', role: 'ADMIN' },
+      );
+
+      expect(mockPrisma.location.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.not.objectContaining({
+            vendorId: expect.anything(),
+            status: expect.anything(),
+            reservations: expect.anything(),
+          }),
+        }),
+      );
+    });
+
     it('should return failure when location not found', async () => {
       mockPrisma.location.findUnique.mockResolvedValue(null);
 

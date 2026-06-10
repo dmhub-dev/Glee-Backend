@@ -4,6 +4,7 @@ import {
   IsArray,
   IsBoolean,
   IsEnum,
+  IsInt,
   IsNumber,
   IsOptional,
   IsString,
@@ -85,7 +86,7 @@ export class UpdateLocationDto {
 
   @ApiPropertyOptional({ minimum: 0, default: 24 })
   @IsOptional()
-  @IsNumber()
+  @IsInt()
   @Min(0)
   cancellationCutoffHours?: number;
 
