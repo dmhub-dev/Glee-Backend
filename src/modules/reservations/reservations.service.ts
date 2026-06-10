@@ -446,7 +446,7 @@ export class ReservationsService {
     const where: Prisma.ReservationWhereInput = {
       ...(query.status && { status: query.status }),
       ...(query.locationId && { locationId: query.locationId }),
-      ...(query.date && { reservationDate: this.buildDateRange(query.date) }),
+      ...(query.date && { startDateTime: this.buildDateRange(query.date) }),
     };
 
     if ([UserRole.VENDOR, UserRole.VENDOR_STAFF].includes(actor?.role)) {

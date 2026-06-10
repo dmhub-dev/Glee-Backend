@@ -616,5 +616,33 @@ describe('ReservationsService setup', () => {
         }),
       );
     });
+
+    it('filters admin reservations by start time for the requested calendar date', async () => {
+      prisma.reservation.findMany.mockResolvedValue([]);
+      prisma.reservation.count.mockResolvedValue(0);
+
+      await service.listAdminReservations(
+        { id: 'admin-1', role: 'ADMIN' },
+        { date: '2026-06-12', page: 1, limit: 10 } as any,
+      );
+
+      expect(prisma.reservation.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            startDateTime: {
+              gte: new Date('2026-06-12T00:00:00.000Z'),
+              lt: new Date('2026-06-13T00:00:00.000Z'),
+            },
+          }),
+        }),
+      );
+      expect(prisma.reservation.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.not.objectContaining({
+            reservationDate: expect.anything(),
+          }),
+        }),
+      );
+    });
   });
 });
