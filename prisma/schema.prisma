@@ -101,6 +101,45 @@ enum EventChatMessageType {
   SYSTEM
 }
 
+enum VenueType {
+  CLUB
+  RESTAURANT
+  HOTEL_RESTAURANT
+  LOUNGE
+  OTHER
+}
+
+enum ReservationDepositType {
+  FLAT
+  PERCENTAGE
+}
+
+enum ReservationSource {
+  VENUE
+  EVENT
+}
+
+enum ReservationStatus {
+  PENDING_PAYMENT
+  CONFIRMED
+  SEATED
+  COMPLETED
+  NO_SHOW
+  CANCELLED
+}
+
+enum ReservationPaymentMethod {
+  WALLET
+  PAYSTACK
+}
+
+enum ReservationPaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  REFUNDED
+}
+
 // ─── RBAC ─────────────────────────────────────────────────────────────────────
 
 model Role {
@@ -180,20 +219,23 @@ model User {
   vendorAccount        User?         @relation("VendorStaff", fields: [vendorAccountId], references: [id], onDelete: SetNull)
   vendorStaff          User[]        @relation("VendorStaff")
 
-  eventTickets            EventTicket[]
-  checkedInTickets        EventTicket[]          @relation("TicketCheckedInBy")
-  wallet                  Wallet?
-  notifications           Notification[]
-  auditLogs               AuditLog[]             @relation("AuditActor")
-  invitationsSent         UserInvitation[]       @relation("InvitationInviter")
-  invitation              UserInvitation?
-  vendorEvents            Event[]                @relation("EventVendor")
-  vendorLocations         Location[]             @relation("LocationVendor")
-  createdTicketAttendants EventTicketAttendant[] @relation("TicketAttendantCreatedBy")
-  ticketCheckInAttempts   TicketCheckInAttempt[] @relation("TicketCheckInAttemptUser")
-  eventChatMessages        EventChatMessage[]    @relation("EventChatMessageSender")
-  deletedEventChatMessages EventChatMessage[]    @relation("EventChatMessageDeletedBy")
+  eventTickets             EventTicket[]
+  checkedInTickets         EventTicket[]          @relation("TicketCheckedInBy")
+  wallet                   Wallet?
+  notifications            Notification[]
+  auditLogs                AuditLog[]             @relation("AuditActor")
+  invitationsSent          UserInvitation[]       @relation("InvitationInviter")
+  invitation               UserInvitation?
+  vendorEvents             Event[]                @relation("EventVendor")
+  vendorLocations          Location[]             @relation("LocationVendor")
+  createdTicketAttendants  EventTicketAttendant[] @relation("TicketAttendantCreatedBy")
+  ticketCheckInAttempts    TicketCheckInAttempt[] @relation("TicketCheckInAttemptUser")
+  eventChatMessages        EventChatMessage[]     @relation("EventChatMessageSender")
+  deletedEventChatMessages EventChatMessage[]     @relation("EventChatMessageDeletedBy")
   eventChatReadStates      EventChatReadState[]
+  reservations             Reservation[]          @relation("ReservationUser")
+  cancelledReservations    Reservation[]          @relation("ReservationCancelledBy")
+  reservationPayments      ReservationPayment[]
 
   @@index([email])
   @@index([isDeleted])
@@ -248,35 +290,37 @@ model AuditLog {
 // ─── Events ───────────────────────────────────────────────────────────────────
 
 model Event {
-  id               String                 @id @default(cuid())
-  name             String
-  description      String?
-  capacity         Int                    @default(0)
-  photos           String[]
-  startDate        DateTime?
-  endDate          DateTime?
-  endedAt          DateTime?
-  status           EventStatus            @default(DRAFT)
-  isDeleted        Boolean                @default(false)
-  createdAt        DateTime               @default(now())
-  updatedAt        DateTime               @updatedAt
-  locationId       String?
-  categoryId       String?
-  vendorId         String?
-  location         Location?              @relation(fields: [locationId], references: [id])
-  category         Category?              @relation(fields: [categoryId], references: [id])
-  vendor           User?                  @relation("EventVendor", fields: [vendorId], references: [id], onDelete: SetNull)
-  ticketWaves      TicketWave[]
-  ticketCategories TicketCategory[]
-  eventTickets     EventTicket[]
-  menuItems        EventMenuItem[]
-  schedules        EventSchedule[]
-  ticketAttendants EventTicketAttendant[]
+  id                String                        @id @default(cuid())
+  name              String
+  description       String?
+  capacity          Int                           @default(0)
+  photos            String[]
+  startDate         DateTime?
+  endDate           DateTime?
+  endedAt           DateTime?
+  status            EventStatus                   @default(DRAFT)
+  isDeleted         Boolean                       @default(false)
+  createdAt         DateTime                      @default(now())
+  updatedAt         DateTime                      @updatedAt
+  locationId        String?
+  categoryId        String?
+  vendorId          String?
+  location          Location?                     @relation(fields: [locationId], references: [id])
+  category          Category?                     @relation(fields: [categoryId], references: [id])
+  vendor            User?                         @relation("EventVendor", fields: [vendorId], references: [id], onDelete: SetNull)
+  ticketWaves       TicketWave[]
+  ticketCategories  TicketCategory[]
+  eventTickets      EventTicket[]
+  menuItems         EventMenuItem[]
+  schedules         EventSchedule[]
+  ticketAttendants  EventTicketAttendant[]
   attendantSessions EventTicketAttendantSession[]
-  checkInAttempts  TicketCheckInAttempt[]
-  chatRoom         EventChatRoom?
-  chatMessages     EventChatMessage[]
-  chatReadStates   EventChatReadState[]
+  checkInAttempts   TicketCheckInAttempt[]
+  chatRoom          EventChatRoom?
+  chatMessages      EventChatMessage[]
+  chatReadStates    EventChatReadState[]
+  reservationSlots  EventReservationSlot[]
+  reservations      Reservation[]
 
   @@index([isDeleted])
   @@index([endedAt])
@@ -363,24 +407,32 @@ model Category {
 // ─── Locations ────────────────────────────────────────────────────────────────
 
 model Location {
-  id                 String       @id @default(cuid())
-  name               String
-  address            String
-  description        String?
-  capacity           Int
-  isIndoors          Boolean      @default(false)
-  isOutdoors         Boolean      @default(false)
-  latitude           Float
-  longitude          Float
-  floorPlanImageUrl  String?
-  pictures           String[]
-  isParkingAvailable Boolean      @default(false)
-  status             EntityStatus @default(ACTIVE)
-  vendorId           String?
-  vendor             User?        @relation("LocationVendor", fields: [vendorId], references: [id], onDelete: SetNull)
-  events             Event[]
-  createdAt          DateTime     @default(now())
-  updatedAt          DateTime     @updatedAt
+  id                      String            @id @default(cuid())
+  name                    String
+  address                 String
+  description             String?
+  capacity                Int
+  isIndoors               Boolean           @default(false)
+  isOutdoors              Boolean           @default(false)
+  latitude                Float
+  longitude               Float
+  floorPlanImageUrl       String?
+  pictures                String[]
+  isParkingAvailable      Boolean           @default(false)
+  venueType               VenueType         @default(OTHER)
+  bookingEnabled          Boolean           @default(false)
+  bookingRules            String?
+  cancellationCutoffHours Int               @default(24)
+  timezone                String            @default("Africa/Nairobi")
+  status                  EntityStatus      @default(ACTIVE)
+  vendorId                String?
+  vendor                  User?             @relation("LocationVendor", fields: [vendorId], references: [id], onDelete: SetNull)
+  events                  Event[]
+  reservationTables       LocationTable[]
+  reservationSlots        ReservationSlot[]
+  reservations            Reservation[]
+  createdAt               DateTime          @default(now())
+  updatedAt               DateTime          @updatedAt
 
   @@index([vendorId])
   @@map("locations")
@@ -498,15 +550,15 @@ model EventTicketAttendantSession {
 }
 
 model EventChatRoom {
-  id                String              @id @default(cuid())
-  eventId           String              @unique
-  event             Event               @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  status            EventChatRoomStatus @default(ACTIVE)
+  id                String               @id @default(cuid())
+  eventId           String               @unique
+  event             Event                @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  status            EventChatRoomStatus  @default(ACTIVE)
   finalUpdatesUntil DateTime?
   lockedAt          DateTime?
-  staffOnly         Boolean             @default(false)
-  createdAt         DateTime            @default(now())
-  updatedAt         DateTime            @updatedAt
+  staffOnly         Boolean              @default(false)
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
   messages          EventChatMessage[]
   readStates        EventChatReadState[]
 
@@ -545,17 +597,17 @@ model EventChatMessage {
 }
 
 model EventChatReadState {
-  id                String        @id @default(cuid())
+  id                String            @id @default(cuid())
   roomId            String
   eventId           String
   userId            String
   lastReadMessageId String?
-  lastReadAt        DateTime      @default(now())
-  createdAt         DateTime      @default(now())
-  updatedAt         DateTime      @updatedAt
-  room              EventChatRoom @relation(fields: [roomId, eventId], references: [id, eventId], onDelete: Cascade)
-  event             Event         @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  user              User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lastReadAt        DateTime          @default(now())
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  room              EventChatRoom     @relation(fields: [roomId, eventId], references: [id, eventId], onDelete: Cascade)
+  event             Event             @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user              User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   lastReadMessage   EventChatMessage? @relation("EventChatReadStateLastReadMessage", fields: [lastReadMessageId, roomId, eventId], references: [id, roomId, eventId], onDelete: SetNull)
 
   @@unique([roomId, userId])
@@ -629,6 +681,127 @@ model PlatformSetting {
   updatedAt DateTime @updatedAt
 
   @@map("platform_settings")
+}
+
+model LocationTable {
+  id           String                 @id @default(cuid())
+  locationId   String
+  location     Location               @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  name         String
+  category     String
+  description  String?
+  minGuests    Int                    @default(1)
+  maxGuests    Int
+  minimumSpend Decimal                @db.Decimal(10, 2)
+  depositType  ReservationDepositType @default(FLAT)
+  depositValue Decimal                @db.Decimal(10, 2)
+  isActive     Boolean                @default(true)
+  reservations Reservation[]
+  createdAt    DateTime               @default(now())
+  updatedAt    DateTime               @updatedAt
+
+  @@index([locationId])
+  @@index([locationId, category])
+  @@index([isActive])
+  @@map("location_tables")
+}
+
+model ReservationSlot {
+  id           String        @id @default(cuid())
+  locationId   String
+  location     Location      @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  label        String
+  startTime    String
+  endTime      String
+  daysOfWeek   Int[]
+  isActive     Boolean       @default(true)
+  reservations Reservation[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@index([locationId])
+  @@index([isActive])
+  @@map("reservation_slots")
+}
+
+model EventReservationSlot {
+  id            String        @id @default(cuid())
+  eventId       String
+  event         Event         @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  label         String
+  startDateTime DateTime
+  endDateTime   DateTime
+  isActive      Boolean       @default(true)
+  reservations  Reservation[]
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@index([eventId])
+  @@index([startDateTime, endDateTime])
+  @@index([isActive])
+  @@map("event_reservation_slots")
+}
+
+model Reservation {
+  id                 String                @id @default(cuid())
+  reference          String                @unique
+  userId             String
+  user               User                  @relation("ReservationUser", fields: [userId], references: [id], onDelete: Cascade)
+  locationId         String
+  location           Location              @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  eventId            String?
+  event              Event?                @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  tableId            String
+  table              LocationTable         @relation(fields: [tableId], references: [id], onDelete: Restrict)
+  slotId             String?
+  slot               ReservationSlot?      @relation(fields: [slotId], references: [id], onDelete: SetNull)
+  eventSlotId        String?
+  eventSlot          EventReservationSlot? @relation(fields: [eventSlotId], references: [id], onDelete: SetNull)
+  reservationDate    DateTime
+  startDateTime      DateTime
+  endDateTime        DateTime
+  guestCount         Int
+  tableCategory      String
+  minimumSpend       Decimal               @db.Decimal(10, 2)
+  depositAmount      Decimal               @db.Decimal(10, 2)
+  status             ReservationStatus     @default(PENDING_PAYMENT)
+  source             ReservationSource     @default(VENUE)
+  cancelBefore       DateTime
+  cancelledAt        DateTime?
+  cancelledById      String?
+  cancelledBy        User?                 @relation("ReservationCancelledBy", fields: [cancelledById], references: [id], onDelete: SetNull)
+  cancellationReason String?
+  payments           ReservationPayment[]
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+
+  @@index([userId])
+  @@index([locationId])
+  @@index([eventId])
+  @@index([tableId])
+  @@index([status])
+  @@index([startDateTime, endDateTime])
+  @@map("reservations")
+}
+
+model ReservationPayment {
+  id            String                   @id @default(cuid())
+  reservationId String
+  reservation   Reservation              @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  userId        String
+  user          User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amount        Decimal                  @db.Decimal(10, 2)
+  method        ReservationPaymentMethod
+  status        ReservationPaymentStatus @default(PENDING)
+  reference     String?                  @unique
+  metadata      Json?
+  createdAt     DateTime                 @default(now())
+  updatedAt     DateTime                 @updatedAt
+
+  @@index([reservationId])
+  @@index([userId])
+  @@index([status])
+  @@map("reservation_payments")
 }
 
 // ─── Services ─────────────────────────────────────────────────────────────────
