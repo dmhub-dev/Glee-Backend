@@ -41,6 +41,13 @@ export class AdminReservationsController {
     return this.reservationsService.updateReservationStatus(id, dto, user);
   }
 
+  @Permissions(Permission.BOOKINGS_READ)
+  @ApiResponses(true)
+  @Get('reservations/:id')
+  getReservation(@Param('id') id: string, @CurrentUser() user: any) {
+    return this.reservationsService.getAdminReservation(id, user);
+  }
+
   @Permissions(Permission.BOOKINGS_UPDATE)
   @ApiResponses(true, [UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.VENDOR])
   @Get('locations/:locationId/tables')

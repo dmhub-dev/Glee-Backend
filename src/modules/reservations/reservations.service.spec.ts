@@ -32,6 +32,7 @@ describe('ReservationsService setup', () => {
               findMany: jest.fn(),
               count: jest.fn(),
               findFirst: jest.fn(),
+              updateMany: jest.fn(),
               create: jest.fn(),
               update: jest.fn(),
             },
@@ -527,13 +528,15 @@ describe('ReservationsService setup', () => {
     });
 
     it('allows customer cancellation before cutoff', async () => {
-      prisma.reservation.findFirst.mockResolvedValue({
-        id: 'reservation-1',
-        userId: 'user-1',
-        status: 'CONFIRMED',
-        cancelBefore: new Date(Date.now() + 60 * 60 * 1000),
-      });
-      prisma.reservation.update.mockResolvedValue({ id: 'reservation-1', status: 'CANCELLED' });
+      prisma.reservation.findFirst
+        .mockResolvedValueOnce({
+          id: 'reservation-1',
+          userId: 'user-1',
+          status: 'CONFIRMED',
+          cancelBefore: new Date(Date.now() + 60 * 60 * 1000),
+        })
+        .mockResolvedValueOnce({ id: 'reservation-1', status: 'CANCELLED' });
+      prisma.reservation.updateMany.mockResolvedValue({ count: 1 });
 
       const result = await service.cancelMyReservation(
         'reservation-1',
@@ -542,6 +545,17 @@ describe('ReservationsService setup', () => {
       );
 
       expect(result.data.status).toBe('CANCELLED');
+      expect(prisma.reservation.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            id: 'reservation-1',
+            userId: 'user-1',
+            status: 'CONFIRMED',
+            cancelBefore: { gt: expect.any(Date) },
+          }),
+        }),
+      );
+      expect(prisma.reservation.update).not.toHaveBeenCalled();
     });
 
     it('blocks customer cancellation after cutoff', async () => {
@@ -563,7 +577,12 @@ describe('ReservationsService setup', () => {
         status: 'CONFIRMED',
         location: { vendorId: null },
       });
-      prisma.reservation.update.mockResolvedValue({ id: 'reservation-1', status: 'NO_SHOW' });
+      prisma.reservation.updateMany.mockResolvedValue({ count: 1 });
+      prisma.reservation.findFirst.mockResolvedValueOnce({
+        id: 'reservation-1',
+        status: 'CONFIRMED',
+        location: { vendorId: null },
+      }).mockResolvedValueOnce({ id: 'reservation-1', status: 'NO_SHOW' });
 
       const result = await service.updateReservationStatus(
         'reservation-1',
@@ -572,6 +591,12 @@ describe('ReservationsService setup', () => {
       );
 
       expect(result.data.status).toBe('NO_SHOW');
+      expect(prisma.reservation.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'reservation-1', status: 'CONFIRMED' },
+        }),
+      );
+      expect(prisma.reservation.update).not.toHaveBeenCalled();
     });
 
     it('blocks vendor from updating another vendor location reservation', async () => {
@@ -610,6 +635,17 @@ describe('ReservationsService setup', () => {
       expect(prisma.reservation.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { location: { vendorId: 'vendor-1' } },
+          include: expect.objectContaining({
+            user: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                phone: true,
+                profileImage: true,
+              },
+            },
+          }),
           skip: 0,
           take: 10,
           orderBy: { startDateTime: 'asc' },
@@ -643,6 +679,55 @@ describe('ReservationsService setup', () => {
           }),
         }),
       );
+    });
+
+    it('gets admin reservation detail with vendor scope and safe customer fields', async () => {
+      prisma.reservation.findFirst.mockResolvedValue({
+        id: 'reservation-1',
+        status: 'CONFIRMED',
+        location: { vendorId: 'vendor-1' },
+        user: { id: 'user-1', name: 'Customer', email: 'user@example.com' },
+      });
+
+      const result = await service.getAdminReservation(
+        'reservation-1',
+        { id: 'vendor-1', role: 'VENDOR' },
+      );
+
+      expect(result.data.id).toBe('reservation-1');
+      expect(prisma.reservation.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'reservation-1' },
+          include: expect.objectContaining({
+            user: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                phone: true,
+                profileImage: true,
+              },
+            },
+          }),
+        }),
+      );
+    });
+
+    it('blocks stale admin status updates after a concurrent status change', async () => {
+      prisma.reservation.findFirst.mockResolvedValue({
+        id: 'reservation-1',
+        status: 'CONFIRMED',
+        location: { vendorId: null },
+      });
+      prisma.reservation.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(
+        service.updateReservationStatus(
+          'reservation-1',
+          { status: 'NO_SHOW' } as any,
+          { id: 'admin-1', role: 'ADMIN' },
+        ),
+      ).rejects.toMatchObject({ status: 400 });
     });
   });
 });

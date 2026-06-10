@@ -250,6 +250,13 @@ export class UpdateReservationStatusDto {
   reason?: string;
 }
 
+export class CancelReservationDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  reason?: string;
+}
+
 export class CreateReservationDto {
   @ApiProperty()
   @IsNotEmpty()

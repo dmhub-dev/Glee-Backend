@@ -3,6 +3,7 @@ import { ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '@src/auth/jwt/current-user.decorator';
 import { ApiResponses } from '@src/common/responses/response';
 import {
+  CancelReservationDto,
   CreateReservationDto,
   ReservationAvailabilityQueryDto,
   ReservationListQueryDto,
@@ -64,7 +65,7 @@ export class ReservationsController {
   @Post(':id/cancel')
   cancel(
     @Param('id') id: string,
-    @Body() dto: { reason?: string },
+    @Body() dto: CancelReservationDto,
     @CurrentUser() user: any,
   ) {
     return this.reservationsService.cancelMyReservation(id, dto, user);

@@ -19,6 +19,7 @@ import { Decimal } from '@prisma/client/runtime/library';
 import { PrismaService } from '@src/infrastructure/database/prisma.service';
 import { WalletService } from '@src/modules/wallets/wallet/wallet.service';
 import {
+  CancelReservationDto,
   CreateLocationTableDto,
   CreateReservationDto,
   CreateReservationSlotDto,
@@ -356,6 +357,9 @@ export class ReservationsService {
     const where: Prisma.ReservationWhereInput = {
       userId: actor.id,
       ...(query.status && { status: query.status }),
+      ...(query.locationId && { locationId: query.locationId }),
+      ...(query.eventId && { eventId: query.eventId }),
+      ...(query.date && { startDateTime: this.buildDateRange(query.date) }),
     };
 
     const [items, total] = await this.prisma.$transaction([
@@ -399,7 +403,7 @@ export class ReservationsService {
 
   async cancelMyReservation(
     id: string,
-    dto: { reason?: string } = {},
+    dto: CancelReservationDto = {},
     actor: any,
   ) {
     if (!actor?.id) {
@@ -416,19 +420,37 @@ export class ReservationsService {
     if (reservation.status !== ReservationStatus.CONFIRMED) {
       throw new BadRequestException('Only confirmed reservations can be cancelled');
     }
-    if (new Date() > new Date(reservation.cancelBefore)) {
+    const now = new Date();
+    if (now > new Date(reservation.cancelBefore)) {
       throw new BadRequestException('Reservation can no longer be cancelled');
     }
 
-    const updated = await this.prisma.reservation.update({
-      where: { id },
+    const updateResult = await this.prisma.reservation.updateMany({
+      where: {
+        id,
+        userId: actor.id,
+        status: ReservationStatus.CONFIRMED,
+        cancelBefore: { gt: now },
+      },
       data: {
         status: ReservationStatus.CANCELLED,
-        cancelledAt: new Date(),
+        cancelledAt: now,
         cancelledById: actor.id,
         cancellationReason: dto?.reason ?? null,
       },
     });
+
+    if (updateResult.count === 0) {
+      throw new BadRequestException('Reservation can no longer be cancelled');
+    }
+
+    const updated = await this.prisma.reservation.findFirst({
+      where: { id, userId: actor.id },
+      include: this.customerReservationInclude(),
+    });
+    if (!updated) {
+      throw new NotFoundException('Reservation not found');
+    }
 
     return {
       success: true,
@@ -446,6 +468,7 @@ export class ReservationsService {
     const where: Prisma.ReservationWhereInput = {
       ...(query.status && { status: query.status }),
       ...(query.locationId && { locationId: query.locationId }),
+      ...(query.eventId && { eventId: query.eventId }),
       ...(query.date && { startDateTime: this.buildDateRange(query.date) }),
     };
 
@@ -470,6 +493,25 @@ export class ReservationsService {
       success: true,
       message: 'Admin reservations retrieved successfully',
       data: { items, total, page, limit },
+    };
+  }
+
+  async getAdminReservation(id: string, actor: any) {
+    const reservation = await this.prisma.reservation.findFirst({
+      where: { id },
+      include: this.adminReservationInclude(),
+    });
+
+    if (!reservation) {
+      throw new NotFoundException('Reservation not found');
+    }
+
+    this.assertCanManageReservationRecord(reservation, actor);
+
+    return {
+      success: true,
+      message: 'Admin reservation retrieved successfully',
+      data: reservation,
     };
   }
 
@@ -499,17 +541,32 @@ export class ReservationsService {
       };
     }
 
-    const updated = await this.prisma.reservation.update({
-      where: { id },
+    const now = new Date();
+    const updateResult = await this.prisma.reservation.updateMany({
+      where: { id, status: reservation.status },
       data: {
         status: dto.status,
         ...(dto.status === ReservationStatus.CANCELLED && {
-          cancelledAt: new Date(),
+          cancelledAt: now,
           cancelledById: actor?.id,
           cancellationReason: dto.reason ?? null,
         }),
       },
     });
+
+    if (updateResult.count === 0) {
+      throw new BadRequestException(
+        'Reservation status changed. Please refresh and try again',
+      );
+    }
+
+    const updated = await this.prisma.reservation.findFirst({
+      where: { id },
+      include: this.adminReservationInclude(),
+    });
+    if (!updated) {
+      throw new NotFoundException('Reservation not found');
+    }
 
     return {
       success: true,
@@ -673,7 +730,15 @@ export class ReservationsService {
 
   private adminReservationInclude() {
     return {
-      user: true,
+      user: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          phone: true,
+          profileImage: true,
+        },
+      },
       location: true,
       table: true,
       payments: true,
