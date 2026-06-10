@@ -18,7 +18,7 @@ import { ReservationsService } from './reservations.service';
 export class AdminReservationsController {
   constructor(private readonly reservationsService: ReservationsService) {}
 
-  @Permissions(Permission.BOOKINGS_READ)
+  @Permissions(Permission.BOOKINGS_UPDATE)
   @ApiResponses(true, [UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.VENDOR])
   @Get('locations/:locationId/tables')
   listTables(@Param('locationId') locationId: string, @CurrentUser() user: any) {
@@ -48,7 +48,7 @@ export class AdminReservationsController {
     return this.reservationsService.updateTable(locationId, tableId, dto, user);
   }
 
-  @Permissions(Permission.BOOKINGS_READ)
+  @Permissions(Permission.BOOKINGS_UPDATE)
   @ApiResponses(true, [UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.VENDOR])
   @Get('locations/:locationId/reservation-slots')
   listSlots(@Param('locationId') locationId: string, @CurrentUser() user: any) {
