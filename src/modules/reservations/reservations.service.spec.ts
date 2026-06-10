@@ -111,6 +111,42 @@ describe('ReservationsService setup', () => {
     ).rejects.toMatchObject({ status: 403 });
   });
 
+  it('blocks non-manager roles from reading reservation setup', async () => {
+    prisma.location.findUnique.mockResolvedValue({
+      id: 'loc-1',
+      vendorId: null,
+      status: 'ACTIVE',
+    });
+
+    await expect(
+      service.listTables('loc-1', { id: 'support-1', role: 'CUSTOMER_SUPPORT' }),
+    ).rejects.toMatchObject({ status: 403 });
+  });
+
+  it('rejects percentage deposits over 100 percent', async () => {
+    prisma.location.findUnique.mockResolvedValue({
+      id: 'loc-1',
+      vendorId: null,
+      status: 'ACTIVE',
+    });
+
+    await expect(
+      service.createTable(
+        'loc-1',
+        {
+          name: 'VIP Booth 1',
+          category: 'VIP Booth',
+          minGuests: 2,
+          maxGuests: 8,
+          minimumSpend: 50000,
+          depositType: 'PERCENTAGE',
+          depositValue: 150,
+        } as any,
+        { id: 'admin-1', role: 'ADMIN' },
+      ),
+    ).rejects.toMatchObject({ status: 400 });
+  });
+
   it('creates a location-level reservation slot', async () => {
     prisma.location.findUnique.mockResolvedValue({
       id: 'loc-1',

@@ -25,6 +25,7 @@ export class ReservationsService {
   async createTable(locationId: string, dto: CreateLocationTableDto, actor: any) {
     const location = await this.getLocationForMutation(locationId, actor);
     this.assertValidGuestRange(dto.minGuests, dto.maxGuests);
+    this.assertValidDeposit(dto.depositType, dto.depositValue);
 
     const table = await this.prisma.locationTable.create({
       data: {
@@ -81,6 +82,10 @@ export class ReservationsService {
     const minGuests = dto.minGuests ?? table.minGuests;
     const maxGuests = dto.maxGuests ?? table.maxGuests;
     this.assertValidGuestRange(minGuests, maxGuests);
+    this.assertValidDeposit(
+      dto.depositType ?? table.depositType,
+      dto.depositValue ?? Number(table.depositValue),
+    );
 
     const updated = await this.prisma.locationTable.update({
       where: { id: tableId },
@@ -176,6 +181,11 @@ export class ReservationsService {
       if (location.vendorId && location.vendorId !== vendorId) {
         throw new ForbiddenException('You do not have access to this location');
       }
+      return location;
+    }
+
+    if (!this.canManageReservations(actor)) {
+      throw new ForbiddenException('You do not have access to manage reservations');
     }
 
     return location;
@@ -225,6 +235,12 @@ export class ReservationsService {
   private assertValidGuestRange(minGuests: number, maxGuests: number) {
     if (maxGuests < minGuests) {
       throw new BadRequestException('maxGuests must be greater than or equal to minGuests');
+    }
+  }
+
+  private assertValidDeposit(depositType: string, depositValue: number) {
+    if (depositType === 'PERCENTAGE' && depositValue > 100) {
+      throw new BadRequestException('Percentage depositValue cannot exceed 100');
     }
   }
 
