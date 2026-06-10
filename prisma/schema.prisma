@@ -700,6 +700,7 @@ model LocationTable {
   createdAt    DateTime               @default(now())
   updatedAt    DateTime               @updatedAt
 
+  @@unique([id, locationId])
   @@index([locationId])
   @@index([locationId, category])
   @@index([isActive])
@@ -719,6 +720,7 @@ model ReservationSlot {
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
 
+  @@unique([id, locationId])
   @@index([locationId])
   @@index([isActive])
   @@map("reservation_slots")
@@ -746,15 +748,15 @@ model Reservation {
   id                 String                @id @default(cuid())
   reference          String                @unique
   userId             String
-  user               User                  @relation("ReservationUser", fields: [userId], references: [id], onDelete: Cascade)
+  user               User                  @relation("ReservationUser", fields: [userId], references: [id], onDelete: Restrict)
   locationId         String
-  location           Location              @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  location           Location              @relation(fields: [locationId], references: [id], onDelete: Restrict)
   eventId            String?
   event              Event?                @relation(fields: [eventId], references: [id], onDelete: SetNull)
   tableId            String
-  table              LocationTable         @relation(fields: [tableId], references: [id], onDelete: Restrict)
+  table              LocationTable         @relation(fields: [tableId, locationId], references: [id, locationId], onDelete: Restrict)
   slotId             String?
-  slot               ReservationSlot?      @relation(fields: [slotId], references: [id], onDelete: SetNull)
+  slot               ReservationSlot?      @relation(fields: [slotId, locationId], references: [id, locationId], onDelete: Restrict)
   eventSlotId        String?
   eventSlot          EventReservationSlot? @relation(fields: [eventSlotId], references: [id], onDelete: SetNull)
   reservationDate    DateTime
@@ -781,15 +783,18 @@ model Reservation {
   @@index([tableId])
   @@index([status])
   @@index([startDateTime, endDateTime])
+  @@index([locationId, status, startDateTime, endDateTime])
+  @@index([tableId, status, startDateTime, endDateTime])
+  @@index([userId, startDateTime])
   @@map("reservations")
 }
 
 model ReservationPayment {
   id            String                   @id @default(cuid())
   reservationId String
-  reservation   Reservation              @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  reservation   Reservation              @relation(fields: [reservationId], references: [id], onDelete: Restrict)
   userId        String
-  user          User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user          User                     @relation(fields: [userId], references: [id], onDelete: Restrict)
   amount        Decimal                  @db.Decimal(10, 2)
   method        ReservationPaymentMethod
   status        ReservationPaymentStatus @default(PENDING)

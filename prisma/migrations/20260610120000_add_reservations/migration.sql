@@ -16,6 +16,9 @@ CREATE TYPE "ReservationPaymentMethod" AS ENUM ('WALLET', 'PAYSTACK');
 -- CreateEnum
 CREATE TYPE "ReservationPaymentStatus" AS ENUM ('PENDING', 'SUCCESS', 'FAILED', 'REFUNDED');
 
+-- Enable GiST equality support for text columns used by the overlap guard.
+CREATE EXTENSION IF NOT EXISTS "btree_gist";
+
 -- AlterTable
 ALTER TABLE "locations" ADD COLUMN     "bookingEnabled" BOOLEAN NOT NULL DEFAULT false,
 ADD COLUMN     "bookingRules" TEXT,
@@ -120,6 +123,9 @@ CREATE TABLE "reservation_payments" (
 CREATE INDEX "location_tables_locationId_idx" ON "location_tables"("locationId");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "location_tables_id_locationId_key" ON "location_tables"("id", "locationId");
+
+-- CreateIndex
 CREATE INDEX "location_tables_locationId_category_idx" ON "location_tables"("locationId", "category");
 
 -- CreateIndex
@@ -127,6 +133,9 @@ CREATE INDEX "location_tables_isActive_idx" ON "location_tables"("isActive");
 
 -- CreateIndex
 CREATE INDEX "reservation_slots_locationId_idx" ON "reservation_slots"("locationId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "reservation_slots_id_locationId_key" ON "reservation_slots"("id", "locationId");
 
 -- CreateIndex
 CREATE INDEX "reservation_slots_isActive_idx" ON "reservation_slots"("isActive");
@@ -162,6 +171,15 @@ CREATE INDEX "reservations_status_idx" ON "reservations"("status");
 CREATE INDEX "reservations_startDateTime_endDateTime_idx" ON "reservations"("startDateTime", "endDateTime");
 
 -- CreateIndex
+CREATE INDEX "reservations_locationId_status_startDateTime_endDateTime_idx" ON "reservations"("locationId", "status", "startDateTime", "endDateTime");
+
+-- CreateIndex
+CREATE INDEX "reservations_tableId_status_startDateTime_endDateTime_idx" ON "reservations"("tableId", "status", "startDateTime", "endDateTime");
+
+-- CreateIndex
+CREATE INDEX "reservations_userId_startDateTime_idx" ON "reservations"("userId", "startDateTime");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "reservation_payments_reference_key" ON "reservation_payments"("reference");
 
 -- CreateIndex
@@ -173,6 +191,33 @@ CREATE INDEX "reservation_payments_userId_idx" ON "reservation_payments"("userId
 -- CreateIndex
 CREATE INDEX "reservation_payments_status_idx" ON "reservation_payments"("status");
 
+-- AddCheckConstraint
+ALTER TABLE "location_tables" ADD CONSTRAINT "location_tables_guest_capacity_check" CHECK ("minGuests" >= 1 AND "maxGuests" >= "minGuests");
+
+-- AddCheckConstraint
+ALTER TABLE "location_tables" ADD CONSTRAINT "location_tables_money_check" CHECK ("minimumSpend" >= 0 AND "depositValue" >= 0);
+
+-- AddCheckConstraint
+ALTER TABLE "location_tables" ADD CONSTRAINT "location_tables_percentage_deposit_check" CHECK ("depositType" <> 'PERCENTAGE' OR "depositValue" <= 100);
+
+-- AddCheckConstraint
+ALTER TABLE "event_reservation_slots" ADD CONSTRAINT "event_reservation_slots_time_order_check" CHECK ("endDateTime" > "startDateTime");
+
+-- AddCheckConstraint
+ALTER TABLE "reservations" ADD CONSTRAINT "reservations_guest_count_check" CHECK ("guestCount" >= 1);
+
+-- AddCheckConstraint
+ALTER TABLE "reservations" ADD CONSTRAINT "reservations_time_order_check" CHECK ("endDateTime" > "startDateTime" AND "cancelBefore" <= "startDateTime");
+
+-- AddExclusionConstraint
+ALTER TABLE "reservations" ADD CONSTRAINT "reservations_no_table_overlap_active" EXCLUDE USING gist (
+    "tableId" WITH =,
+    tsrange("startDateTime", "endDateTime", '[)') WITH &&
+) WHERE ("status" IN ('PENDING_PAYMENT', 'CONFIRMED', 'SEATED'));
+
+-- AddCheckConstraint
+ALTER TABLE "reservation_payments" ADD CONSTRAINT "reservation_payments_amount_check" CHECK ("amount" >= 0);
+
 -- AddForeignKey
 ALTER TABLE "location_tables" ADD CONSTRAINT "location_tables_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "locations"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
@@ -183,19 +228,19 @@ ALTER TABLE "reservation_slots" ADD CONSTRAINT "reservation_slots_locationId_fke
 ALTER TABLE "event_reservation_slots" ADD CONSTRAINT "event_reservation_slots_eventId_fkey" FOREIGN KEY ("eventId") REFERENCES "Event"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "reservations" ADD CONSTRAINT "reservations_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "reservations" ADD CONSTRAINT "reservations_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "reservations" ADD CONSTRAINT "reservations_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "locations"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "reservations" ADD CONSTRAINT "reservations_locationId_fkey" FOREIGN KEY ("locationId") REFERENCES "locations"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "reservations" ADD CONSTRAINT "reservations_eventId_fkey" FOREIGN KEY ("eventId") REFERENCES "Event"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "reservations" ADD CONSTRAINT "reservations_tableId_fkey" FOREIGN KEY ("tableId") REFERENCES "location_tables"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "reservations" ADD CONSTRAINT "reservations_tableId_locationId_fkey" FOREIGN KEY ("tableId", "locationId") REFERENCES "location_tables"("id", "locationId") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "reservations" ADD CONSTRAINT "reservations_slotId_fkey" FOREIGN KEY ("slotId") REFERENCES "reservation_slots"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+ALTER TABLE "reservations" ADD CONSTRAINT "reservations_slotId_locationId_fkey" FOREIGN KEY ("slotId", "locationId") REFERENCES "reservation_slots"("id", "locationId") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "reservations" ADD CONSTRAINT "reservations_eventSlotId_fkey" FOREIGN KEY ("eventSlotId") REFERENCES "event_reservation_slots"("id") ON DELETE SET NULL ON UPDATE CASCADE;
@@ -204,7 +249,7 @@ ALTER TABLE "reservations" ADD CONSTRAINT "reservations_eventSlotId_fkey" FOREIG
 ALTER TABLE "reservations" ADD CONSTRAINT "reservations_cancelledById_fkey" FOREIGN KEY ("cancelledById") REFERENCES "User"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "reservation_payments" ADD CONSTRAINT "reservation_payments_reservationId_fkey" FOREIGN KEY ("reservationId") REFERENCES "reservations"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "reservation_payments" ADD CONSTRAINT "reservation_payments_reservationId_fkey" FOREIGN KEY ("reservationId") REFERENCES "reservations"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "reservation_payments" ADD CONSTRAINT "reservation_payments_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "reservation_payments" ADD CONSTRAINT "reservation_payments_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
