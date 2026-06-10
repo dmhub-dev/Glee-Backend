@@ -133,6 +133,7 @@ export class ReservationsService {
       query.date,
       slot.startTime,
       slot.endTime,
+      location.timezone,
     );
 
     const tables = await this.prisma.locationTable.findMany({
@@ -201,8 +202,9 @@ export class ReservationsService {
       dto.date,
       slot.startTime,
       slot.endTime,
+      location.timezone,
     );
-    const reservationDate = this.buildDateTime(dto.date, '00:00');
+    const reservationDate = this.buildDateTime(dto.date, '00:00', location.timezone);
     const reference = this.generateReservationReference();
     const cancelBefore = new Date(
       startDateTime.getTime() -
@@ -233,7 +235,9 @@ export class ReservationsService {
         const reservedTableIds = new Set(
           existingReservations.map((reservation) => reservation.tableId),
         );
-        const table = tables.find((candidate) => !reservedTableIds.has(candidate.id));
+        const table = this.sortTablesByQuote(
+          tables.filter((candidate) => !reservedTableIds.has(candidate.id)),
+        )[0];
 
         if (!table) {
           throw new BadRequestException('This table category is no longer available');
@@ -558,25 +562,26 @@ export class ReservationsService {
 
   private assertSlotRunsOnDate(date: string, daysOfWeek: number[] = []) {
     if (!daysOfWeek.length) return;
-    const selectedDay = this.buildDateTime(date, '00:00').getDay();
+    const [year, month, day] = this.dateOnly(date).split('-').map(Number);
+    const selectedDay = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
     if (!daysOfWeek.includes(selectedDay)) {
       throw new BadRequestException('Reservation slot is not available on selected date');
     }
   }
 
-  private resolveSlotDateTimes(date: string, startTime: string, endTime: string) {
-    const startDateTime = this.buildDateTime(date, startTime);
-    const endDateTime = this.buildDateTime(date, endTime);
+  private resolveSlotDateTimes(date: string, startTime: string, endTime: string, timezone?: string) {
+    const startDateTime = this.buildDateTime(date, startTime, timezone);
+    const endDateTime = this.buildDateTime(date, endTime, timezone);
     if (endDateTime <= startDateTime) {
       endDateTime.setDate(endDateTime.getDate() + 1);
     }
     return { startDateTime, endDateTime };
   }
 
-  private buildDateTime(date: string, time: string) {
+  private buildDateTime(date: string, time: string, timezone = 'Africa/Nairobi') {
     const [year, month, day] = this.dateOnly(date).split('-').map(Number);
     const [hour, minute] = time.split(':').map(Number);
-    return new Date(year, month - 1, day, hour, minute, 0, 0);
+    return this.zonedDateTimeToUtc(year, month, day, hour, minute, timezone);
   }
 
   private dateOnly(date: string) {
@@ -590,12 +595,7 @@ export class ReservationsService {
     for (const table of tables) {
       if (reservedTableIds.has(table.id)) continue;
 
-      const minimumSpend = Math.round(Number(table.minimumSpend));
-      const depositAmount = this.calculateDeposit(
-        minimumSpend,
-        table.depositType,
-        Number(table.depositValue),
-      );
+      const quote = this.getTableQuote(table);
       const existing = categories.get(table.category);
 
       if (!existing) {
@@ -604,8 +604,8 @@ export class ReservationsService {
           availableCount: 1,
           minGuests: table.minGuests,
           maxGuests: table.maxGuests,
-          minimumSpend,
-          depositAmount,
+          minimumSpend: quote.minimumSpend,
+          depositAmount: quote.depositAmount,
         });
         continue;
       }
@@ -613,11 +613,49 @@ export class ReservationsService {
       existing.availableCount += 1;
       existing.minGuests = Math.min(existing.minGuests, table.minGuests);
       existing.maxGuests = Math.max(existing.maxGuests, table.maxGuests);
-      existing.minimumSpend = Math.min(existing.minimumSpend, minimumSpend);
-      existing.depositAmount = Math.min(existing.depositAmount, depositAmount);
+      if (this.isBetterQuote(quote, existing)) {
+        existing.minimumSpend = quote.minimumSpend;
+        existing.depositAmount = quote.depositAmount;
+      }
     }
 
     return Array.from(categories.values());
+  }
+
+  private sortTablesByQuote<T extends { minimumSpend: any; depositType: any; depositValue: any; name?: string }>(tables: T[]) {
+    return [...tables].sort((a, b) => {
+      const quoteA = this.getTableQuote(a);
+      const quoteB = this.getTableQuote(b);
+      if (quoteA.depositAmount !== quoteB.depositAmount) {
+        return quoteA.depositAmount - quoteB.depositAmount;
+      }
+      if (quoteA.minimumSpend !== quoteB.minimumSpend) {
+        return quoteA.minimumSpend - quoteB.minimumSpend;
+      }
+      return String(a.name ?? '').localeCompare(String(b.name ?? ''));
+    });
+  }
+
+  private getTableQuote(table: { minimumSpend: any; depositType: any; depositValue: any }) {
+    const minimumSpend = Math.round(Number(table.minimumSpend));
+    return {
+      minimumSpend,
+      depositAmount: this.calculateDeposit(
+        minimumSpend,
+        table.depositType,
+        Number(table.depositValue),
+      ),
+    };
+  }
+
+  private isBetterQuote(
+    quote: { minimumSpend: number; depositAmount: number },
+    current: { minimumSpend: number; depositAmount: number },
+  ) {
+    if (quote.depositAmount !== current.depositAmount) {
+      return quote.depositAmount < current.depositAmount;
+    }
+    return quote.minimumSpend < current.minimumSpend;
   }
 
   private calculateDeposit(
@@ -629,6 +667,50 @@ export class ReservationsService {
       return Math.round((minimumSpend * depositValue) / 100);
     }
     return Math.round(depositValue);
+  }
+
+  private zonedDateTimeToUtc(
+    year: number,
+    month: number,
+    day: number,
+    hour: number,
+    minute: number,
+    timezone: string,
+  ) {
+    const utcGuess = new Date(Date.UTC(year, month - 1, day, hour, minute, 0, 0));
+    const firstOffset = this.timezoneOffsetMillis(utcGuess, timezone);
+    let zonedInstant = new Date(utcGuess.getTime() - firstOffset);
+    const secondOffset = this.timezoneOffsetMillis(zonedInstant, timezone);
+    if (secondOffset !== firstOffset) {
+      zonedInstant = new Date(utcGuess.getTime() - secondOffset);
+    }
+    return zonedInstant;
+  }
+
+  private timezoneOffsetMillis(date: Date, timezone: string) {
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      hour12: false,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+    const parts = formatter.formatToParts(date).reduce<Record<string, string>>((acc, part) => {
+      if (part.type !== 'literal') acc[part.type] = part.value;
+      return acc;
+    }, {});
+    const asUtc = Date.UTC(
+      Number(parts.year),
+      Number(parts.month) - 1,
+      Number(parts.day),
+      Number(parts.hour),
+      Number(parts.minute),
+      Number(parts.second),
+    );
+    return asUtc - date.getTime();
   }
 
   private generateReservationReference() {

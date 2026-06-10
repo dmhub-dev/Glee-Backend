@@ -12,6 +12,7 @@ import {
   IsBoolean,
   IsDateString,
   IsEnum,
+  IsIn,
   IsInt,
   IsNotEmpty,
   IsNumber,
@@ -235,10 +236,12 @@ export class ReservationListQueryDto {
 
 export class CreateReservationDto {
   @ApiProperty()
+  @IsNotEmpty()
   @IsString()
   locationId: string;
 
   @ApiProperty()
+  @IsNotEmpty()
   @IsString()
   slotId: string;
 
@@ -247,6 +250,7 @@ export class CreateReservationDto {
   date: string;
 
   @ApiProperty()
+  @IsNotEmpty()
   @IsString()
   tableCategory: string;
 
@@ -258,7 +262,7 @@ export class CreateReservationDto {
 
   @ApiPropertyOptional({ default: 'WALLET' })
   @IsOptional()
-  @IsString()
+  @IsIn(['WALLET'])
   paymentMethod?: 'WALLET';
 }
 

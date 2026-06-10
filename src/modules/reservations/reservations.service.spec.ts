@@ -222,6 +222,45 @@ describe('ReservationsService setup', () => {
       ]);
     });
 
+    it('uses the venue timezone when resolving slot instants', async () => {
+      prisma.location.findUnique.mockResolvedValue({
+        id: 'loc-1',
+        bookingEnabled: true,
+        status: 'ACTIVE',
+        cancellationCutoffHours: 24,
+        timezone: 'UTC',
+      });
+      prisma.reservationSlot.findFirst.mockResolvedValue({
+        id: 'slot-1',
+        locationId: 'loc-1',
+        startTime: '18:00',
+        endTime: '20:00',
+        daysOfWeek: [5],
+      });
+      prisma.locationTable.findMany.mockResolvedValue([
+        {
+          id: 'table-1',
+          category: 'VIP Booth',
+          minGuests: 2,
+          maxGuests: 8,
+          minimumSpend: 50000,
+          depositType: 'FLAT',
+          depositValue: 5000,
+          isActive: true,
+        },
+      ]);
+      prisma.reservation.findMany.mockResolvedValue([]);
+
+      const result = await service.getVenueAvailability('loc-1', {
+        date: '2026-06-12',
+        slotId: 'slot-1',
+        guestCount: 4,
+      } as any);
+
+      expect(result.data.startDateTime.toISOString()).toBe('2026-06-12T18:00:00.000Z');
+      expect(result.data.endDateTime.toISOString()).toBe('2026-06-12T20:00:00.000Z');
+    });
+
     it('excludes tables already reserved in overlapping slot', async () => {
       prisma.location.findUnique.mockResolvedValue({
         id: 'loc-1',
@@ -353,6 +392,94 @@ describe('ReservationsService setup', () => {
             status: 'SUCCESS',
             reference,
           }),
+        }),
+      );
+    });
+
+    it('assigns the same lowest-deposit category table shown by availability', async () => {
+      prisma.location.findUnique.mockResolvedValue({
+        id: 'loc-1',
+        bookingEnabled: true,
+        status: 'ACTIVE',
+        cancellationCutoffHours: 24,
+      });
+      prisma.reservationSlot.findFirst.mockResolvedValue({
+        id: 'slot-1',
+        locationId: 'loc-1',
+        startTime: '18:00',
+        endTime: '20:00',
+        daysOfWeek: [5],
+      });
+      prisma.locationTable.findMany.mockResolvedValue([
+        {
+          id: 'table-high',
+          name: 'A1',
+          category: 'VIP Booth',
+          minGuests: 2,
+          maxGuests: 8,
+          minimumSpend: 100000,
+          depositType: 'FLAT',
+          depositValue: 10000,
+          isActive: true,
+        },
+        {
+          id: 'table-low',
+          name: 'B1',
+          category: 'VIP Booth',
+          minGuests: 2,
+          maxGuests: 8,
+          minimumSpend: 50000,
+          depositType: 'FLAT',
+          depositValue: 5000,
+          isActive: true,
+        },
+      ]);
+      prisma.reservation.findMany.mockResolvedValue([]);
+      walletService.debitInTransaction.mockResolvedValue({
+        wallet: { id: 'wallet-1' },
+        transaction: { id: 'wallet-tx-1' },
+      });
+      prisma.reservation.create.mockResolvedValue({
+        id: 'reservation-1',
+        reference: 'RSV-test',
+        tableId: 'table-low',
+        status: 'CONFIRMED',
+      });
+      prisma.reservationPayment.create.mockResolvedValue({ id: 'payment-1' });
+
+      const availability = await service.getVenueAvailability('loc-1', {
+        date: '2026-06-12',
+        slotId: 'slot-1',
+        guestCount: 4,
+      } as any);
+
+      expect(availability.data.categories[0]).toEqual(
+        expect.objectContaining({ minimumSpend: 50000, depositAmount: 5000 }),
+      );
+
+      await service.createReservation(
+        {
+          locationId: 'loc-1',
+          slotId: 'slot-1',
+          date: '2026-06-12',
+          tableCategory: 'VIP Booth',
+          guestCount: 4,
+          paymentMethod: 'WALLET',
+        } as any,
+        { id: 'user-1' },
+      );
+
+      expect(walletService.debitInTransaction).toHaveBeenLastCalledWith(
+        prisma,
+        'user-1',
+        5000,
+        expect.stringContaining('Reservation deposit'),
+        expect.any(String),
+        expect.objectContaining({ tableId: 'table-low' }),
+      );
+      expect(prisma.reservation.create).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ tableId: 'table-low' }),
         }),
       );
     });

@@ -139,19 +139,27 @@ export class WalletService {
     reference?: string,
     metadata?: Record<string, any>,
   ) {
-    const wallet = await tx.wallet.findUnique({ where: { userId } });
-    if (!wallet || Number(wallet.balance) < amount) {
+    const amountDecimal = new Decimal(amount);
+    const debit = await tx.wallet.updateMany({
+      where: {
+        userId,
+        isActive: true,
+        balance: { gte: amountDecimal },
+      },
+      data: { balance: { decrement: amountDecimal } },
+    });
+    if (debit.count !== 1) {
       throw new HttpException('Insufficient wallet balance', HttpStatus.BAD_REQUEST);
     }
-    const updated = await tx.wallet.update({
-      where: { id: wallet.id },
-      data: { balance: { decrement: amount } },
-    });
+    const updated = await tx.wallet.findUnique({ where: { userId } });
+    if (!updated) {
+      throw new HttpException('Wallet not found', HttpStatus.BAD_REQUEST);
+    }
     const transaction = await tx.walletTransaction.create({
       data: {
-        walletId: wallet.id,
+        walletId: updated.id,
         type: 'DEBIT',
-        amount: new Decimal(amount),
+        amount: amountDecimal,
         balanceAfter: updated.balance,
         description,
         reference,
