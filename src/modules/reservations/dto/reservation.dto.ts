@@ -1,8 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   ReservationDepositType,
-  ReservationPaymentMethod,
   ReservationStatus,
+  VenueType,
 } from '@prisma/client';
 import { Type } from 'class-transformer';
 import {
@@ -206,6 +206,7 @@ export class ReservationListQueryDto {
   @Type(() => Number)
   @IsInt()
   @Min(1)
+  @Max(100)
   page?: number = 1;
 
   @ApiPropertyOptional({ default: 20, minimum: 1, maximum: 100 })
@@ -234,28 +235,20 @@ export class ReservationListQueryDto {
 
 export class CreateReservationDto {
   @ApiProperty()
-  @IsNotEmpty()
   @IsString()
   locationId: string;
 
   @ApiProperty()
-  @IsNotEmpty()
   @IsString()
-  tableId: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  slotId?: string;
-
-  @ApiPropertyOptional()
-  @IsOptional()
-  @IsString()
-  eventId?: string;
+  slotId: string;
 
   @ApiProperty()
   @IsDateString()
-  reservationDate: string;
+  date: string;
+
+  @ApiProperty()
+  @IsString()
+  tableCategory: string;
 
   @ApiProperty({ minimum: 1 })
   @Type(() => Number)
@@ -263,8 +256,51 @@ export class CreateReservationDto {
   @Min(1)
   guestCount: number;
 
-  @ApiPropertyOptional({ enum: ReservationPaymentMethod })
+  @ApiPropertyOptional({ default: 'WALLET' })
   @IsOptional()
-  @IsEnum(ReservationPaymentMethod)
-  paymentMethod?: ReservationPaymentMethod;
+  @IsString()
+  paymentMethod?: 'WALLET';
+}
+
+export class ReservationAvailabilityQueryDto {
+  @ApiProperty()
+  @IsDateString()
+  date: string;
+
+  @ApiProperty()
+  @IsString()
+  slotId: string;
+
+  @ApiProperty({ minimum: 1 })
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  guestCount: number;
+}
+
+export class VenueReservationQueryDto {
+  @ApiPropertyOptional({ enum: VenueType })
+  @IsOptional()
+  @IsEnum(VenueType)
+  venueType?: VenueType;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  search?: string;
+
+  @ApiPropertyOptional({ default: 1, minimum: 1 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number = 1;
+
+  @ApiPropertyOptional({ default: 20, minimum: 1, maximum: 100 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit?: number = 20;
 }

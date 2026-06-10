@@ -6,6 +6,7 @@ import { ReservationsService } from './reservations.service';
 describe('ReservationsService setup', () => {
   let service: ReservationsService;
   let prisma: any;
+  let walletService: any;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -47,6 +48,7 @@ describe('ReservationsService setup', () => {
 
     service = module.get(ReservationsService);
     prisma = module.get(PrismaService);
+    walletService = module.get(WalletService);
   });
 
   it('creates a table for an owned active location', async () => {
@@ -170,5 +172,184 @@ describe('ReservationsService setup', () => {
     );
 
     expect(result.data.id).toBe('slot-1');
+  });
+
+  describe('ReservationsService customer booking', () => {
+    it('returns available table categories for a date, slot, and guest count', async () => {
+      prisma.location.findUnique.mockResolvedValue({
+        id: 'loc-1',
+        bookingEnabled: true,
+        status: 'ACTIVE',
+        cancellationCutoffHours: 24,
+      });
+      prisma.reservationSlot.findFirst.mockResolvedValue({
+        id: 'slot-1',
+        locationId: 'loc-1',
+        startTime: '18:00',
+        endTime: '20:00',
+        daysOfWeek: [5],
+      });
+      prisma.locationTable.findMany.mockResolvedValue([
+        {
+          id: 'table-1',
+          category: 'VIP Booth',
+          minGuests: 2,
+          maxGuests: 8,
+          minimumSpend: 50000,
+          depositType: 'FLAT',
+          depositValue: 5000,
+          isActive: true,
+        },
+      ]);
+      prisma.reservation.findMany.mockResolvedValue([]);
+
+      const result = await service.getVenueAvailability('loc-1', {
+        date: '2026-06-12',
+        slotId: 'slot-1',
+        guestCount: 4,
+      } as any);
+
+      expect(result.data.categories).toEqual([
+        expect.objectContaining({
+          category: 'VIP Booth',
+          availableCount: 1,
+          depositAmount: 5000,
+          minimumSpend: 50000,
+        }),
+      ]);
+    });
+
+    it('excludes tables already reserved in overlapping slot', async () => {
+      prisma.location.findUnique.mockResolvedValue({
+        id: 'loc-1',
+        bookingEnabled: true,
+        status: 'ACTIVE',
+        cancellationCutoffHours: 24,
+      });
+      prisma.reservationSlot.findFirst.mockResolvedValue({
+        id: 'slot-1',
+        locationId: 'loc-1',
+        startTime: '18:00',
+        endTime: '20:00',
+        daysOfWeek: [5],
+      });
+      prisma.locationTable.findMany.mockResolvedValue([
+        {
+          id: 'table-1',
+          category: 'VIP Booth',
+          minGuests: 2,
+          maxGuests: 8,
+          minimumSpend: 50000,
+          depositType: 'FLAT',
+          depositValue: 5000,
+          isActive: true,
+        },
+      ]);
+      prisma.reservation.findMany.mockResolvedValue([{ tableId: 'table-1' }]);
+
+      const result = await service.getVenueAvailability('loc-1', {
+        date: '2026-06-12',
+        slotId: 'slot-1',
+        guestCount: 4,
+      } as any);
+
+      expect(result.data.categories).toEqual([]);
+    });
+
+    it('creates a confirmed wallet reservation with an assigned available table', async () => {
+      prisma.location.findUnique.mockResolvedValue({
+        id: 'loc-1',
+        bookingEnabled: true,
+        status: 'ACTIVE',
+        cancellationCutoffHours: 24,
+      });
+      prisma.reservationSlot.findFirst.mockResolvedValue({
+        id: 'slot-1',
+        locationId: 'loc-1',
+        startTime: '18:00',
+        endTime: '20:00',
+        daysOfWeek: [5],
+      });
+      prisma.locationTable.findMany.mockResolvedValue([
+        {
+          id: 'table-1',
+          name: 'A1',
+          category: 'VIP Booth',
+          minGuests: 2,
+          maxGuests: 8,
+          minimumSpend: 50000,
+          depositType: 'FLAT',
+          depositValue: 5000,
+          isActive: true,
+        },
+      ]);
+      prisma.reservation.findMany.mockResolvedValue([]);
+      walletService.debit.mockResolvedValue({
+        wallet: { id: 'wallet-1' },
+        transaction: { id: 'wallet-tx-1' },
+      });
+      prisma.reservation.create.mockResolvedValue({
+        id: 'reservation-1',
+        reference: 'RSV-test',
+        tableId: 'table-1',
+        status: 'CONFIRMED',
+      });
+      prisma.reservationPayment.create.mockResolvedValue({ id: 'payment-1' });
+
+      const result = await service.createReservation(
+        {
+          locationId: 'loc-1',
+          slotId: 'slot-1',
+          date: '2026-06-12',
+          tableCategory: 'VIP Booth',
+          guestCount: 4,
+          paymentMethod: 'WALLET',
+        } as any,
+        { id: 'user-1' },
+      );
+
+      expect(result.message).toBe('Reservation confirmed successfully');
+      expect(walletService.debit).toHaveBeenCalledWith(
+        'user-1',
+        5000,
+        expect.stringContaining('Reservation deposit'),
+        expect.stringMatching(/^RSV-/),
+        expect.objectContaining({
+          locationId: 'loc-1',
+          slotId: 'slot-1',
+          tableId: 'table-1',
+          tableCategory: 'VIP Booth',
+          guestCount: 4,
+        }),
+      );
+
+      const reference = walletService.debit.mock.calls[0][3];
+      expect(prisma.reservation.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            reference,
+            userId: 'user-1',
+            locationId: 'loc-1',
+            tableId: 'table-1',
+            slotId: 'slot-1',
+            guestCount: 4,
+            tableCategory: 'VIP Booth',
+            status: 'CONFIRMED',
+            source: 'VENUE',
+          }),
+        }),
+      );
+      expect(prisma.reservationPayment.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            userId: 'user-1',
+            amount: expect.anything(),
+            method: 'WALLET',
+            status: 'SUCCESS',
+            reference,
+          }),
+        }),
+      );
+    });
   });
 });
