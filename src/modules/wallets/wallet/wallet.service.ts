@@ -1,4 +1,5 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { PrismaService } from '@src/infrastructure/database/prisma.service';
 import { PayStackService } from '@src/infrastructure/payments/paystack/paystack.service';
@@ -125,27 +126,38 @@ export class WalletService {
   }
 
   async debit(userId: string, amount: number, description: string, reference?: string, metadata?: Record<string, any>) {
-    return this.prisma.$transaction(async (tx) => {
-      const wallet = await tx.wallet.findUnique({ where: { userId } });
-      if (!wallet || Number(wallet.balance) < amount) {
-        throw new HttpException('Insufficient wallet balance', HttpStatus.BAD_REQUEST);
-      }
-      const updated = await tx.wallet.update({
-        where: { id: wallet.id },
-        data: { balance: { decrement: amount } },
-      });
-      const transaction = await tx.walletTransaction.create({
-        data: {
-          walletId: wallet.id,
-          type: 'DEBIT',
-          amount: new Decimal(amount),
-          balanceAfter: updated.balance,
-          description,
-          reference,
-          metadata: metadata as any,
-        },
-      });
-      return { wallet: updated, transaction };
+    return this.prisma.$transaction((tx) =>
+      this.debitInTransaction(tx, userId, amount, description, reference, metadata),
+    );
+  }
+
+  async debitInTransaction(
+    tx: Prisma.TransactionClient,
+    userId: string,
+    amount: number,
+    description: string,
+    reference?: string,
+    metadata?: Record<string, any>,
+  ) {
+    const wallet = await tx.wallet.findUnique({ where: { userId } });
+    if (!wallet || Number(wallet.balance) < amount) {
+      throw new HttpException('Insufficient wallet balance', HttpStatus.BAD_REQUEST);
+    }
+    const updated = await tx.wallet.update({
+      where: { id: wallet.id },
+      data: { balance: { decrement: amount } },
     });
+    const transaction = await tx.walletTransaction.create({
+      data: {
+        walletId: wallet.id,
+        type: 'DEBIT',
+        amount: new Decimal(amount),
+        balanceAfter: updated.balance,
+        description,
+        reference,
+        metadata: metadata as any,
+      },
+    });
+    return { wallet: updated, transaction };
   }
 }

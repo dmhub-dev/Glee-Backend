@@ -42,7 +42,10 @@ describe('ReservationsService setup', () => {
             ),
           },
         },
-        { provide: WalletService, useValue: { debit: jest.fn() } },
+        {
+          provide: WalletService,
+          useValue: { debit: jest.fn(), debitInTransaction: jest.fn() },
+        },
       ],
     }).compile();
 
@@ -284,7 +287,7 @@ describe('ReservationsService setup', () => {
         },
       ]);
       prisma.reservation.findMany.mockResolvedValue([]);
-      walletService.debit.mockResolvedValue({
+      walletService.debitInTransaction.mockResolvedValue({
         wallet: { id: 'wallet-1' },
         transaction: { id: 'wallet-tx-1' },
       });
@@ -309,7 +312,9 @@ describe('ReservationsService setup', () => {
       );
 
       expect(result.message).toBe('Reservation confirmed successfully');
-      expect(walletService.debit).toHaveBeenCalledWith(
+      expect(walletService.debit).not.toHaveBeenCalled();
+      expect(walletService.debitInTransaction).toHaveBeenCalledWith(
+        prisma,
         'user-1',
         5000,
         expect.stringContaining('Reservation deposit'),
@@ -323,7 +328,7 @@ describe('ReservationsService setup', () => {
         }),
       );
 
-      const reference = walletService.debit.mock.calls[0][3];
+      const reference = walletService.debitInTransaction.mock.calls[0][4];
       expect(prisma.reservation.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({

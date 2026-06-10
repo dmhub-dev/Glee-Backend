@@ -256,7 +256,8 @@ export class ReservationsService {
           endDateTime: endDateTime.toISOString(),
         };
 
-        const walletDebit = await this.walletService.debit(
+        const walletDebit = await this.walletService.debitInTransaction(
+          tx,
           actor.id,
           depositAmount,
           `Reservation deposit for ${dto.tableCategory}`,
