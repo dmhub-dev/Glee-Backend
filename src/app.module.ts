@@ -24,6 +24,7 @@ import { AccessManagementModule } from './modules/identity/access-management/acc
 import { WalletModule } from './modules/wallets/wallet/wallet.module';
 import { FinanceModule } from './modules/finance/finance/finance.module';
 import { PlatformSettingsModule } from './modules/settings/platform-settings.module';
+import { ReservationsModule } from './modules/reservations/reservations.module';
 
 @Module({
   imports: [
@@ -54,6 +55,7 @@ import { PlatformSettingsModule } from './modules/settings/platform-settings.mod
     WalletModule,
     FinanceModule,
     PlatformSettingsModule,
+    ReservationsModule,
   ],
   providers: [
     AppService,
