@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   ReservationDepositType,
+  ReservationSource,
   ReservationStatus,
   VenueType,
 } from '@prisma/client';
@@ -11,6 +12,7 @@ import {
   IsArray,
   IsBoolean,
   IsDateString,
+  IsEmail,
   IsEnum,
   IsIn,
   IsInt,
@@ -233,6 +235,11 @@ export class ReservationListQueryDto {
   @IsEnum(ReservationStatus)
   status?: ReservationStatus;
 
+  @ApiPropertyOptional({ enum: ReservationSource })
+  @IsOptional()
+  @IsEnum(ReservationSource)
+  source?: ReservationSource;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsDateString()
@@ -257,7 +264,34 @@ export class CancelReservationDto {
   reason?: string;
 }
 
-export class CreateReservationDto {
+export class ReservationGuestPaymentDto {
+  @ApiPropertyOptional({ enum: ['WALLET', 'PAYSTACK'], default: 'WALLET' })
+  @IsOptional()
+  @IsIn(['WALLET', 'PAYSTACK'])
+  paymentMethod?: 'WALLET' | 'PAYSTACK';
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  guestName?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsEmail()
+  guestEmail?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  guestPhone?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  callbackUrl?: string;
+}
+
+export class CreateReservationDto extends ReservationGuestPaymentDto {
   @ApiProperty()
   @IsNotEmpty()
   @IsString()
@@ -282,14 +316,9 @@ export class CreateReservationDto {
   @IsInt()
   @Min(1)
   guestCount: number;
-
-  @ApiPropertyOptional({ default: 'WALLET' })
-  @IsOptional()
-  @IsIn(['WALLET'])
-  paymentMethod?: 'WALLET';
 }
 
-export class CreateEventReservationDto {
+export class CreateEventReservationDto extends ReservationGuestPaymentDto {
   @ApiProperty()
   @IsNotEmpty()
   @IsString()
@@ -305,11 +334,18 @@ export class CreateEventReservationDto {
   @IsInt()
   @Min(1)
   guestCount: number;
+}
 
-  @ApiPropertyOptional({ default: 'WALLET' })
+export class ConfirmReservationPaymentDto {
+  @ApiPropertyOptional()
   @IsOptional()
-  @IsIn(['WALLET'])
-  paymentMethod?: 'WALLET';
+  @IsString()
+  verificationToken?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  reference?: string;
 }
 
 export class ReservationAvailabilityQueryDto {

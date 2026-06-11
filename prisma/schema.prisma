@@ -747,8 +747,12 @@ model EventReservationSlot {
 model Reservation {
   id                 String                @id @default(cuid())
   reference          String                @unique
-  userId             String
-  user               User                  @relation("ReservationUser", fields: [userId], references: [id], onDelete: Restrict)
+  userId             String?
+  user               User?                 @relation("ReservationUser", fields: [userId], references: [id], onDelete: Restrict)
+  guestName          String?
+  guestEmail         String?
+  guestPhone         String?
+  publicAccessToken  String?               @unique
   locationId         String
   location           Location              @relation(fields: [locationId], references: [id], onDelete: Restrict)
   eventId            String?
@@ -793,8 +797,8 @@ model ReservationPayment {
   id            String                   @id @default(cuid())
   reservationId String
   reservation   Reservation              @relation(fields: [reservationId], references: [id], onDelete: Restrict)
-  userId        String
-  user          User                     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  userId        String?
+  user          User?                    @relation(fields: [userId], references: [id], onDelete: Restrict)
   amount        Decimal                  @db.Decimal(10, 2)
   method        ReservationPaymentMethod
   status        ReservationPaymentStatus @default(PENDING)

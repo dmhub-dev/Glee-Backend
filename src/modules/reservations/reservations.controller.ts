@@ -4,6 +4,7 @@ import { CurrentUser } from '@src/auth/jwt/current-user.decorator';
 import { ApiResponses } from '@src/common/responses/response';
 import {
   CancelReservationDto,
+  ConfirmReservationPaymentDto,
   CreateEventReservationDto,
   CreateReservationDto,
   EventReservationAvailabilityQueryDto,
@@ -63,7 +64,7 @@ export class ReservationsController {
     return this.reservationsService.getEventAvailability(eventId, query);
   }
 
-  @ApiResponses(true)
+  @ApiResponses(false)
   @Post('events/:eventId')
   createEventReservation(
     @Param('eventId') eventId: string,
@@ -73,13 +74,25 @@ export class ReservationsController {
     return this.reservationsService.createEventReservation(eventId, dto, user);
   }
 
-  @ApiResponses(true)
+  @ApiResponses(false)
   @Post()
   createReservation(
     @Body() dto: CreateReservationDto,
     @CurrentUser() user: any,
   ) {
     return this.reservationsService.createReservation(dto, user);
+  }
+
+  @ApiResponses(false)
+  @Post('confirm-payment')
+  confirmPayment(@Body() dto: ConfirmReservationPaymentDto) {
+    return this.reservationsService.confirmReservationPayment(dto);
+  }
+
+  @ApiResponses(false)
+  @Get('public/:token')
+  getPublicReservation(@Param('token') token: string) {
+    return this.reservationsService.getPublicReservation(token);
   }
 
   @ApiResponses(true)

@@ -5,6 +5,7 @@ export enum PurchasingType {
   TOP_UP_WALLET = 'TOP_UP_WALLET',
   PURCHASE_BOOKING_WITH_CASH_DEPOSIT = 'PURCHASE_BOOKING_WITH_CASH_DEPOSIT',
   PURCHASE_EVENT_WITH_CASH_DEPOSIT = 'PURCHASE_EVENT_WITH_CASH_DEPOSIT',
+  RESERVATION = 'RESERVATION',
 }
 
 export enum PaystackEvent {
@@ -65,6 +66,17 @@ export interface PurchaseEventWithCashMetadata {
   ticketCategoryId?: string;
 }
 
+export interface ReservationMetadata {
+  purchasingType: PurchasingType.RESERVATION;
+  reservationId: string;
+  reservationReference: string;
+  source: 'VENUE' | 'EVENT';
+  userId?: string;
+  guestName?: string;
+  guestEmail?: string;
+  guestPhone?: string;
+}
+
 export type PaystackMetadata =
   | Record<string, never>
   | ServiceMetadata
@@ -72,7 +84,8 @@ export type PaystackMetadata =
   | BookingMetadata
   | TopUpWalletMetadata
   | PurchaseBookingWithCashMetadata
-  | PurchaseEventWithCashMetadata;
+  | PurchaseEventWithCashMetadata
+  | ReservationMetadata;
 
 export interface PaystackWebhookData {
   id: number;

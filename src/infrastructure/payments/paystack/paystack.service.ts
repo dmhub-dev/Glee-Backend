@@ -36,6 +36,9 @@ export interface IServiceWebhookHandler {
 export interface IWalletWebhookHandler {
   createTopUpWalletPayment?(data: any, reference: string): Promise<any>;
 }
+export interface IReservationWebhookHandler {
+  confirmReservationPaymentFromPaystack?(data: any): Promise<any>;
+}
 
 @Injectable()
 export class PayStackService {
@@ -45,6 +48,7 @@ export class PayStackService {
   purchaseBookingHandler: IBookingWebhookHandler | null = null;
   purchasedServiceHandler: IServiceWebhookHandler | null = null;
   walletHandler: IWalletWebhookHandler | null = null;
+  reservationHandler: IReservationWebhookHandler | null = null;
 
   constructor(private readonly configService: ConfigService) {}
 
@@ -138,6 +142,9 @@ export class PayStackService {
         break;
       case PurchasingType.TOP_UP_WALLET:
         await this.walletHandler?.createTopUpWalletPayment?.(data, data.reference);
+        break;
+      case PurchasingType.RESERVATION:
+        await this.reservationHandler?.confirmReservationPaymentFromPaystack?.(data);
         break;
       case PurchasingType.PURCHASE_BOOKING_WITH_CASH_DEPOSIT:
         await this.purchaseBookingHandler?.createDepositPurchasedBookingViaPaystack?.(data);

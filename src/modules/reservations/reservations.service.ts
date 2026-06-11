@@ -5,6 +5,7 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
+import { randomBytes } from 'crypto';
 import {
   EntityStatus,
   Prisma,
@@ -18,9 +19,12 @@ import {
 } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { PrismaService } from '@src/infrastructure/database/prisma.service';
+import { PayStackService } from '@src/infrastructure/payments/paystack/paystack.service';
+import { PurchasingType } from '@src/infrastructure/payments/paystack/paystack.types';
 import { WalletService } from '@src/modules/wallets/wallet/wallet.service';
 import {
   CancelReservationDto,
+  ConfirmReservationPaymentDto,
   CreateEventReservationSlotDto,
   CreateEventReservationDto,
   CreateLocationTableDto,
@@ -36,10 +40,24 @@ import {
   VenueReservationQueryDto,
 } from './dto/reservation.dto';
 
-const ACTIVE_RESERVATION_STATUSES = [
-  ReservationStatus.PENDING_PAYMENT,
+const RESERVATION_PAYMENT_HOLD_MINUTES = 15;
+const RESERVATION_PAYMENT_INIT_FAILURE_MESSAGE =
+  'Reservation payment could not be initialized';
+const RESERVATION_PAYMENT_WINDOW_EXPIRED_REASON =
+  'Reservation payment window expired';
+const PAYSTACK_MANUAL_REVIEW_REASON =
+  'Payment captured but table is no longer available. Manual refund required.';
+const PAYSTACK_EXPIRED_HOLD_MANUAL_REVIEW_REASON =
+  'Payment captured after reservation hold expired. Manual refund required.';
+const PAYSTACK_NO_LONGER_CONFIRMABLE_MANUAL_REVIEW_REASON =
+  'Payment captured after reservation was no longer confirmable. Manual refund required.';
+const PAYSTACK_MANUAL_REVIEW_MESSAGE =
+  'Reservation payment requires manual review';
+
+const ACTIVE_RESERVATION_STATUSES: ReservationStatus[] = [
   ReservationStatus.CONFIRMED,
   ReservationStatus.SEATED,
+  ReservationStatus.COMPLETED,
 ];
 
 const ADMIN_UPDATABLE_RESERVATION_STATUSES: ReservationStatus[] = [
@@ -74,7 +92,198 @@ export class ReservationsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly walletService: WalletService,
-  ) {}
+    private readonly payStackService: PayStackService,
+  ) {
+    this.payStackService.reservationHandler = this;
+  }
+
+  async confirmReservationPaymentFromPaystack(data: any) {
+    const reference = data?.reference;
+    if (!reference) {
+      throw new BadRequestException('Payment reference is required');
+    }
+
+    const payment = await this.prisma.reservationPayment.findFirst({
+      where: {
+        reference,
+        method: ReservationPaymentMethod.PAYSTACK,
+      },
+      include: {
+        reservation: true,
+      },
+    });
+
+    if (!payment) {
+      return undefined;
+    }
+
+    if (payment.status === ReservationPaymentStatus.SUCCESS) {
+      if (
+        this.hasManualReviewRequiredMetadata(payment.metadata) ||
+        !ACTIVE_RESERVATION_STATUSES.includes(payment.reservation?.status)
+      ) {
+        return {
+          success: false,
+          message: PAYSTACK_MANUAL_REVIEW_MESSAGE,
+          data: this.maskPublicReservation(payment.reservation),
+        };
+      }
+
+      return {
+        success: true,
+        message: 'Reservation payment already confirmed',
+        data: this.maskPublicReservation(payment.reservation),
+      };
+    }
+
+    if (data.status !== 'success') {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.reservationPayment.update({
+          where: { id: payment.id },
+          data: {
+            status: ReservationPaymentStatus.FAILED,
+            metadata: this.sanitizePaystackPaymentMetadata(data) as any,
+          },
+        });
+
+        await tx.reservation.updateMany({
+          where: {
+            id: payment.reservationId,
+            status: ReservationStatus.PENDING_PAYMENT,
+          },
+          data: {
+            status: ReservationStatus.CANCELLED,
+            cancellationReason: 'Payment was not successful',
+          },
+        });
+      });
+
+      return {
+        success: false,
+        message: 'Reservation payment was not successful',
+        data: this.maskPublicReservation(payment.reservation),
+      };
+    }
+
+    if (this.isExpiredPendingPaymentHold(payment.reservation)) {
+      return this.recordExpiredPaystackHoldReservation(payment, data);
+    }
+
+    if (this.requiresNoLongerConfirmablePaystackManualReview(payment)) {
+      return this.recordNoLongerConfirmablePaystackReservation(payment, data);
+    }
+
+    let reservation: any;
+    try {
+      reservation = await this.prisma.$transaction(async (tx) => {
+        const paymentUpdate = await tx.reservationPayment.updateMany({
+          where: {
+            id: payment.id,
+            status: ReservationPaymentStatus.PENDING,
+          },
+          data: {
+            status: ReservationPaymentStatus.SUCCESS,
+            metadata: this.sanitizePaystackPaymentMetadata(data) as any,
+          },
+        });
+
+        if (paymentUpdate.count === 0) {
+          const refreshedPayment = await tx.reservationPayment.findFirst({
+            where: { id: payment.id },
+            include: {
+              reservation: {
+                include: this.customerReservationInclude(),
+              },
+            },
+          });
+
+          if (
+            refreshedPayment?.status === ReservationPaymentStatus.SUCCESS ||
+            refreshedPayment?.reservation?.status === ReservationStatus.CONFIRMED
+          ) {
+            return refreshedPayment.reservation;
+          }
+
+          throw new BadRequestException(
+            'Reservation payment cannot be confirmed from its current status',
+          );
+        }
+
+        const updateResult = await tx.reservation.updateMany({
+          where: {
+            id: payment.reservationId,
+            status: ReservationStatus.PENDING_PAYMENT,
+          },
+          data: { status: ReservationStatus.CONFIRMED },
+        });
+
+        if (updateResult.count === 0) {
+          const refreshedReservation = await tx.reservation.findFirst({
+            where: { id: payment.reservationId },
+            include: this.customerReservationInclude(),
+          });
+
+          if (refreshedReservation?.status === ReservationStatus.CONFIRMED) {
+            return refreshedReservation;
+          }
+
+          throw new BadRequestException(
+            'Reservation cannot be confirmed from its current status',
+          );
+        }
+
+        return tx.reservation.findFirst({
+          where: { id: payment.reservationId },
+          include: this.customerReservationInclude(),
+        });
+      });
+    } catch (error) {
+      if (this.isReservationOverlapError(error)) {
+        return this.recordPaystackManualReviewReservation(payment, data);
+      }
+      throw error;
+    }
+
+    return {
+      success: true,
+      message: 'Reservation payment confirmed successfully',
+      data: this.maskPublicReservation(reservation ?? payment.reservation),
+    };
+  }
+
+  async confirmReservationPayment(dto: ConfirmReservationPaymentDto) {
+    if (!dto.verificationToken && !dto.reference) {
+      throw new BadRequestException('Payment reference is required');
+    }
+
+    const result = dto.verificationToken
+      ? await this.payStackService.verifyTransaction(dto.verificationToken)
+      : await this.payStackService.verifyTransactionReference(dto.reference!);
+    const paystackData = (result as any)?.paystack?.data;
+
+    if (!paystackData?.reference) {
+      throw new BadRequestException('Payment verification failed');
+    }
+
+    return this.confirmReservationPaymentFromPaystack(paystackData);
+  }
+
+  async getPublicReservation(token: string) {
+    const reservation = await this.prisma.reservation.findFirst({
+      where: { publicAccessToken: token },
+      include: this.customerReservationInclude(),
+    });
+
+    if (!reservation) {
+      throw new NotFoundException('Reservation not found');
+    }
+
+    return {
+      success: true,
+      message: 'Reservation retrieved successfully',
+      data: this.maskPublicReservation(reservation),
+    };
+  }
 
   async listReservationVenues(query: VenueReservationQueryDto = {}) {
     const page = this.normalizePage(query.page);
@@ -184,7 +393,7 @@ export class ReservationsService {
     const reservations = await this.prisma.reservation.findMany({
       where: {
         locationId,
-        status: { in: ACTIVE_RESERVATION_STATUSES },
+        ...this.activeReservationWhere(),
         startDateTime: { lt: endDateTime },
         endDateTime: { gt: startDateTime },
       },
@@ -205,7 +414,15 @@ export class ReservationsService {
   }
 
   async listEventSlots(eventId: string) {
-    await this.getPublicEventForRead(eventId);
+    const event = await this.getPublicEventForRead(eventId);
+    if (
+      !event.locationId ||
+      !event.location ||
+      event.location.status !== EntityStatus.ACTIVE ||
+      !event.location.bookingEnabled
+    ) {
+      throw new NotFoundException('Event reservation venue not found');
+    }
 
     const slots = await this.prisma.eventReservationSlot.findMany({
       where: { eventId, isActive: true },
@@ -259,7 +476,7 @@ export class ReservationsService {
     const reservations = await this.prisma.reservation.findMany({
       where: {
         locationId: event.locationId,
-        status: { in: ACTIVE_RESERVATION_STATUSES },
+        ...this.activeReservationWhere(),
         startDateTime: { lt: slot.endDateTime },
         endDateTime: { gt: slot.startDateTime },
       },
@@ -280,12 +497,11 @@ export class ReservationsService {
     };
   }
 
-  async createReservation(dto: CreateReservationDto, actor: any) {
-    if (!actor?.id) {
-      throw new UnauthorizedException('Authentication is required');
-    }
-    if (dto.paymentMethod && dto.paymentMethod !== ReservationPaymentMethod.WALLET) {
-      throw new BadRequestException('Only wallet payments are supported for reservations');
+  async createReservation(dto: CreateReservationDto, actor: any): Promise<any> {
+    this.assertReservationPayer(dto, actor);
+
+    if (this.isPaystackPayment(dto.paymentMethod)) {
+      return this.createPaystackVenueReservation(dto, actor);
     }
 
     const location = await this.prisma.location.findUnique({
@@ -324,35 +540,19 @@ export class ReservationsService {
 
     try {
       const reservation = await this.prisma.$transaction(async (tx) => {
-        const tables = await tx.locationTable.findMany({
-          where: {
-            locationId: dto.locationId,
-            category: dto.tableCategory,
-            isActive: true,
-            minGuests: { lte: dto.guestCount },
-            maxGuests: { gte: dto.guestCount },
-          },
-          orderBy: { name: 'asc' },
+        await this.cleanupExpiredPendingPaymentReservations(tx, {
+          locationId: dto.locationId,
+          startDateTime,
+          endDateTime,
         });
-        const existingReservations = await tx.reservation.findMany({
-          where: {
-            locationId: dto.locationId,
-            status: { in: ACTIVE_RESERVATION_STATUSES },
-            startDateTime: { lt: endDateTime },
-            endDateTime: { gt: startDateTime },
-          },
-          select: { tableId: true },
-        });
-        const reservedTableIds = new Set(
-          existingReservations.map((reservation) => reservation.tableId),
-        );
-        const table = this.sortTablesByQuote(
-          tables.filter((candidate) => !reservedTableIds.has(candidate.id)),
-        )[0];
 
-        if (!table) {
-          throw new BadRequestException('This table category is no longer available');
-        }
+        const table = await this.pickAvailableTable(tx, {
+          locationId: dto.locationId,
+          tableCategory: dto.tableCategory,
+          guestCount: dto.guestCount,
+          startDateTime,
+          endDateTime,
+        });
 
         const minimumSpend = Math.round(Number(table.minimumSpend));
         const depositAmount = this.calculateDeposit(
@@ -431,16 +631,165 @@ export class ReservationsService {
     }
   }
 
+  private async createPaystackVenueReservation(
+    dto: CreateReservationDto,
+    actor: any,
+  ) {
+    const payerEmail = this.resolveReservationEmail(dto, actor);
+    if (!payerEmail) {
+      throw new BadRequestException('Reservation payer email is required');
+    }
+
+    const location = await this.prisma.location.findUnique({
+      where: { id: dto.locationId },
+    });
+
+    if (!location || location.status !== EntityStatus.ACTIVE || !location.bookingEnabled) {
+      throw new NotFoundException('Reservation venue not found');
+    }
+
+    const slot = await this.prisma.reservationSlot.findFirst({
+      where: {
+        id: dto.slotId,
+        locationId: dto.locationId,
+        isActive: true,
+      },
+    });
+
+    if (!slot) {
+      throw new NotFoundException('Reservation slot not found');
+    }
+
+    this.assertSlotRunsOnDate(dto.date, slot.daysOfWeek);
+    const { startDateTime, endDateTime } = this.resolveSlotDateTimes(
+      dto.date,
+      slot.startTime,
+      slot.endTime,
+      location.timezone,
+    );
+    const reservationDate = this.buildDateTime(dto.date, '00:00', location.timezone);
+    const reference = this.generateReservationReference();
+    const cancelBefore = new Date(
+      startDateTime.getTime() -
+        (location.cancellationCutoffHours ?? 24) * 60 * 60 * 1000,
+    );
+
+    let reservation: any;
+    try {
+      reservation = await this.prisma.$transaction(async (tx) => {
+        await this.cleanupExpiredPendingPaymentReservations(tx, {
+          locationId: dto.locationId,
+          startDateTime,
+          endDateTime,
+        });
+
+        const table = await this.pickAvailableTable(tx, {
+          locationId: dto.locationId,
+          tableCategory: dto.tableCategory,
+          guestCount: dto.guestCount,
+          startDateTime,
+          endDateTime,
+        });
+
+        const minimumSpend = Math.round(Number(table.minimumSpend));
+        const depositAmount = this.calculateDeposit(
+          minimumSpend,
+          table.depositType,
+          Number(table.depositValue),
+        );
+        const metadata = {
+          reservationReference: reference,
+          locationId: dto.locationId,
+          slotId: dto.slotId,
+          tableId: table.id,
+          tableCategory: dto.tableCategory,
+          guestCount: dto.guestCount,
+          startDateTime: startDateTime.toISOString(),
+          endDateTime: endDateTime.toISOString(),
+        };
+
+        const createdReservation = await tx.reservation.create({
+          data: {
+            reference,
+            userId: actor?.id ?? null,
+            guestName: dto.guestName ?? null,
+            guestEmail: dto.guestEmail ?? null,
+            guestPhone: dto.guestPhone ?? null,
+            publicAccessToken: this.generatePublicAccessToken(),
+            locationId: dto.locationId,
+            tableId: table.id,
+            slotId: slot.id,
+            reservationDate,
+            startDateTime,
+            endDateTime,
+            guestCount: dto.guestCount,
+            tableCategory: dto.tableCategory,
+            minimumSpend: new Decimal(minimumSpend),
+            depositAmount: new Decimal(depositAmount),
+            status: ReservationStatus.PENDING_PAYMENT,
+            source: ReservationSource.VENUE,
+            cancelBefore,
+          },
+        });
+
+        await tx.reservationPayment.create({
+          data: {
+            reservationId: createdReservation.id,
+            userId: actor?.id ?? null,
+            amount: new Decimal(depositAmount),
+            method: ReservationPaymentMethod.PAYSTACK,
+            status: ReservationPaymentStatus.PENDING,
+            metadata: metadata as any,
+          },
+        });
+
+        return createdReservation;
+      });
+    } catch (error) {
+      if (this.isReservationOverlapError(error)) {
+        throw new BadRequestException('This table category is no longer available');
+      }
+      throw error;
+    }
+
+    const paymentIntent = await this.createAndPersistPaystackPaymentIntent(
+      reservation,
+      {
+        email: payerEmail,
+        amount: Math.round(Number(reservation.depositAmount)),
+        callbackUrl: dto.callbackUrl,
+        metaData: {
+          purchasingType: PurchasingType.RESERVATION,
+          reservationId: reservation.id,
+          reservationReference: reservation.reference,
+          source: ReservationSource.VENUE,
+          ...(actor?.id && { userId: actor.id }),
+          ...(dto.guestName && { guestName: dto.guestName }),
+          ...(dto.guestEmail && { guestEmail: dto.guestEmail }),
+          ...(dto.guestPhone && { guestPhone: dto.guestPhone }),
+        },
+      },
+    );
+
+    return {
+      success: true,
+      message: 'Reservation payment initialized successfully',
+      data: {
+        reservation,
+        ...paymentIntent,
+      },
+    };
+  }
+
   async createEventReservation(
     eventId: string,
     dto: CreateEventReservationDto,
     actor: any,
-  ) {
-    if (!actor?.id) {
-      throw new UnauthorizedException('Authentication is required');
-    }
-    if (dto.paymentMethod && dto.paymentMethod !== ReservationPaymentMethod.WALLET) {
-      throw new BadRequestException('Only wallet payments are supported for reservations');
+  ): Promise<any> {
+    this.assertReservationPayer(dto, actor);
+
+    if (this.isPaystackPayment(dto.paymentMethod)) {
+      return this.createPaystackEventReservation(eventId, dto, actor);
     }
 
     const event = await this.getPublicEventForRead(eventId);
@@ -488,35 +837,19 @@ export class ReservationsService {
             (location.cancellationCutoffHours ?? 24) * 60 * 60 * 1000,
         );
 
-        const tables = await tx.locationTable.findMany({
-          where: {
-            locationId: event.locationId,
-            category: dto.tableCategory,
-            isActive: true,
-            minGuests: { lte: dto.guestCount },
-            maxGuests: { gte: dto.guestCount },
-          },
-          orderBy: { name: 'asc' },
+        await this.cleanupExpiredPendingPaymentReservations(tx, {
+          locationId: event.locationId,
+          startDateTime,
+          endDateTime,
         });
-        const existingReservations = await tx.reservation.findMany({
-          where: {
-            locationId: event.locationId,
-            status: { in: ACTIVE_RESERVATION_STATUSES },
-            startDateTime: { lt: endDateTime },
-            endDateTime: { gt: startDateTime },
-          },
-          select: { tableId: true },
-        });
-        const reservedTableIds = new Set(
-          existingReservations.map((reservation) => reservation.tableId),
-        );
-        const table = this.sortTablesByQuote(
-          tables.filter((candidate) => !reservedTableIds.has(candidate.id)),
-        )[0];
 
-        if (!table) {
-          throw new BadRequestException('This table category is no longer available');
-        }
+        const table = await this.pickAvailableTable(tx, {
+          locationId: event.locationId,
+          tableCategory: dto.tableCategory,
+          guestCount: dto.guestCount,
+          startDateTime,
+          endDateTime,
+        });
 
         const minimumSpend = Math.round(Number(table.minimumSpend));
         const depositAmount = this.calculateDeposit(
@@ -597,6 +930,169 @@ export class ReservationsService {
     }
   }
 
+  private async createPaystackEventReservation(
+    eventId: string,
+    dto: CreateEventReservationDto,
+    actor: any,
+  ) {
+    const payerEmail = this.resolveReservationEmail(dto, actor);
+    if (!payerEmail) {
+      throw new BadRequestException('Reservation payer email is required');
+    }
+
+    const event = await this.getPublicEventForRead(eventId);
+    const location = event.location;
+    if (
+      !event.locationId ||
+      !location ||
+      location.status !== EntityStatus.ACTIVE ||
+      !location.bookingEnabled
+    ) {
+      throw new NotFoundException('Event reservation venue not found');
+    }
+
+    const eventSlot = await this.prisma.eventReservationSlot.findFirst({
+      where: {
+        id: dto.eventSlotId,
+        eventId,
+        isActive: true,
+      },
+    });
+    if (!eventSlot) {
+      throw new NotFoundException('Event reservation slot not found');
+    }
+
+    const reference = this.generateReservationReference();
+
+    let reservation: any;
+    try {
+      reservation = await this.prisma.$transaction(async (tx) => {
+        const activeEventSlot = await tx.eventReservationSlot.findFirst({
+          where: {
+            id: eventSlot.id,
+            eventId,
+            isActive: true,
+          },
+        });
+        if (!activeEventSlot) {
+          throw new BadRequestException('Event reservation slot is no longer available');
+        }
+
+        const startDateTime = activeEventSlot.startDateTime;
+        const endDateTime = activeEventSlot.endDateTime;
+        const reservationDate = this.startOfUtcDay(startDateTime);
+        const cancelBefore = new Date(
+          startDateTime.getTime() -
+            (location.cancellationCutoffHours ?? 24) * 60 * 60 * 1000,
+        );
+        await this.cleanupExpiredPendingPaymentReservations(tx, {
+          locationId: event.locationId,
+          startDateTime,
+          endDateTime,
+        });
+
+        const table = await this.pickAvailableTable(tx, {
+          locationId: event.locationId,
+          tableCategory: dto.tableCategory,
+          guestCount: dto.guestCount,
+          startDateTime,
+          endDateTime,
+        });
+
+        const minimumSpend = Math.round(Number(table.minimumSpend));
+        const depositAmount = this.calculateDeposit(
+          minimumSpend,
+          table.depositType,
+          Number(table.depositValue),
+        );
+        const metadata = {
+          reservationReference: reference,
+          eventId,
+          eventSlotId: activeEventSlot.id,
+          locationId: event.locationId,
+          tableId: table.id,
+          tableCategory: dto.tableCategory,
+          guestCount: dto.guestCount,
+          startDateTime: startDateTime.toISOString(),
+          endDateTime: endDateTime.toISOString(),
+        };
+
+        const createdReservation = await tx.reservation.create({
+          data: {
+            reference,
+            userId: actor?.id ?? null,
+            guestName: dto.guestName ?? null,
+            guestEmail: dto.guestEmail ?? null,
+            guestPhone: dto.guestPhone ?? null,
+            publicAccessToken: this.generatePublicAccessToken(),
+            locationId: event.locationId,
+            eventId,
+            tableId: table.id,
+            eventSlotId: activeEventSlot.id,
+            reservationDate,
+            startDateTime,
+            endDateTime,
+            guestCount: dto.guestCount,
+            tableCategory: dto.tableCategory,
+            minimumSpend: new Decimal(minimumSpend),
+            depositAmount: new Decimal(depositAmount),
+            status: ReservationStatus.PENDING_PAYMENT,
+            source: ReservationSource.EVENT,
+            cancelBefore,
+          },
+        });
+
+        await tx.reservationPayment.create({
+          data: {
+            reservationId: createdReservation.id,
+            userId: actor?.id ?? null,
+            amount: new Decimal(depositAmount),
+            method: ReservationPaymentMethod.PAYSTACK,
+            status: ReservationPaymentStatus.PENDING,
+            metadata: metadata as any,
+          },
+        });
+
+        return createdReservation;
+      });
+    } catch (error) {
+      if (this.isReservationOverlapError(error)) {
+        throw new BadRequestException('This table category is no longer available');
+      }
+      throw error;
+    }
+
+    const paymentIntent = await this.createAndPersistPaystackPaymentIntent(
+      reservation,
+      {
+        email: payerEmail,
+        amount: Math.round(Number(reservation.depositAmount)),
+        callbackUrl: dto.callbackUrl,
+        metaData: {
+          purchasingType: PurchasingType.RESERVATION,
+          reservationId: reservation.id,
+          reservationReference: reservation.reference,
+          source: ReservationSource.EVENT,
+          eventId,
+          eventSlotId: dto.eventSlotId,
+          ...(actor?.id && { userId: actor.id }),
+          ...(dto.guestName && { guestName: dto.guestName }),
+          ...(dto.guestEmail && { guestEmail: dto.guestEmail }),
+          ...(dto.guestPhone && { guestPhone: dto.guestPhone }),
+        },
+      },
+    );
+
+    return {
+      success: true,
+      message: 'Reservation payment initialized successfully',
+      data: {
+        reservation,
+        ...paymentIntent,
+      },
+    };
+  }
+
   async listMyReservations(
     actor: any,
     query: ReservationListQueryDto = {},
@@ -610,6 +1106,7 @@ export class ReservationsService {
     const where: Prisma.ReservationWhereInput = {
       userId: actor.id,
       ...(query.status && { status: query.status }),
+      ...(query.source && { source: query.source }),
       ...(query.locationId && { locationId: query.locationId }),
       ...(query.eventId && { eventId: query.eventId }),
       ...(query.date && { startDateTime: this.buildDateRange(query.date) }),
@@ -720,13 +1217,18 @@ export class ReservationsService {
     const limit = this.normalizeLimit(query.limit);
     const where: Prisma.ReservationWhereInput = {
       ...(query.status && { status: query.status }),
+      ...(query.source && { source: query.source }),
       ...(query.locationId && { locationId: query.locationId }),
       ...(query.eventId && { eventId: query.eventId }),
       ...(query.date && { startDateTime: this.buildDateRange(query.date) }),
     };
 
     if ([UserRole.VENDOR, UserRole.VENDOR_STAFF].includes(actor?.role)) {
-      where.location = { vendorId: this.resolveVendorAccountId(actor, true) };
+      const vendorId = this.resolveVendorAccountId(actor, true);
+      where.OR = [
+        { location: { vendorId } },
+        { event: { vendorId } },
+      ];
     } else if (!this.canManageReservations(actor)) {
       throw new ForbiddenException('You do not have access to manage reservations');
     }
@@ -775,7 +1277,7 @@ export class ReservationsService {
   ) {
     const reservation = await this.prisma.reservation.findFirst({
       where: { id },
-      include: { location: true },
+      include: { event: true, location: true },
     });
 
     if (!reservation) {
@@ -799,10 +1301,13 @@ export class ReservationsService {
       where: { id, status: reservation.status },
       data: {
         status: dto.status,
+        ...((dto.status === ReservationStatus.CANCELLED ||
+          dto.status === ReservationStatus.NO_SHOW) && {
+          cancellationReason: dto.reason ?? null,
+        }),
         ...(dto.status === ReservationStatus.CANCELLED && {
           cancelledAt: now,
           cancelledById: actor?.id,
-          cancellationReason: dto.reason ?? null,
         }),
       },
     });
@@ -986,6 +1491,7 @@ export class ReservationsService {
     const startDateTime = new Date(dto.startDateTime);
     const endDateTime = new Date(dto.endDateTime);
     this.assertValidDateRange(startDateTime, endDateTime);
+    this.assertEventReservationSlotWithinEvent(event, startDateTime, endDateTime);
 
     const slot = await this.prisma.eventReservationSlot.create({
       data: {
@@ -1025,7 +1531,7 @@ export class ReservationsService {
     dto: UpdateEventReservationSlotDto,
     actor: any,
   ) {
-    await this.getEventForMutation(eventId, actor);
+    const event = await this.getEventForMutation(eventId, actor);
 
     const existing = await this.prisma.eventReservationSlot.findFirst({
       where: { id: slotId, eventId },
@@ -1041,6 +1547,7 @@ export class ReservationsService {
       ? new Date(dto.endDateTime)
       : existing.endDateTime;
     this.assertValidDateRange(startDateTime, endDateTime);
+    this.assertEventReservationSlotWithinEvent(event, startDateTime, endDateTime);
 
     const updated = await this.prisma.eventReservationSlot.update({
       where: { id: slotId },
@@ -1056,14 +1563,33 @@ export class ReservationsService {
 
   private customerReservationInclude() {
     return {
+      event: {
+        select: {
+          id: true,
+          name: true,
+          startDate: true,
+          endDate: true,
+        },
+      },
+      eventSlot: true,
       location: true,
       table: true,
+      slot: true,
       payments: true,
     };
   }
 
   private adminReservationInclude() {
     return {
+      event: {
+        select: {
+          id: true,
+          name: true,
+          startDate: true,
+          endDate: true,
+        },
+      },
+      eventSlot: true,
       user: {
         select: {
           id: true,
@@ -1075,16 +1601,552 @@ export class ReservationsService {
       },
       location: true,
       table: true,
+      slot: true,
       payments: true,
     };
+  }
+
+  private isPaystackPayment(method?: string | null) {
+    return method === ReservationPaymentMethod.PAYSTACK;
+  }
+
+  private isWalletPayment(method?: string | null) {
+    return !method || method === ReservationPaymentMethod.WALLET;
+  }
+
+  private assertReservationPayer(
+    dto: { paymentMethod?: string; guestName?: string; guestEmail?: string; guestPhone?: string },
+    actor: any,
+  ) {
+    if (this.isPaystackPayment(dto.paymentMethod)) {
+      if (
+        !actor?.id &&
+        (!dto.guestName?.trim() || !dto.guestEmail?.trim() || !dto.guestPhone?.trim())
+      ) {
+        throw new BadRequestException(
+          'Guest name, email, and phone are required for public reservations',
+        );
+      }
+      return;
+    }
+
+    if (this.isWalletPayment(dto.paymentMethod)) {
+      if (!actor?.id) {
+        throw new UnauthorizedException('Authentication is required');
+      }
+      return;
+    }
+
+    throw new BadRequestException('Unsupported reservation payment method');
+  }
+
+  private generatePublicAccessToken() {
+    return randomBytes(32).toString('hex');
+  }
+
+  private resolveReservationEmail(
+    dto: { guestEmail?: string },
+    actor: any,
+  ) {
+    return dto.guestEmail?.trim() || actor?.email?.trim() || null;
+  }
+
+  private async createAndPersistPaystackPaymentIntent(
+    reservation: { id: string; depositAmount: Decimal | number | string },
+    paymentIntentPayload: any,
+  ) {
+    let paymentIntent: any;
+    try {
+      paymentIntent = await this.payStackService.createPaymentIntent(
+        paymentIntentPayload,
+      );
+    } catch (error) {
+      await this.failPendingPaystackReservation(
+        reservation.id,
+        'Payment initialization failed',
+        this.buildPaymentFailureMetadata(error),
+      );
+      throw error;
+    }
+
+    try {
+      const referenceUpdate = await this.prisma.reservationPayment.updateMany({
+        where: {
+          reservationId: reservation.id,
+          method: ReservationPaymentMethod.PAYSTACK,
+          status: ReservationPaymentStatus.PENDING,
+        },
+        data: { reference: paymentIntent.reference },
+      });
+
+      if (referenceUpdate.count === 0) {
+        throw new Error(RESERVATION_PAYMENT_INIT_FAILURE_MESSAGE);
+      }
+    } catch (error) {
+      await this.failPendingPaystackReservation(
+        reservation.id,
+        'Payment initialization failed',
+        this.buildReferencePersistenceFailureMetadata(error),
+      );
+      throw new BadRequestException(RESERVATION_PAYMENT_INIT_FAILURE_MESSAGE);
+    }
+
+    return paymentIntent;
+  }
+
+  private async failPendingPaystackReservation(
+    reservationId: string,
+    cancellationReason: string,
+    metadata: Record<string, any>,
+  ) {
+    await this.prisma.$transaction(async (tx) => {
+      await tx.reservation.updateMany({
+        where: {
+          id: reservationId,
+          status: ReservationStatus.PENDING_PAYMENT,
+        },
+        data: {
+          status: ReservationStatus.CANCELLED,
+          cancellationReason,
+        },
+      });
+
+      await tx.reservationPayment.updateMany({
+        where: {
+          reservationId,
+          method: ReservationPaymentMethod.PAYSTACK,
+          status: ReservationPaymentStatus.PENDING,
+        },
+        data: {
+          status: ReservationPaymentStatus.FAILED,
+          metadata: metadata as any,
+        },
+      });
+    });
+  }
+
+  private buildPaymentFailureMetadata(error: unknown) {
+    if (error instanceof Error && error.message) {
+      return { message: error.message };
+    }
+
+    return { message: 'Payment initialization failed' };
+  }
+
+  private buildReferencePersistenceFailureMetadata(error: unknown) {
+    const cause =
+      error instanceof Error &&
+      error.message &&
+      error.message !== RESERVATION_PAYMENT_INIT_FAILURE_MESSAGE
+        ? error.message
+        : undefined;
+
+    return {
+      message: RESERVATION_PAYMENT_INIT_FAILURE_MESSAGE,
+      ...(cause && { cause }),
+    };
+  }
+
+  private sanitizePaystackPaymentMetadata(
+    data: any,
+    extra: Record<string, any> = {},
+  ) {
+    const auditMetadata =
+      data?.metadata && typeof data.metadata === 'object'
+        ? this.pickDefined({
+            purchasingType: data.metadata.purchasingType,
+            reservationId: data.metadata.reservationId,
+            reservationReference: data.metadata.reservationReference,
+            source: data.metadata.source,
+            eventId: data.metadata.eventId,
+            eventSlotId: data.metadata.eventSlotId,
+            locationId: data.metadata.locationId,
+            slotId: data.metadata.slotId,
+            tableId: data.metadata.tableId,
+            tableCategory: data.metadata.tableCategory,
+            guestCount: data.metadata.guestCount,
+            startDateTime: data.metadata.startDateTime,
+            endDateTime: data.metadata.endDateTime,
+            userId: data.metadata.userId,
+            guestName: data.metadata.guestName,
+            guestEmail: data.metadata.guestEmail,
+            guestPhone: data.metadata.guestPhone,
+          })
+        : undefined;
+
+    return this.pickDefined({
+      reference: data?.reference,
+      status: data?.status,
+      amount: data?.amount,
+      currency: data?.currency,
+      gateway_response: data?.gateway_response,
+      paid_at: data?.paid_at,
+      channel: data?.channel,
+      fees: data?.fees,
+      customerEmail: data?.customer?.email,
+      customerCode: data?.customer?.customer_code,
+      ...(auditMetadata &&
+        Object.keys(auditMetadata).length > 0 && { metadata: auditMetadata }),
+      ...extra,
+    });
+  }
+
+  private pickDefined<T extends Record<string, any>>(value: T): Partial<T> {
+    return Object.fromEntries(
+      Object.entries(value).filter(([, entry]) => entry !== undefined && entry !== null),
+    ) as Partial<T>;
+  }
+
+  private isExpiredPendingPaymentHold(reservation: any) {
+    if (
+      reservation?.status !== ReservationStatus.PENDING_PAYMENT ||
+      !reservation?.createdAt
+    ) {
+      return false;
+    }
+
+    return (
+      new Date(reservation.createdAt).getTime() <
+      this.reservationPaymentHoldThreshold().getTime()
+    );
+  }
+
+  private requiresNoLongerConfirmablePaystackManualReview(payment: any) {
+    if (payment?.status === ReservationPaymentStatus.FAILED) {
+      return true;
+    }
+
+    return this.isReservationNoLongerConfirmable(payment?.reservation);
+  }
+
+  private hasManualReviewRequiredMetadata(metadata: any) {
+    return (
+      !!metadata &&
+      typeof metadata === 'object' &&
+      !Array.isArray(metadata) &&
+      metadata.manualReviewRequired === true
+    );
+  }
+
+  private isReservationNoLongerConfirmable(reservation: any) {
+    if (!reservation?.status) {
+      return false;
+    }
+
+    return ![
+      ReservationStatus.PENDING_PAYMENT,
+      ReservationStatus.CONFIRMED,
+    ].includes(reservation.status);
+  }
+
+  private async recordExpiredPaystackHoldReservation(payment: any, data: any) {
+    const metadata = this.sanitizePaystackPaymentMetadata(data, {
+      manualReviewRequired: true,
+      reason: PAYSTACK_EXPIRED_HOLD_MANUAL_REVIEW_REASON,
+    });
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.reservationPayment.update({
+        where: { id: payment.id },
+        data: {
+          status: ReservationPaymentStatus.SUCCESS,
+          metadata: metadata as any,
+        },
+      });
+
+      await tx.reservation.updateMany({
+        where: {
+          id: payment.reservationId,
+          status: ReservationStatus.PENDING_PAYMENT,
+        },
+        data: {
+          status: ReservationStatus.CANCELLED,
+          cancellationReason: PAYSTACK_EXPIRED_HOLD_MANUAL_REVIEW_REASON,
+        },
+      });
+    });
+
+    const reservation = await this.prisma.reservation.findFirst({
+      where: { id: payment.reservationId },
+      include: this.customerReservationInclude(),
+    });
+
+    return {
+      success: false,
+      message: PAYSTACK_EXPIRED_HOLD_MANUAL_REVIEW_REASON,
+      data: this.maskPublicReservation(
+        reservation ?? {
+          ...payment.reservation,
+          status: ReservationStatus.CANCELLED,
+          cancellationReason: PAYSTACK_EXPIRED_HOLD_MANUAL_REVIEW_REASON,
+        },
+      ),
+    };
+  }
+
+  private async recordNoLongerConfirmablePaystackReservation(
+    payment: any,
+    data: any,
+  ) {
+    const metadata = this.sanitizePaystackPaymentMetadata(data, {
+      manualReviewRequired: true,
+      reason: PAYSTACK_NO_LONGER_CONFIRMABLE_MANUAL_REVIEW_REASON,
+    });
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.reservationPayment.updateMany({
+        where: {
+          reference: data.reference,
+          method: ReservationPaymentMethod.PAYSTACK,
+        },
+        data: {
+          status: ReservationPaymentStatus.SUCCESS,
+          metadata: metadata as any,
+        },
+      });
+
+      await tx.reservation.updateMany({
+        where: {
+          id: payment.reservationId,
+          status: ReservationStatus.PENDING_PAYMENT,
+        },
+        data: {
+          status: ReservationStatus.CANCELLED,
+          cancellationReason: PAYSTACK_NO_LONGER_CONFIRMABLE_MANUAL_REVIEW_REASON,
+        },
+      });
+    });
+
+    const reservation = await this.prisma.reservation.findFirst({
+      where: { id: payment.reservationId },
+      include: this.customerReservationInclude(),
+    });
+
+    return {
+      success: false,
+      message: PAYSTACK_MANUAL_REVIEW_MESSAGE,
+      data: this.maskPublicReservation(
+        reservation ?? {
+          ...payment.reservation,
+          status:
+            payment.reservation?.status === ReservationStatus.PENDING_PAYMENT
+              ? ReservationStatus.CANCELLED
+              : payment.reservation?.status,
+          cancellationReason:
+            payment.reservation?.status === ReservationStatus.PENDING_PAYMENT
+              ? PAYSTACK_NO_LONGER_CONFIRMABLE_MANUAL_REVIEW_REASON
+              : payment.reservation?.cancellationReason,
+        },
+      ),
+    };
+  }
+
+  private async recordPaystackManualReviewReservation(payment: any, data: any) {
+    const metadata = this.sanitizePaystackPaymentMetadata(data, {
+      manualReviewRequired: true,
+      reason: PAYSTACK_MANUAL_REVIEW_REASON,
+    });
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.reservationPayment.updateMany({
+        where: {
+          reference: data.reference,
+          method: ReservationPaymentMethod.PAYSTACK,
+        },
+        data: {
+          status: ReservationPaymentStatus.SUCCESS,
+          metadata: metadata as any,
+        },
+      });
+
+      await tx.reservation.updateMany({
+        where: {
+          id: payment.reservationId,
+          status: ReservationStatus.PENDING_PAYMENT,
+        },
+        data: {
+          status: ReservationStatus.CANCELLED,
+          cancellationReason: PAYSTACK_MANUAL_REVIEW_REASON,
+        },
+      });
+    });
+
+    const reservation = await this.prisma.reservation.findFirst({
+      where: { id: payment.reservationId },
+      include: this.customerReservationInclude(),
+    });
+
+    return {
+      success: false,
+      message: PAYSTACK_MANUAL_REVIEW_REASON,
+      data: this.maskPublicReservation(
+        reservation ?? {
+          ...payment.reservation,
+          status: ReservationStatus.CANCELLED,
+          cancellationReason: PAYSTACK_MANUAL_REVIEW_REASON,
+        },
+      ),
+    };
+  }
+
+  private reservationPaymentHoldThreshold(now = new Date()) {
+    return new Date(
+      now.getTime() - RESERVATION_PAYMENT_HOLD_MINUTES * 60 * 1000,
+    );
+  }
+
+  private activeReservationWhere(now = new Date()): Prisma.ReservationWhereInput {
+    const holdThreshold = this.reservationPaymentHoldThreshold(now);
+
+    return {
+      OR: [
+        { status: { in: ACTIVE_RESERVATION_STATUSES } },
+        {
+          status: ReservationStatus.PENDING_PAYMENT,
+          createdAt: { gte: holdThreshold },
+        },
+      ],
+    };
+  }
+
+  private async cleanupExpiredPendingPaymentReservations(
+    tx: Prisma.TransactionClient,
+    input: {
+      locationId: string;
+      startDateTime: Date;
+      endDateTime: Date;
+    },
+  ) {
+    const expiredReservations = await tx.reservation.findMany({
+      where: {
+        locationId: input.locationId,
+        status: ReservationStatus.PENDING_PAYMENT,
+        createdAt: { lt: this.reservationPaymentHoldThreshold() },
+        startDateTime: { lt: input.endDateTime },
+        endDateTime: { gt: input.startDateTime },
+      },
+      select: { id: true },
+    });
+    const reservationIds = expiredReservations.map((reservation) => reservation.id);
+
+    if (reservationIds.length === 0) {
+      return;
+    }
+
+    await tx.reservation.updateMany({
+      where: {
+        id: { in: reservationIds },
+        status: ReservationStatus.PENDING_PAYMENT,
+      },
+      data: {
+        status: ReservationStatus.CANCELLED,
+        cancellationReason: RESERVATION_PAYMENT_WINDOW_EXPIRED_REASON,
+      },
+    });
+
+    await tx.reservationPayment.updateMany({
+      where: {
+        reservationId: { in: reservationIds },
+        method: ReservationPaymentMethod.PAYSTACK,
+        status: ReservationPaymentStatus.PENDING,
+      },
+      data: {
+        status: ReservationPaymentStatus.FAILED,
+        metadata: {
+          reason: RESERVATION_PAYMENT_WINDOW_EXPIRED_REASON,
+        } as any,
+      },
+    });
+  }
+
+  private async pickAvailableTable(
+    tx: Prisma.TransactionClient,
+    input: {
+      locationId: string;
+      tableCategory: string;
+      guestCount: number;
+      startDateTime: Date;
+      endDateTime: Date;
+    },
+  ) {
+    const tables = await tx.locationTable.findMany({
+      where: {
+        locationId: input.locationId,
+        category: input.tableCategory,
+        isActive: true,
+        minGuests: { lte: input.guestCount },
+        maxGuests: { gte: input.guestCount },
+      },
+      orderBy: { name: 'asc' },
+    });
+    const existingReservations = await tx.reservation.findMany({
+      where: {
+        locationId: input.locationId,
+        ...this.activeReservationWhere(),
+        startDateTime: { lt: input.endDateTime },
+        endDateTime: { gt: input.startDateTime },
+      },
+      select: { tableId: true },
+    });
+    const reservedTableIds = new Set(
+      existingReservations.map((reservation) => reservation.tableId),
+    );
+    const table = this.sortTablesByQuote(
+      tables.filter((candidate) => !reservedTableIds.has(candidate.id)),
+    )[0];
+
+    if (!table) {
+      throw new BadRequestException('This table category is no longer available');
+    }
+
+    return table;
+  }
+
+  private maskPublicReservation(reservation: any) {
+    const { user: _user, payments, ...publicReservation } = reservation;
+    return {
+      ...publicReservation,
+      guestEmail: this.maskEmail(publicReservation.guestEmail),
+      guestPhone: this.maskPhone(publicReservation.guestPhone),
+      ...(Array.isArray(payments) && {
+        payments: payments.map((payment) => ({
+          id: payment.id,
+          amount: payment.amount,
+          method: payment.method,
+          status: payment.status,
+          reference: payment.reference,
+          createdAt: payment.createdAt,
+        })),
+      }),
+    };
+  }
+
+  private maskEmail(email?: string | null) {
+    if (!email) return email;
+    const [localPart, domain] = email.split('@');
+    if (!domain) return '***';
+    if (localPart.length <= 2) {
+      return `${localPart[0] ?? ''}***@${domain}`;
+    }
+    return `${localPart[0]}***${localPart[localPart.length - 1]}@${domain}`;
+  }
+
+  private maskPhone(phone?: string | null) {
+    if (!phone) return phone;
+    if (phone.length <= 6) return '***';
+    const prefixLength = Math.min(5, phone.length - 3);
+    return `${phone.slice(0, prefixLength)}*****${phone.slice(-3)}`;
   }
 
   private assertCanManageReservationRecord(reservation: any, actor: any) {
     if ([UserRole.VENDOR, UserRole.VENDOR_STAFF].includes(actor?.role)) {
       const vendorId = this.resolveVendorAccountId(actor, true);
-      if (!reservation.location?.vendorId || reservation.location.vendorId !== vendorId) {
+      if (
+        reservation.location?.vendorId !== vendorId &&
+        reservation.event?.vendorId !== vendorId
+      ) {
         throw new ForbiddenException(
-          'Vendors can only update reservations for their own locations',
+          'Vendors can only update reservations for their own locations or events',
         );
       }
       return;
@@ -1271,6 +2333,31 @@ export class ReservationsService {
     }
   }
 
+  private assertEventReservationSlotWithinEvent(
+    event: { startDate?: Date | null; endDate?: Date | null },
+    startDateTime: Date,
+    endDateTime: Date,
+  ) {
+    if (!event.startDate || !event.endDate) {
+      throw new BadRequestException(
+        'Event must have start and end dates for table reservations',
+      );
+    }
+
+    const eventStart = new Date(event.startDate);
+    const eventEnd = new Date(event.endDate);
+    if (
+      Number.isNaN(eventStart.getTime()) ||
+      Number.isNaN(eventEnd.getTime()) ||
+      startDateTime < eventStart ||
+      endDateTime > eventEnd
+    ) {
+      throw new BadRequestException(
+        'Event reservation slot must be within the event date and time',
+      );
+    }
+  }
+
   private normalizePage(value?: number) {
     const page = Number(value ?? 1);
     if (!Number.isFinite(page) || page < 1) return 1;
@@ -1446,6 +2533,9 @@ export class ReservationsService {
       return false;
     }
     const details = `${error.message} ${JSON.stringify(error.meta ?? {})}`.toLowerCase();
+    if (details.includes('reservations_no_table_overlap_active')) {
+      return true;
+    }
     return (
       ['P2002', 'P2004', 'P2010'].includes(error.code) &&
       (details.includes('reservation') ||
