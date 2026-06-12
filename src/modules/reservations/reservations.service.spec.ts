@@ -27,7 +27,7 @@ describe('ReservationsService setup', () => {
         {
           provide: PrismaService,
           useValue: {
-            location: { findUnique: jest.fn() },
+            location: { findUnique: jest.fn(), findFirst: jest.fn(), findMany: jest.fn(), count: jest.fn() },
             locationTable: {
               create: jest.fn(),
               findMany: jest.fn(),
@@ -83,6 +83,9 @@ describe('ReservationsService setup', () => {
     service = module.get(ReservationsService);
     prisma = module.get(PrismaService);
     walletService = module.get(WalletService);
+    prisma.location.findFirst.mockImplementation((args: any) =>
+      prisma.location.findUnique(args),
+    );
   });
 
   it('creates a table for an owned active location', async () => {
@@ -206,6 +209,29 @@ describe('ReservationsService setup', () => {
     );
 
     expect(result.data.id).toBe('slot-1');
+  });
+
+  it('excludes event-linked locations from standalone reservation venue discovery', async () => {
+    prisma.location.findMany.mockResolvedValue([]);
+    prisma.location.count.mockResolvedValue(0);
+
+    const result = await service.listReservationVenues({ page: 1, limit: 12 } as any);
+
+    expect(result.data.items).toEqual([]);
+    expect(prisma.location.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          bookingEnabled: true,
+          events: { none: { isDeleted: false } },
+        }),
+      }),
+    );
+    expect(prisma.location.count).toHaveBeenCalledWith({
+      where: expect.objectContaining({
+        bookingEnabled: true,
+        events: { none: { isDeleted: false } },
+      }),
+    });
   });
 
   describe('ReservationsService customer booking', () => {

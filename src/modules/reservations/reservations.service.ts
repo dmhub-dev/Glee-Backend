@@ -289,9 +289,7 @@ export class ReservationsService {
     const page = this.normalizePage(query.page);
     const limit = this.normalizeLimit(query.limit);
     const search = query.search?.trim();
-    const where: Prisma.LocationWhereInput = {
-      status: EntityStatus.ACTIVE,
-      bookingEnabled: true,
+    const where = this.standaloneReservationVenueWhere({
       ...(query.venueType && { venueType: query.venueType }),
       ...(search && {
         OR: [
@@ -299,7 +297,7 @@ export class ReservationsService {
           { address: { contains: search, mode: 'insensitive' } },
         ],
       }),
-    };
+    });
 
     const [items, total] = await this.prisma.$transaction([
       this.prisma.location.findMany({
@@ -320,11 +318,9 @@ export class ReservationsService {
 
   async getReservationVenue(locationId: string) {
     const location = await this.prisma.location.findFirst({
-      where: {
+      where: this.standaloneReservationVenueWhere({
         id: locationId,
-        status: EntityStatus.ACTIVE,
-        bookingEnabled: true,
-      },
+      }),
       include: {
         reservationSlots: {
           where: { isActive: true },
@@ -352,11 +348,11 @@ export class ReservationsService {
     locationId: string,
     query: ReservationAvailabilityQueryDto,
   ) {
-    const location = await this.prisma.location.findUnique({
-      where: { id: locationId },
+    const location = await this.prisma.location.findFirst({
+      where: this.standaloneReservationVenueWhere({ id: locationId }),
     });
 
-    if (!location || location.status !== EntityStatus.ACTIVE || !location.bookingEnabled) {
+    if (!location) {
       throw new NotFoundException('Reservation venue not found');
     }
 
@@ -504,11 +500,11 @@ export class ReservationsService {
       return this.createPaystackVenueReservation(dto, actor);
     }
 
-    const location = await this.prisma.location.findUnique({
-      where: { id: dto.locationId },
+    const location = await this.prisma.location.findFirst({
+      where: this.standaloneReservationVenueWhere({ id: dto.locationId }),
     });
 
-    if (!location || location.status !== EntityStatus.ACTIVE || !location.bookingEnabled) {
+    if (!location) {
       throw new NotFoundException('Reservation venue not found');
     }
 
@@ -640,11 +636,11 @@ export class ReservationsService {
       throw new BadRequestException('Reservation payer email is required');
     }
 
-    const location = await this.prisma.location.findUnique({
-      where: { id: dto.locationId },
+    const location = await this.prisma.location.findFirst({
+      where: this.standaloneReservationVenueWhere({ id: dto.locationId }),
     });
 
-    if (!location || location.status !== EntityStatus.ACTIVE || !location.bookingEnabled) {
+    if (!location) {
       throw new NotFoundException('Reservation venue not found');
     }
 
@@ -2368,6 +2364,17 @@ export class ReservationsService {
     const limit = Number(value ?? 20);
     if (!Number.isFinite(limit) || limit < 1) return 20;
     return Math.min(Math.floor(limit), 100);
+  }
+
+  private standaloneReservationVenueWhere(
+    extra: Prisma.LocationWhereInput = {},
+  ): Prisma.LocationWhereInput {
+    return {
+      status: EntityStatus.ACTIVE,
+      bookingEnabled: true,
+      events: { none: { isDeleted: false } },
+      ...extra,
+    };
   }
 
   private assertSlotRunsOnDate(date: string, daysOfWeek: number[] = []) {
